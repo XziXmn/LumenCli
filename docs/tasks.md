@@ -155,14 +155,7 @@
 
 ## Phase 3F: Model 增强
 
-### Task 24: Preset Routing ✅
-- [x] 24.1 Preset 定义（`.lumen/presets.json` 中定义 primary/vision/thinking/fast）
-- [x] 24.2 Routing engine（before_provider_request hook 检测 image/thinking）
-- [x] 24.3 Vision auto-routing（primary 不支持 vision 时自动降级）
-- [x] 24.4 `/preset <name>` 命令
-- [x] 24.5 Agent model override 集成（通过 preset.primary 可覆盖）
-
-## Phase 3G: 补充工具（Claude Code 对齐）
+### Task 24: Preset Routing (已删除 — 单 provider 不需要)
 
 ### Task 25: Snip/Brief Tool ✅
 - [x] 25.1 SnipTool — 长输出智能截断（保留头尾 + 中间摘要）

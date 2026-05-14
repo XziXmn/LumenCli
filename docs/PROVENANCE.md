@@ -28,7 +28,6 @@
 | Repo Clone + Overview | opencode | `src/tool/repo_clone.ts` + `repo_overview.ts` | `packages/coding-agent/src/core/lumen-repo.ts` | 参考重写 | 合并为单文件双 tool |
 | Hashline | oh-my-pi | `src/hashline/` (hash.ts, anchors.ts) | `packages/coding-agent/src/core/lumen-hashline.ts` | 参考重写 | Node.js crypto 替代 Bun.hash |
 | LSP Tool (full protocol) | LSP 3.17 spec + oh-my-pi | spec + `oh-my-pi: src/lsp/` | `packages/coding-agent/src/core/lumen-lsp{,-client,-config,-types}.ts` | 参考重写 | 完整 LSP 3.17 协议实现 (Node.js 纯实现，去除 Bun 依赖)，10 个 actions，CLI fallback |
-| Preset Routing | 自研 | — | `packages/coding-agent/src/core/lumen-preset.ts` | 自研 | `.lumen/presets.json` + vision auto-routing |
 | Worktree Isolation | 自研 | — | `packages/coding-agent/src/core/lumen-worktree.ts` | 自研 | git worktree helpers + `/worktree` 命令 |
 | Snip/Brief | Claude Code 概念 | — | `packages/coding-agent/src/core/lumen-snip.ts` | 自研 | 启发式截断/摘要（无 LLM 依赖） |
 | CodeSearch | Claude Code + opencode 概念 | — | `packages/coding-agent/src/core/lumen-codesearch.ts` | 自研 | GitHub code search API（Exa Code 是付费的替代方案） |

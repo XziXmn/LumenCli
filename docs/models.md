@@ -2,11 +2,10 @@
 
 ## 概念
 
-Lumen 的模型系统分三层：
+Lumen 的模型系统分两层：
 
 1. **模型定义** — 告诉 Lumen "世界上有哪些模型可用"
 2. **认证** — 告诉 Lumen "我有哪些模型的 API key"
-3. **Preset 路由** — 告诉 Lumen "什么情况下用哪个模型"
 
 ---
 
@@ -165,93 +164,6 @@ lumen --api-key sk-ant-xxx --model anthropic/claude-sonnet-4-6
 ```
 
 仅本次 session 有效，不持久化。
-
----
-
-## 3. Preset 路由（`.lumen/presets.json`）
-
-### 基本概念
-
-Preset 是"模型组合的快捷方式"。定义多个角色槽位，运行时按情况自动切换。
-
-### 配置文件
-
-放在项目根目录 `.lumen/presets.json`：
-
-```json
-{
-  "default": "mimo",
-  "presets": {
-    "mimo": {
-      "description": "MiMo 主力 + Claude 看图",
-      "primary": "xiaomi-token-plan-sgp/mimo-v2.5-pro",
-      "vision": "anthropic/claude-sonnet-4-6"
-    },
-    "claude": {
-      "description": "Claude 全家桶",
-      "primary": "anthropic/claude-sonnet-4-6",
-      "thinking": "anthropic/claude-opus-4-7:high"
-    },
-    "cheap": {
-      "description": "Groq 快速迭代",
-      "primary": "groq/openai/gpt-oss-120b"
-    },
-    "full": {
-      "description": "四角色全配",
-      "primary": "xiaomi-token-plan-sgp/mimo-v2.5-pro",
-      "vision": "anthropic/claude-sonnet-4-6",
-      "thinking": "anthropic/claude-opus-4-7:high",
-      "fast": "groq/openai/gpt-oss-120b"
-    }
-  }
-}
-```
-
-### 角色槽位
-
-| 槽位 | 必填 | 触发条件 | 说明 |
-|------|------|----------|------|
-| `primary` | **是** | 默认 | 所有普通请求都用这个 |
-| `vision` | 否 | 用户消息含图片 | primary 不支持 vision 时自动切换 |
-| `thinking` | 否 | 用户要求深度思考 | 检测到"仔细分析/think hard"等关键词时切换 |
-| `fast` | 否 | 用户要求快速回答 | 检测到"快速/briefly"等关键词时切换 |
-
-### 引用格式
-
-每个槽位的值是 `"provider/modelId"` 或 `"provider/modelId:thinkingLevel"`：
-
-```
-"anthropic/claude-opus-4-7"        → 用默认 thinking level
-"anthropic/claude-opus-4-7:high"   → 强制 thinking level = high
-"xiaomi-token-plan-sgp/mimo-v2.5-pro:medium" → 中等思考
-```
-
-### 运行时命令
-
-| 命令 | 效果 |
-|------|------|
-| `/preset mimo` | 激活 mimo preset |
-| `/preset list` | 列出所有 preset |
-| `/preset show` | 查看当前激活的 preset |
-| `/preset save` | 把当前 preset 设为默认 |
-| `/presets` | 同 `/preset list` |
-
-### 自动路由逻辑
-
-每次用户发消息时，按以下优先级决定用哪个模型：
-
-1. **有图片** → 用 `vision`（如果配了）
-2. **深度思考关键词** → 用 `thinking`（如果配了）
-3. **快速关键词** → 用 `fast`（如果配了）
-4. **其他** → 用 `primary`
-
-深度思考关键词（中英文）：
-- think hard, deeply analyze, step by step, reason through
-- 仔细思考, 深入分析, 逐步分析, 详细推理, 系统性, 全面考虑
-
-快速关键词：
-- quick, briefly, short answer
-- 快速, 简短, 简单回答
 
 ---
 

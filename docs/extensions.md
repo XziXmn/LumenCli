@@ -47,8 +47,6 @@ Slash commands typed in chat:
 | `/plan-mode` | lumen-plan-mode | Toggle Plan Mode (Tab also works) |
 | `/agent [name]` | lumen-agents | List / describe agents |
 | `/agents-bg` | lumen-agents-bg | List background agents |
-| `/preset <name>` | lumen-preset | Activate model preset |
-| `/presets` | lumen-preset | Alias for `/preset list` |
 | `/worktree list / create / remove / patch` | lumen-worktree | Git worktree helpers |
 | `/config-discovery` | lumen-config-discovery | Show detected external configs |
 
@@ -58,10 +56,9 @@ Extensions subscribe to events via `pi.on(event, handler)`:
 
 | Event | Used by | Purpose |
 |-------|---------|---------|
-| `session_start` | agents, preset, worktree, ttsr, memory, codedisc | Initialize state for the new session |
+| `session_start` | agents, worktree, ttsr, memory, codedisc | Initialize state for the new session |
 | `session_shutdown` | memory (2-phase), lsp, agents-bg | Cleanup + save summary |
-| `before_agent_start` | memory, ttsr, config-discovery, preset | Inject context into system prompt |
-| `before_provider_request` | preset (vision routing intent) | Observe / modify LLM requests |
+| `before_agent_start` | memory, ttsr, config-discovery | Inject context into system prompt |
 | `tool_call` | snapshot (auto-snap before write/edit/apply_patch), plan-mode | Block tools in plan mode |
 | `tool_result` | secrets (redact), ttsr (rule injection) | Transform tool output |
 | `input` | plan-mode (detects "执行" to exit) | Transform user input |
@@ -126,11 +123,3 @@ Report findings as a bulleted list. No fluff.
 
 Invoke via the `agent` tool: `agent(name="reviewer", task="Review the diff in packages/coding-agent")`.
 
-## Presets (Model Routing)
-
-See `docs/installation.md#model-presets`.
-
-The preset extension:
-- Applies the primary model on `before_agent_start`
-- Routes to `vision` model when the user message includes an image
-- Supports optional `thinking` / `fast` slots for future routing logic

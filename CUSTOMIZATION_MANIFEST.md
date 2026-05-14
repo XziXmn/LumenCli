@@ -45,7 +45,6 @@
 | `packages/coding-agent/src/core/lumen-lsp-client.ts` | LSP 客户端（JSON-RPC、didOpen/didChange、waitForDiagnostics） |
 | `packages/coding-agent/src/core/lumen-lsp-config.ts` | LSP 服务器配置和发现（.lumen/lsp.json 可扩展） |
 | `packages/coding-agent/src/core/lumen-lsp-types.ts` | LSP 协议类型定义 |
-| `packages/coding-agent/src/core/lumen-preset.ts` | 模型 preset 路由（primary/vision/thinking） |
 | `packages/coding-agent/src/core/lumen-worktree.ts` | git worktree 隔离工具 |
 | `packages/coding-agent/src/core/lumen-snip.ts` | snip + brief tools（智能截断 / 摘要） |
 | `packages/coding-agent/src/core/lumen-codesearch.ts` | code_search tool（GitHub code search） |
