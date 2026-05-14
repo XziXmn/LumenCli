@@ -117,6 +117,7 @@ import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
+import { isGroupableTool, ToolGroupComponent } from "./components/tool-group.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
@@ -272,6 +273,13 @@ export class InteractiveMode {
 
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
+
+	// Tool grouping: tracks the last group component for consecutive same-type tools
+	private lastToolGroup: ToolGroupComponent | undefined;
+	private lastToolName: string | undefined;
+	private lastToolComponent: ToolExecutionComponent | undefined;
+	private lastToolArgs: Record<string, unknown> | undefined;
+	private toolCallToGroup = new Map<string, ToolGroupComponent>();
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
@@ -2687,6 +2695,11 @@ export class InteractiveMode {
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
+					// Reset tool grouping for new assistant turn
+					this.lastToolGroup = undefined;
+					this.lastToolName = undefined;
+					this.lastToolComponent = undefined;
+					this.lastToolArgs = undefined;
 					this.streamingComponent = new AssistantMessageComponent(
 						undefined,
 						this.hideThinkingBlock,
@@ -2721,7 +2734,45 @@ export class InteractiveMode {
 									this.sessionManager.getCwd(),
 								);
 								component.setExpanded(this.toolOutputExpanded);
-								this.chatContainer.addChild(component);
+
+								// Tool grouping: merge consecutive same-type groupable tools
+								if (isGroupableTool(content.name) && this.lastToolName === content.name) {
+									if (this.lastToolGroup) {
+										// Already have a group — add to it
+										this.lastToolGroup.addMember(component, content.arguments ?? {});
+										this.toolCallToGroup.set(content.id, this.lastToolGroup);
+									} else if (this.lastToolComponent) {
+										// Second consecutive same-type tool — create group, move first into it
+										const group = new ToolGroupComponent(content.name);
+										// Remove the first component from chatContainer and add to group
+										this.chatContainer.removeChild(this.lastToolComponent);
+										group.addMember(this.lastToolComponent, this.lastToolArgs ?? {});
+										this.toolCallToGroup.set(this.lastToolComponent.getToolCallId(), group);
+										// Add the new one
+										group.addMember(component, content.arguments ?? {});
+										this.toolCallToGroup.set(content.id, group);
+										group.setExpanded(this.toolOutputExpanded);
+										this.chatContainer.addChild(group);
+										this.lastToolGroup = group;
+										this.lastToolComponent = undefined;
+										this.lastToolArgs = undefined;
+									}
+								} else if (isGroupableTool(content.name)) {
+									// First groupable tool — add normally, remember for potential grouping
+									this.chatContainer.addChild(component);
+									this.lastToolGroup = undefined;
+									this.lastToolName = content.name;
+									this.lastToolComponent = component;
+									this.lastToolArgs = content.arguments ?? {};
+								} else {
+									// Non-groupable tool — add directly, reset group state
+									this.chatContainer.addChild(component);
+									this.lastToolGroup = undefined;
+									this.lastToolName = content.name;
+									this.lastToolComponent = undefined;
+									this.lastToolArgs = undefined;
+								}
+
 								this.pendingTools.set(content.id, component);
 							} else {
 								const component = this.pendingTools.get(content.id);
@@ -2798,7 +2849,39 @@ export class InteractiveMode {
 						this.sessionManager.getCwd(),
 					);
 					component.setExpanded(this.toolOutputExpanded);
-					this.chatContainer.addChild(component);
+
+					// Apply grouping logic for late-arriving tools
+					if (isGroupableTool(event.toolName) && this.lastToolName === event.toolName) {
+						if (this.lastToolGroup) {
+							this.lastToolGroup.addMember(component, event.args ?? {});
+							this.toolCallToGroup.set(event.toolCallId, this.lastToolGroup);
+						} else if (this.lastToolComponent) {
+							const group = new ToolGroupComponent(event.toolName);
+							this.chatContainer.removeChild(this.lastToolComponent);
+							group.addMember(this.lastToolComponent, this.lastToolArgs ?? {});
+							this.toolCallToGroup.set(this.lastToolComponent.getToolCallId(), group);
+							group.addMember(component, event.args ?? {});
+							this.toolCallToGroup.set(event.toolCallId, group);
+							group.setExpanded(this.toolOutputExpanded);
+							this.chatContainer.addChild(group);
+							this.lastToolGroup = group;
+							this.lastToolComponent = undefined;
+							this.lastToolArgs = undefined;
+						}
+					} else if (isGroupableTool(event.toolName)) {
+						this.chatContainer.addChild(component);
+						this.lastToolGroup = undefined;
+						this.lastToolName = event.toolName;
+						this.lastToolComponent = component;
+						this.lastToolArgs = event.args ?? {};
+					} else {
+						this.chatContainer.addChild(component);
+						this.lastToolGroup = undefined;
+						this.lastToolName = event.toolName;
+						this.lastToolComponent = undefined;
+						this.lastToolArgs = undefined;
+					}
+
 					this.pendingTools.set(event.toolCallId, component);
 				}
 				component.markExecutionStarted();
@@ -2820,6 +2903,12 @@ export class InteractiveMode {
 				const component = this.pendingTools.get(event.toolCallId);
 				if (component) {
 					component.updateResult({ ...event.result, isError: event.isError });
+					// Notify the group this tool belongs to
+					const group = this.toolCallToGroup.get(event.toolCallId);
+					if (group) {
+						group.markMemberCompleted(event.toolCallId, event.isError);
+						this.toolCallToGroup.delete(event.toolCallId);
+					}
 					this.pendingTools.delete(event.toolCallId);
 					this.ui.requestRender();
 				}
@@ -2841,6 +2930,11 @@ export class InteractiveMode {
 					this.streamingMessage = undefined;
 				}
 				this.pendingTools.clear();
+				this.lastToolGroup = undefined;
+				this.lastToolName = undefined;
+				this.lastToolComponent = undefined;
+				this.lastToolArgs = undefined;
+				this.toolCallToGroup.clear();
 
 				await this.checkShutdownRequested();
 

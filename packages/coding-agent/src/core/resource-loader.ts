@@ -12,14 +12,11 @@ import { canonicalizePath, isLocalPath } from "../utils/paths.js";
 import { createEventBus, type EventBus } from "./event-bus.js";
 import { createExtensionRuntime, loadExtensionFromFactory, loadExtensions } from "./extensions/loader.js";
 import type { Extension, ExtensionFactory, ExtensionRuntime, LoadExtensionsResult } from "./extensions/types.js";
-import lumenAgentsExtension from "./lumen-agents.js";
-import lumenAgentsBgExtension from "./lumen-agents-bg.js";
 import lumenAskUserExtension from "./lumen-askuser.js";
 import lumenCodeSearchExtension from "./lumen-codesearch.js";
 import lumenCommitExtension from "./lumen-commit.js";
 import lumenConfigDiscoveryExtension from "./lumen-config-discovery.js";
 import lumenLspExtension from "./lumen-lsp.js";
-import lumenMemoryExtension from "./lumen-memory.js";
 import lumenNovelExtension from "./lumen-novel.js";
 import lumenPatchExtension from "./lumen-patch.js";
 import lumenPlanModeExtension from "./lumen-plan-mode.js";
@@ -28,11 +25,12 @@ import lumenRepoExtension from "./lumen-repo.js";
 import lumenSecretsExtension from "./lumen-secrets.js";
 import lumenSnapshotExtension from "./lumen-snapshot.js";
 import lumenSnipExtension from "./lumen-snip.js";
+import lumenTaskExtension from "./lumen-task.js";
 import lumenTodoExtension from "./lumen-todo.js";
 import lumenTtsrExtension from "./lumen-ttsr.js";
 import lumenWebExtension from "./lumen-web.js";
 import lumenWorktreeExtension from "./lumen-worktree.js";
-import lumenWritingExtension from "./lumen-writing.js";
+
 import { DefaultPackageManager, type PathMetadata } from "./package-manager.js";
 import type { PromptTemplate } from "./prompt-templates.js";
 import { loadPromptTemplates } from "./prompt-templates.js";
@@ -240,14 +238,12 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.additionalPromptTemplatePaths = options.additionalPromptTemplatePaths ?? [];
 		this.additionalThemePaths = options.additionalThemePaths ?? [];
 		this.extensionFactories = [
-			lumenWritingExtension,
 			lumenNovelExtension,
-			lumenMemoryExtension,
 			lumenCommitExtension,
 			lumenSecretsExtension,
 			lumenSnapshotExtension,
 			lumenPatchExtension,
-			lumenAgentsExtension,
+			lumenTaskExtension,
 			lumenWebExtension,
 			lumenPlanModeExtension,
 			lumenTtsrExtension,
@@ -260,7 +256,6 @@ export class DefaultResourceLoader implements ResourceLoader {
 			lumenSnipExtension,
 			lumenCodeSearchExtension,
 			lumenPowerShellExtension,
-			lumenAgentsBgExtension,
 			...(options.extensionFactories ?? []),
 		];
 		this.noExtensions = options.noExtensions ?? false;

@@ -439,6 +439,68 @@ export class Theme {
 	getBashModeBorderColor(): (str: string) => string {
 		return (str: string) => this.fg("bashMode", str);
 	}
+
+	// ========================================================================
+	// Lumen TUI Extensions
+	// ========================================================================
+
+	/** Braille spinner frames for status indicators (80ms per frame). */
+	get spinnerFrames(): string[] {
+		return ["\u28FB", "\u28FD", "\u28FE", "\u28F7", "\u28EF", "\u28DF", "\u28BF", "\u287F"];
+	}
+
+	/** Tree drawing characters for hierarchical displays. */
+	readonly tree = {
+		vertical: "\u2502", // │
+		branch: "\u251C\u2500", // ├─
+		last: "\u2514\u2500", // └─
+		horizontal: "\u2500", // ─
+	} as const;
+
+	/** Sharp box drawing characters for bordered containers. */
+	readonly boxSharp = {
+		topLeft: "\u250C", // ┌
+		topRight: "\u2510", // ┐
+		bottomLeft: "\u2514", // └
+		bottomRight: "\u2518", // ┘
+		horizontal: "\u2500", // ─
+		vertical: "\u2502", // │
+		teeRight: "\u251C", // ├
+		teeLeft: "\u2524", // ┤
+		teeDown: "\u252C", // ┬
+		teeUp: "\u2534", // ┴
+	} as const;
+
+	/** Separator characters. */
+	readonly sep = {
+		dot: " \u00B7 ", // · with spaces
+		pipe: " \u2502 ", // │ with spaces
+	} as const;
+
+	/** Format characters. */
+	readonly format = {
+		bracketLeft: "\u27E6", // ⟦
+		bracketRight: "\u27E7", // ⟧
+	} as const;
+
+	/**
+	 * Get a symbol styled with a theme color.
+	 * Provides consistent status icon rendering across all components.
+	 */
+	styledSymbol(
+		key: "status.success" | "status.error" | "status.warning" | "status.info" | "status.pending" | "status.running",
+		color: ThemeColor,
+	): string {
+		const symbols: Record<string, string> = {
+			"status.success": "\u2713", // ✓
+			"status.error": "\u2717", // ✗
+			"status.warning": "\u26A0", // ⚠
+			"status.info": "\u25CF", // ●
+			"status.pending": "\u25CB", // ○
+			"status.running": "\u28FB", // ⣻ (first spinner frame)
+		};
+		return this.fg(color, symbols[key] ?? "?");
+	}
 }
 
 // ============================================================================

@@ -4,6 +4,7 @@ import { createAllToolDefinitions, type ToolName } from "../../../core/tools/ind
 import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.js";
 import { convertToPng } from "../../../utils/image-convert.js";
 import { theme } from "../theme/theme.js";
+import { SPINNER_FRAMES, STATUS_SYMBOLS } from "./lumen-tui-utils.js";
 
 export interface ToolExecutionOptions {
 	showImages?: boolean;
@@ -39,6 +40,8 @@ export class ToolExecutionComponent extends Container {
 	};
 	private convertedImages: Map<number, { data: string; mimeType: string }> = new Map();
 	private hideComponent = false;
+	private spinnerFrame = 0;
+	private spinnerInterval: ReturnType<typeof setInterval> | undefined;
 
 	constructor(
 		toolName: string,
@@ -133,7 +136,9 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private createCallFallback(): Component {
-		return new Text(theme.fg("toolTitle", theme.bold(this.toolName)), 0, 0);
+		const icon = this.getStatusIcon();
+		const title = theme.fg("toolTitle", theme.bold(this.toolName));
+		return new Text(`${icon} ${title}`, 0, 0);
 	}
 
 	private createResultFallback(): Component | undefined {
@@ -144,13 +149,41 @@ export class ToolExecutionComponent extends Container {
 		return new Text(theme.fg("toolOutput", output), 0, 0);
 	}
 
+	private getStatusIcon(): string {
+		if (this.result && !this.isPartial) {
+			// Completed
+			if (this.result.isError) {
+				return theme.fg("error", STATUS_SYMBOLS.error);
+			}
+			return theme.fg("success", STATUS_SYMBOLS.success);
+		}
+		if (this.executionStarted) {
+			// Running — show spinner
+			const frame = SPINNER_FRAMES[this.spinnerFrame % SPINNER_FRAMES.length];
+			return theme.fg("accent", frame);
+		}
+		// Pending (args still streaming)
+		return theme.fg("muted", STATUS_SYMBOLS.pending);
+	}
+
 	updateArgs(args: any): void {
 		this.args = args;
 		this.updateDisplay();
 	}
 
+	/** Get the tool call ID for this component. */
+	getToolCallId(): string {
+		return this.toolCallId;
+	}
+
+	/** Get the tool name for this component. */
+	getToolName(): string {
+		return this.toolName;
+	}
+
 	markExecutionStarted(): void {
 		this.executionStarted = true;
+		this.startSpinner();
 		this.updateDisplay();
 		this.ui.requestRender();
 	}
@@ -171,6 +204,9 @@ export class ToolExecutionComponent extends Container {
 	): void {
 		this.result = result;
 		this.isPartial = isPartial;
+		if (!isPartial) {
+			this.stopSpinner();
+		}
 		this.updateDisplay();
 		this.maybeConvertImagesForKitty();
 	}
@@ -223,6 +259,27 @@ export class ToolExecutionComponent extends Container {
 			return [];
 		}
 		return super.render(width);
+	}
+
+	private startSpinner(): void {
+		if (this.spinnerInterval) return;
+		this.spinnerInterval = setInterval(() => {
+			this.spinnerFrame = (this.spinnerFrame + 1) % SPINNER_FRAMES.length;
+			this.updateDisplay();
+			this.ui.requestRender();
+		}, 80);
+	}
+
+	private stopSpinner(): void {
+		if (this.spinnerInterval) {
+			clearInterval(this.spinnerInterval);
+			this.spinnerInterval = undefined;
+		}
+	}
+
+	/** Dispose of resources (call when component is removed from tree). */
+	dispose(): void {
+		this.stopSpinner();
 	}
 
 	private updateDisplay(): void {
@@ -338,7 +395,8 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private formatToolExecution(): string {
-		let text = theme.fg("toolTitle", theme.bold(this.toolName));
+		const icon = this.getStatusIcon();
+		let text = `${icon} ${theme.fg("toolTitle", theme.bold(this.toolName))}`;
 		const content = JSON.stringify(this.args, null, 2);
 		if (content) {
 			text += `\n\n${content}`;
