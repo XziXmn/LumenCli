@@ -276,6 +276,9 @@ export class InteractiveMode {
 	// Tool output expansion state
 	private toolOutputExpanded = false;
 
+	// [Lumen] Pending images from clipboard paste (sent with next message)
+	private pendingImages: import("@earendil-works/pi-ai").ImageContent[] = [];
+
 	// Thinking block visibility state
 	private hideThinkingBlock = false;
 
@@ -762,7 +765,10 @@ export class InteractiveMode {
 		while (true) {
 			const userInput = await this.getUserInput();
 			try {
-				await this.session.prompt(userInput);
+				// [Lumen] Attach any pending clipboard images to the message
+				const images = this.pendingImages.length > 0 ? [...this.pendingImages] : undefined;
+				this.pendingImages = [];
+				await this.session.prompt(userInput, { images });
 			} catch (error: unknown) {
 				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 				this.showError(errorMessage);
@@ -2424,18 +2430,22 @@ export class InteractiveMode {
 				return;
 			}
 
-			// Write to temp file
-			const tmpDir = os.tmpdir();
-			const ext = extensionForImageMimeType(image.mimeType) ?? "png";
-			const fileName = `pi-clipboard-${crypto.randomUUID()}.${ext}`;
-			const filePath = path.join(tmpDir, fileName);
-			fs.writeFileSync(filePath, Buffer.from(image.bytes));
+			// [Lumen] Attach image directly as ImageContent (like Claude/opencode),
+			// instead of writing to temp file and inserting path.
+			// This way the image goes directly to the API as base64.
+			const base64 = Buffer.from(image.bytes).toString("base64");
+			this.pendingImages.push({
+				type: "image",
+				mimeType: image.mimeType,
+				data: base64,
+			});
 
-			// Insert file path directly
-			this.editor.insertTextAtCursor?.(filePath);
+			// Show a placeholder in the editor so user knows image is attached
+			const shortName = `[图片已附加: ${image.mimeType}]`;
+			this.editor.insertTextAtCursor?.(shortName);
 			this.ui.requestRender();
 		} catch {
-			// Silently ignore clipboard errors (may not have permission, etc.)
+			// Silently ignore clipboard errors
 		}
 	}
 
