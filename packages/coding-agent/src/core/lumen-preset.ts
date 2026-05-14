@@ -315,54 +315,21 @@ export default function lumenPresetExtension(pi: ExtensionAPI): void {
 		}
 	});
 
-	// Vision auto-routing: detect images in user input BEFORE agent starts.
-	// Use the 'input' event which fires before the agent loop, giving us time to switch model.
-	pi.on("input", (event, ctx) => {
-		if (!activePresetName || !presetsFile) return;
-		const preset = presetsFile.presets[activePresetName];
-		if (!preset?.vision) return;
-
-		// Check if input has images
-		const hasImage = event.images && event.images.length > 0;
-		if (!hasImage) return;
-
-		// Check if current model supports images
-		const currentModel = ctx.model as { input?: string[] } | undefined;
-		const supportsImages = currentModel?.input?.includes("image");
-		if (supportsImages) return; // Current model already handles images
-
-		// Switch to vision model
-		const resolved = resolveModelRef(preset.vision, ctx);
-		if (!resolved) return;
-
-		// Use setModel — in input event context, this should take effect before agent starts
-		pi.setModel(resolved.model as Parameters<typeof pi.setModel>[0]).catch(() => {
-			// Silent fallback
-		});
-
-		return; // Don't transform the input
-	});
-
-	// Apply preset's primary model at agent start (thinking/fast routing)
+	// Apply preset's thinking/fast routing at agent start.
+	// Vision routing is handled by agent-session core (sub-agent approach).
 	pi.on("before_agent_start", async (event, ctx) => {
 		if (!activePresetName || !presetsFile) return;
 		const preset = presetsFile.presets[activePresetName];
 		if (!preset) return;
 
-		// Decide which model role to use, in priority order:
-		// 1. Vision: any image in user prompt
-		// 2. Thinking: prompt has reasoning indicators or is long+structured
-		// 3. Fast: prompt asks for a quick/short answer
-		// 4. Primary: default
+		// Decide which model role to use:
+		// 1. Thinking: prompt has reasoning indicators or is long+structured
+		// 2. Fast: prompt asks for a quick/short answer
+		// 3. Primary: default
 		let targetRef = preset.primary;
-		const hasImage = event.images && event.images.length > 0;
-		if (hasImage && preset.vision) {
-			targetRef = preset.vision;
-		} else {
-			const mode = detectThinkingMode(event.prompt);
-			if (mode === "thinking" && preset.thinking) targetRef = preset.thinking;
-			else if (mode === "fast" && preset.fast) targetRef = preset.fast;
-		}
+		const mode = detectThinkingMode(event.prompt);
+		if (mode === "thinking" && preset.thinking) targetRef = preset.thinking;
+		else if (mode === "fast" && preset.fast) targetRef = preset.fast;
 
 		const resolved = resolveModelRef(targetRef, ctx);
 		if (!resolved) return;
