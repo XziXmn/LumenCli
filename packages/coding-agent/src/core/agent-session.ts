@@ -1050,15 +1050,12 @@ export class AgentSession {
 			}
 
 			// [Lumen] If current model doesn't support images but user sent images,
-			// replace images with a placeholder that tells the model to use describe_image tool.
-			// The actual image data is stored for the tool to access.
+			// store image data in the prompt text so describe_image tool can access it.
 			if (currentImages && currentImages.length > 0 && this.model && !this.model.input.includes("image")) {
-				// Store images globally for the describe_image tool to access
-				const { setPendingVisionImages } = await import("./lumen-vision.js");
-				setPendingVisionImages(currentImages);
-				// Replace images with a text hint
+				// Encode images as base64 JSON in a hidden marker for the tool to extract
+				const imageData = JSON.stringify(currentImages.map((img) => ({ mimeType: img.mimeType, data: img.data })));
 				const imageCount = currentImages.length;
-				expandedText = `${expandedText}\n\n[用户附加了 ${imageCount} 张图片。当前模型不支持直接查看图片。请调用 describe_image 工具来获取图片描述。]`;
+				expandedText = `${expandedText}\n\n[用户附加了 ${imageCount} 张图片。当前模型不支持直接查看图片。请调用 describe_image 工具来获取图片描述。]\n<!--VISION_DATA:${imageData}-->`;
 				currentImages = undefined;
 			}
 

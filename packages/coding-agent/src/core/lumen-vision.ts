@@ -2,6 +2,7 @@
  * Lumen Vision Tool
  *
  * 当主模型不支持图片时，LLM 可调用此工具让 vision 模型描述图片。
+ * 图片数据通过 <!--VISION_DATA:...--> 标记嵌入在 session 消息中。
  *
  * [Provenance] 来源: 自研（独创的 vision tool 方案）
  */
@@ -9,16 +10,6 @@
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionContext, ToolRenderResultOptions } from "./extensions/types.js";
-
-// ============================================================================
-// Global image storage (set by agent-session, read by tool)
-// ============================================================================
-
-export let globalPendingImages: any[] | undefined;
-
-export function setPendingVisionImages(images: any[] | undefined): void {
-	globalPendingImages = images;
-}
 
 // ============================================================================
 // Schema
@@ -43,6 +34,46 @@ interface VisionDetails {
 	imageCount: number;
 	descriptionLength: number;
 	model: string;
+}
+
+// ============================================================================
+// Image extraction from session
+// ============================================================================
+
+const VISION_DATA_RE = /<!--VISION_DATA:(.*?)-->/;
+
+function extractPendingImages(ctx: ExtensionContext): Array<{ mimeType: string; data: string }> | undefined {
+	// Search recent messages for the VISION_DATA marker
+	const branch = ctx.sessionManager.getBranch();
+	for (let i = branch.length - 1; i >= 0; i--) {
+		const entry = branch[i];
+		if (entry.type !== "message") continue;
+		const msg = entry.message as { role?: string; content?: unknown };
+		if (msg.role !== "user") continue;
+
+		// Check text content for the marker
+		const content = msg.content;
+		let text = "";
+		if (typeof content === "string") {
+			text = content;
+		} else if (Array.isArray(content)) {
+			for (const part of content) {
+				if ((part as { type?: string }).type === "text") {
+					text += (part as { text?: string }).text ?? "";
+				}
+			}
+		}
+
+		const match = text.match(VISION_DATA_RE);
+		if (match) {
+			try {
+				return JSON.parse(match[1]);
+			} catch {
+				return undefined;
+			}
+		}
+	}
+	return undefined;
 }
 
 // ============================================================================
@@ -71,11 +102,12 @@ export default function lumenVisionExtension(pi: ExtensionAPI): void {
 			_onUpdate: undefined,
 			ctx: ExtensionContext,
 		) {
-			const pendingImages = globalPendingImages;
+			// Extract images from session messages
+			const pendingImages = extractPendingImages(ctx);
 
 			if (!pendingImages || pendingImages.length === 0) {
 				return {
-					content: [{ type: "text" as const, text: "没有待描述的图片。" }],
+					content: [{ type: "text" as const, text: "没有待描述的图片（未找到 VISION_DATA 标记）。" }],
 					details: { imageCount: 0, descriptionLength: 0, model: "" } as VisionDetails,
 				};
 			}
@@ -85,7 +117,12 @@ export default function lumenVisionExtension(pi: ExtensionAPI): void {
 			const visionModel = allModels.find((m) => m.input.includes("image"));
 			if (!visionModel) {
 				return {
-					content: [{ type: "text" as const, text: "没有可用的 vision 模型。" }],
+					content: [
+						{
+							type: "text" as const,
+							text: "没有可用的 vision 模型（需要在 models.json 中配置支持 image 的模型）。",
+						},
+					],
 					details: { imageCount: pendingImages.length, descriptionLength: 0, model: "" } as VisionDetails,
 				};
 			}
@@ -101,20 +138,19 @@ export default function lumenVisionExtension(pi: ExtensionAPI): void {
 			try {
 				const { streamSimple } = await import("@earendil-works/pi-ai");
 
-				// Get API key — try multiple methods
-				let apiKey: string | undefined;
-				let headers: Record<string, string> | undefined;
-
+				// Get API key
 				const authResult = await ctx.modelRegistry.getApiKeyAndHeaders(visionModel);
-				if (authResult.ok) {
-					apiKey = (authResult as any).apiKey;
-					headers = (authResult as any).headers;
-				}
-				if (!apiKey) {
-					apiKey = await ctx.modelRegistry.getApiKeyForProvider(visionModel.provider);
-				}
+				const apiKey = authResult.ok ? (authResult as any).apiKey : undefined;
+				const headers = authResult.ok ? (authResult as any).headers : undefined;
 
-				const content = [{ type: "text" as const, text: prompt }, ...pendingImages];
+				// Build image content in the format the API expects
+				const imageContent = pendingImages.map((img) => ({
+					type: "image" as const,
+					mimeType: img.mimeType,
+					data: img.data,
+				}));
+
+				const content = [{ type: "text" as const, text: prompt }, ...imageContent];
 
 				const stream = streamSimple(
 					visionModel,
@@ -130,16 +166,29 @@ export default function lumenVisionExtension(pi: ExtensionAPI): void {
 					if (event.type === "text_delta") {
 						description += event.delta;
 					} else if (event.type === "done" || event.type === "error") {
+						if (event.type === "error") {
+							const errMsg = (event as any).error?.errorMessage ?? "unknown error";
+							return {
+								content: [{ type: "text" as const, text: `Vision 模型返回错误: ${errMsg}` }],
+								details: {
+									imageCount: pendingImages.length,
+									descriptionLength: 0,
+									model: visionModel.id,
+								} as VisionDetails,
+							};
+						}
 						break;
 					}
 				}
 
-				// Clear pending images after successful description
-				globalPendingImages = undefined;
-
 				if (!description.trim()) {
 					return {
-						content: [{ type: "text" as const, text: "Vision 模型未返回描述。" }],
+						content: [
+							{
+								type: "text" as const,
+								text: "Vision 模型未返回描述（可能是图片格式不支持或模型不支持 vision）。",
+							},
+						],
 						details: {
 							imageCount: pendingImages.length,
 							descriptionLength: 0,
@@ -157,13 +206,9 @@ export default function lumenVisionExtension(pi: ExtensionAPI): void {
 					} as VisionDetails,
 				};
 			} catch (err) {
+				const errMsg = err instanceof Error ? err.message : String(err);
 				return {
-					content: [
-						{
-							type: "text" as const,
-							text: `图片描述失败: ${err instanceof Error ? err.message : String(err)}`,
-						},
-					],
+					content: [{ type: "text" as const, text: `图片描述异常: ${errMsg}` }],
 					details: {
 						imageCount: pendingImages.length,
 						descriptionLength: 0,
