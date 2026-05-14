@@ -370,6 +370,20 @@ export default function lumenTodoExtension(pi: ExtensionAPI): void {
 		],
 		parameters: TodoParams,
 
+		// MiMo and some models serialize ops as a JSON string instead of an array.
+		// This shim auto-parses it before schema validation.
+		prepareArguments(args: unknown): any {
+			const raw = args as Record<string, unknown>;
+			if (typeof raw?.ops === "string") {
+				try {
+					return { ...raw, ops: JSON.parse(raw.ops as string) };
+				} catch {
+					return raw;
+				}
+			}
+			return raw;
+		},
+
 		async execute(
 			_toolCallId: string,
 			params: { ops: TodoOpEntry[] },

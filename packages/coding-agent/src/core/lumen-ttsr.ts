@@ -200,7 +200,7 @@ export default function lumenTtsrExtension(pi: ExtensionAPI): void {
 		// We can't modify system prompt from tool_call, but we can steer
 		// by sending a user message with the rules
 		const injection = triggered.map((r) => r.content).join("\n\n");
-		pi.sendUserMessage(`[规则提醒]\n${injection}`);
+		pi.sendUserMessage(`[规则提醒]\n${injection}`, { deliverAs: "steer" });
 
 		return undefined;
 	});
