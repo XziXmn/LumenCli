@@ -315,7 +315,35 @@ export default function lumenPresetExtension(pi: ExtensionAPI): void {
 		}
 	});
 
-	// Apply preset's primary model at agent start (if not already set)
+	// Vision auto-routing: detect images in user input BEFORE agent starts.
+	// Use the 'input' event which fires before the agent loop, giving us time to switch model.
+	pi.on("input", (event, ctx) => {
+		if (!activePresetName || !presetsFile) return;
+		const preset = presetsFile.presets[activePresetName];
+		if (!preset?.vision) return;
+
+		// Check if input has images
+		const hasImage = event.images && event.images.length > 0;
+		if (!hasImage) return;
+
+		// Check if current model supports images
+		const currentModel = ctx.model as { input?: string[] } | undefined;
+		const supportsImages = currentModel?.input?.includes("image");
+		if (supportsImages) return; // Current model already handles images
+
+		// Switch to vision model
+		const resolved = resolveModelRef(preset.vision, ctx);
+		if (!resolved) return;
+
+		// Use setModel — in input event context, this should take effect before agent starts
+		pi.setModel(resolved.model as Parameters<typeof pi.setModel>[0]).catch(() => {
+			// Silent fallback
+		});
+
+		return; // Don't transform the input
+	});
+
+	// Apply preset's primary model at agent start (thinking/fast routing)
 	pi.on("before_agent_start", async (event, ctx) => {
 		if (!activePresetName || !presetsFile) return;
 		const preset = presetsFile.presets[activePresetName];

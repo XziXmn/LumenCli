@@ -1,0 +1,10 @@
+{
+	"default": "mimo",
+	"presets": {
+		"mimo": {
+			"description": "MiMo Pro 日常 + MiMo 多模态看图",
+			"primary": "local-mimo/mimo-v2.5-pro",
+			"vision": "local-mimo/mimo-v2.5"
+		}
+	}
+}
