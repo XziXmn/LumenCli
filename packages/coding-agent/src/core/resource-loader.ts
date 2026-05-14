@@ -30,6 +30,7 @@ import lumenSnapshotExtension from "./lumen-snapshot.js";
 import lumenSnipExtension from "./lumen-snip.js";
 import lumenTodoExtension from "./lumen-todo.js";
 import lumenTtsrExtension from "./lumen-ttsr.js";
+import lumenVisionExtension from "./lumen-vision.js";
 import lumenWebExtension from "./lumen-web.js";
 import lumenWorktreeExtension from "./lumen-worktree.js";
 import lumenWritingExtension from "./lumen-writing.js";
@@ -261,6 +262,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 			lumenCodeSearchExtension,
 			lumenPowerShellExtension,
 			lumenAgentsBgExtension,
+			lumenVisionExtension,
 			...(options.extensionFactories ?? []),
 		];
 		this.noExtensions = options.noExtensions ?? false;
