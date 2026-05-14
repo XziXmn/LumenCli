@@ -1049,15 +1049,6 @@ export class AgentSession {
 				await this._checkCompaction(lastAssistant, false);
 			}
 
-			// [Lumen] If current model doesn't support images but user sent images,
-			// store image data in the prompt text so describe_image tool can access it.
-			if (currentImages && currentImages.length > 0 && this.model && !this.model.input.includes("image")) {
-				// Encode images as base64 JSON in a hidden marker for the tool to extract
-				const imageData = JSON.stringify(currentImages.map((img) => ({ mimeType: img.mimeType, data: img.data })));
-				const imageCount = currentImages.length;
-				expandedText = `${expandedText}\n\n[用户附加了 ${imageCount} 张图片。当前模型不支持直接查看图片。请调用 describe_image 工具来获取图片描述。]\n<!--VISION_DATA:${imageData}-->`;
-				currentImages = undefined;
-			}
 
 			// Build messages array (custom message if any, then user message)
 			messages = [];

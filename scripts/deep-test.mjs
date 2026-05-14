@@ -663,7 +663,7 @@ test("web: has caching with TTL", async ({ SRC }) => {
 	assert(source.includes("setCache"));
 });
 
-test("resource-loader: all 21 extensions registered", async ({ SRC }) => {
+test("resource-loader: all 20 extensions registered", async ({ SRC }) => {
 	const source = readFileSync(`${SRC}/resource-loader.ts`, "utf8");
 	const expected = [
 		"lumenWritingExtension",
