@@ -24,7 +24,6 @@ import lumenNovelExtension from "./lumen-novel.js";
 import lumenPatchExtension from "./lumen-patch.js";
 import lumenPlanModeExtension from "./lumen-plan-mode.js";
 import lumenPowerShellExtension from "./lumen-powershell.js";
-import lumenPresetExtension from "./lumen-preset.js";
 import lumenRepoExtension from "./lumen-repo.js";
 import lumenSecretsExtension from "./lumen-secrets.js";
 import lumenSnapshotExtension from "./lumen-snapshot.js";
@@ -257,7 +256,6 @@ export class DefaultResourceLoader implements ResourceLoader {
 			lumenConfigDiscoveryExtension,
 			lumenRepoExtension,
 			lumenLspExtension,
-			lumenPresetExtension,
 			lumenWorktreeExtension,
 			lumenSnipExtension,
 			lumenCodeSearchExtension,
