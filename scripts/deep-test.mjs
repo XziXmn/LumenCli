@@ -504,78 +504,6 @@ test("memory: relevance scoring with threshold", async ({ SRC }) => {
 	assert(source.includes("score -= 2"), "should penalize very old entries");
 });
 
-// ============================================================================
-// Preset Tests
-// ============================================================================
-
-test("preset: parseModelRef parses provider/model", async ({ SRC }) => {
-	const mod = await import(pathToFileURL(`${SRC}/lumen-preset.ts`).href);
-	const ref = mod.parseModelRef("anthropic/claude-opus-4");
-	assert(ref !== undefined);
-	assertEq(ref.provider, "anthropic");
-	assertEq(ref.modelId, "claude-opus-4");
-	assertEq(ref.thinkingLevel, undefined);
-});
-
-test("preset: parseModelRef extracts thinking level", async ({ SRC }) => {
-	const mod = await import(pathToFileURL(`${SRC}/lumen-preset.ts`).href);
-	const ref = mod.parseModelRef("anthropic/claude-opus-4:high");
-	assert(ref !== undefined);
-	assertEq(ref.provider, "anthropic");
-	assertEq(ref.modelId, "claude-opus-4");
-	assertEq(ref.thinkingLevel, "high");
-});
-
-test("preset: parseModelRef ignores invalid thinking level", async ({ SRC }) => {
-	const mod = await import(pathToFileURL(`${SRC}/lumen-preset.ts`).href);
-	// Colon present but suffix is not a valid thinking level → treat as part of model id
-	const ref = mod.parseModelRef("openrouter/model:weird-suffix");
-	assert(ref !== undefined);
-	assertEq(ref.modelId, "model:weird-suffix");
-	assertEq(ref.thinkingLevel, undefined);
-});
-
-test("preset: parseModelRef rejects missing slash", async ({ SRC }) => {
-	const mod = await import(pathToFileURL(`${SRC}/lumen-preset.ts`).href);
-	const ref = mod.parseModelRef("no-slash");
-	assertEq(ref, undefined);
-});
-
-test("preset: routeModelForPayload picks vision on image input", async ({ SRC }) => {
-	const mod = await import(pathToFileURL(`${SRC}/lumen-preset.ts`).href);
-	const preset = {
-		primary: "x/y",
-		vision: "z/vision",
-	};
-	const payload = {
-		messages: [
-			{
-				role: "user",
-				content: [
-					{ type: "text", text: "look" },
-					{ type: "image", source: {} },
-				],
-			},
-		],
-	};
-	const override = mod.routeModelForPayload(payload, preset);
-	assertEq(override, "z/vision");
-});
-
-test("preset: routeModelForPayload returns undefined when no image", async ({ SRC }) => {
-	const mod = await import(pathToFileURL(`${SRC}/lumen-preset.ts`).href);
-	const preset = { primary: "x/y", vision: "z/vision" };
-	const payload = { messages: [{ role: "user", content: "plain text" }] };
-	const override = mod.routeModelForPayload(payload, preset);
-	assertEq(override, undefined);
-});
-
-test("preset: loadPresets returns empty when no file", async ({ SRC }) => {
-	const mod = await import(pathToFileURL(`${SRC}/lumen-preset.ts`).href);
-	const result = mod.loadPresets("/tmp/nonexistent-lumen-dir-xyz");
-	assert(result.presets);
-	assertEq(Object.keys(result.presets).length, 0);
-});
 
 // ============================================================================
 // Worktree Tests (structural — real git ops require a repo)
@@ -735,7 +663,7 @@ test("web: has caching with TTL", async ({ SRC }) => {
 	assert(source.includes("setCache"));
 });
 
-test("resource-loader: all 22 extensions registered", async ({ SRC }) => {
+test("resource-loader: all 21 extensions registered", async ({ SRC }) => {
 	const source = readFileSync(`${SRC}/resource-loader.ts`, "utf8");
 	const expected = [
 		"lumenWritingExtension",
@@ -755,7 +683,6 @@ test("resource-loader: all 22 extensions registered", async ({ SRC }) => {
 		"lumenConfigDiscoveryExtension",
 		"lumenRepoExtension",
 		"lumenLspExtension",
-		"lumenPresetExtension",
 		"lumenWorktreeExtension",
 		"lumenSnipExtension",
 		"lumenCodeSearchExtension",
@@ -780,7 +707,6 @@ test("all extensions: load without error", async ({ SRC }) => {
 		"lumen-patch.ts",
 		"lumen-plan-mode.ts",
 		"lumen-powershell.ts",
-		"lumen-preset.ts",
 		"lumen-repo.ts",
 		"lumen-secrets.ts",
 		"lumen-snapshot.ts",

@@ -54,7 +54,7 @@ function formatLabel(level: ThinkingLevel): string {
 
 /**
  * Public helper: get token estimate for a thinking level.
- * Other code (e.g. preset routing, status line) can use this to display
+ * Other code (e.g. status line) can use this to display
  * "estimated extra cost" hints.
  */
 export function thinkingTokenEstimate(level: ThinkingLevel): number {
