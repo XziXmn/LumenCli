@@ -16,7 +16,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentEvent, AgentMessage, AgentTool, AgentToolResult, StreamFn } from "@earendil-works/pi-agent-core";
+import type { AgentEvent, AgentMessage, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Agent } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
@@ -173,7 +173,6 @@ interface ExecuteSubagentOptions {
 	index: number;
 	cwd: string;
 	model: Model<any>;
-	streamFn: StreamFn;
 	getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
 	tools: AgentTool<any>[];
 	context?: string;
@@ -183,8 +182,7 @@ interface ExecuteSubagentOptions {
 }
 
 async function executeSubagent(options: ExecuteSubagentOptions): Promise<TaskResult> {
-	const { agentConfig, task, index, model, streamFn, getApiKey, tools, context, signal, eventBus, onProgress } =
-		options;
+	const { agentConfig, task, index, model, getApiKey, tools, context, signal, eventBus, onProgress } = options;
 	const startTime = Date.now();
 	const id = task.id;
 
@@ -214,7 +212,6 @@ async function executeSubagent(options: ExecuteSubagentOptions): Promise<TaskRes
 			model,
 			tools: allowedTools,
 		},
-		streamFn,
 		getApiKey,
 		toolExecution: "parallel",
 	});
@@ -545,8 +542,7 @@ export default function lumenTaskExtension(pi: ExtensionAPI): void {
 					index,
 					cwd,
 					model,
-					streamFn: ctx.model ? (undefined as any) : (undefined as any), // Will use Agent default
-					getApiKey: undefined, // Inherited from environment
+					getApiKey: (provider: string) => ctx.modelRegistry.getApiKeyForProvider(provider),
 					tools: allTools,
 					context: params.context,
 					signal,
