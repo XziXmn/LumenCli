@@ -1,5 +1,7 @@
 {
 	"quietStartup": true,
+	"defaultProvider": "local-mimo",
+	"defaultModel": "mimo-v2.5-pro",
 	"defaultThinkingLevel": "medium",
 	"compaction": {
 		"enabled": true

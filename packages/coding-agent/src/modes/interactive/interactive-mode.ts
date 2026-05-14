@@ -577,44 +577,52 @@ export class InteractiveMode {
 
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
-			const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
+			const logo = theme.bold(theme.fg("accent", `╭─ ${APP_NAME} ─╮`));
+			const version = theme.fg("dim", `v${this.version}`);
 
 			// Build startup instructions using keybinding hint helpers
 			const hint = (keybinding: AppKeybinding, description: string) => keyHint(keybinding, description);
 
 			const expandedInstructions = [
-				hint("app.interrupt", "to interrupt"),
-				hint("app.clear", "to clear"),
-				rawKeyHint(`${keyText("app.clear")} twice`, "to exit"),
-				hint("app.exit", "to exit (empty)"),
-				hint("app.suspend", "to suspend"),
-				keyHint("tui.editor.deleteToLineEnd", "to delete to end"),
-				hint("app.thinking.cycle", "to cycle thinking level"),
-				rawKeyHint(`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`, "to cycle models"),
-				hint("app.model.select", "to select model"),
-				hint("app.tools.expand", "to expand tools"),
-				hint("app.thinking.toggle", "to expand thinking"),
-				hint("app.editor.external", "for external editor"),
-				rawKeyHint("/", "for commands"),
-				rawKeyHint("!", "to run bash"),
-				rawKeyHint("!!", "to run bash (no context)"),
-				hint("app.message.followUp", "to queue follow-up"),
-				hint("app.message.dequeue", "to edit all queued messages"),
-				hint("app.clipboard.pasteImage", "to paste image"),
-				rawKeyHint("drop files", "to attach"),
+				theme.fg("muted", "─── 快捷键 ───"),
+				hint("app.interrupt", "中断生成"),
+				hint("app.clear", "清屏"),
+				rawKeyHint(`${keyText("app.clear")} 连按两次`, "退出"),
+				hint("app.exit", "退出（输入为空时）"),
+				"",
+				theme.fg("muted", "─── 模型 ───"),
+				hint("app.thinking.cycle", "切换思考等级"),
+				rawKeyHint(`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`, "切换模型"),
+				hint("app.model.select", "选择模型"),
+				hint("app.thinking.toggle", "展开/折叠思考内容"),
+				"",
+				theme.fg("muted", "─── 编辑 ───"),
+				hint("app.editor.external", "外部编辑器"),
+				hint("app.clipboard.pasteImage", "粘贴图片"),
+				rawKeyHint("拖拽文件", "附加文件"),
+				hint("app.message.followUp", "排队后续消息"),
+				"",
+				theme.fg("muted", "─── 工具 ───"),
+				rawKeyHint("/", "命令列表"),
+				rawKeyHint("!", "执行 shell 命令"),
+				rawKeyHint("!!", "执行 shell（不进入上下文）"),
+				hint("app.tools.expand", "展开工具输出"),
 			].join("\n");
 			const compactInstructions = [
-				hint("app.interrupt", "interrupt"),
-				rawKeyHint(`${keyText("app.clear")}/${keyText("app.exit")}`, "clear/exit"),
-				rawKeyHint("/", "commands"),
-				rawKeyHint("!", "bash"),
-				hint("app.tools.expand", "more"),
+				hint("app.interrupt", "中断"),
+				rawKeyHint("/", "命令"),
+				rawKeyHint("!", "shell"),
+				hint("app.thinking.cycle", "思考"),
+				hint("app.tools.expand", "展开"),
 			].join(theme.fg("muted", " · "));
-			const compactOnboarding = theme.fg("dim", `按 ${keyText("app.tools.expand")} 显示完整启动帮助和已加载资源。`);
-			const onboarding = theme.fg("dim", `Lumen 可以解释自身功能并查阅文档。问它如何使用或扩展 Lumen。`);
+			const compactOnboarding = theme.fg(
+				"dim",
+				`按 ${keyText("app.tools.expand")} 显示完整快捷键。输入 /help 查看所有命令。`,
+			);
+			const onboarding = theme.fg("dim", "直接输入问题开始对话。Lumen 可以读写文件、执行命令、搜索代码。");
 			this.builtInHeader = new ExpandableText(
-				() => `${logo}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
-				() => `${logo}\n${expandedInstructions}\n\n${onboarding}`,
+				() => `${logo} ${version}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
+				() => `${logo} ${version}\n\n${expandedInstructions}\n\n${onboarding}`,
 				this.getStartupExpansionState(),
 				1,
 				0,
@@ -4060,7 +4068,7 @@ export class InteractiveMode {
 		const allModels = this.session.modelRegistry.getAvailable();
 
 		if (allModels.length === 0) {
-			this.showStatus("No models available");
+			this.showStatus("没有可用的模型");
 			return;
 		}
 
@@ -4468,9 +4476,7 @@ export class InteractiveMode {
 	private showLoginProviderSelector(authType: "oauth" | "api_key"): void {
 		const providerOptions = this.getLoginProviderOptions(authType);
 		if (providerOptions.length === 0) {
-			this.showStatus(
-				authType === "oauth" ? "No subscription providers available." : "No API key providers available.",
-			);
+			this.showStatus(authType === "oauth" ? "没有可用的订阅 provider。" : "没有可用的 API key provider。");
 			return;
 		}
 

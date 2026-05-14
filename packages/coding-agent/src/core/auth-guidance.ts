@@ -5,21 +5,21 @@ const UNKNOWN_PROVIDER = "unknown";
 
 export function getProviderLoginHelp(): string {
 	return [
-		"Use /login to log into a provider via OAuth or API key. See:",
+		"使用 /login 登录 provider（OAuth 或 API key）。参考：",
 		`  ${join(getDocsPath(), "providers.md")}`,
 		`  ${join(getDocsPath(), "models.md")}`,
 	].join("\n");
 }
 
 export function formatNoModelsAvailableMessage(): string {
-	return `No models available. ${getProviderLoginHelp()}`;
+	return `没有可用的模型。${getProviderLoginHelp()}`;
 }
 
 export function formatNoModelSelectedMessage(): string {
-	return `No model selected.\n\n${getProviderLoginHelp()}\n\nThen use /model to select a model.`;
+	return `未选择模型。\n\n${getProviderLoginHelp()}\n\n然后使用 /model 选择模型。`;
 }
 
 export function formatNoApiKeyFoundMessage(provider: string): string {
-	const providerDisplay = provider === UNKNOWN_PROVIDER ? "the selected model" : provider;
-	return `No API key found for ${providerDisplay}.\n\n${getProviderLoginHelp()}`;
+	const providerDisplay = provider === UNKNOWN_PROVIDER ? "当前模型" : provider;
+	return `未找到 ${providerDisplay} 的 API key。\n\n${getProviderLoginHelp()}`;
 }

@@ -56,15 +56,8 @@ export default function lumenPlanModeExtension(pi: ExtensionAPI): void {
 		}
 	});
 
-	// Register Tab shortcut to toggle plan/build mode
-	pi.registerShortcut("tab", {
-		description: "切换 Plan/Build 模式",
-		handler: async () => {
-			planModeActive = !planModeActive;
-			const status = planModeActive ? "Plan" : "Build";
-			pi.sendUserMessage(`[Mode: ${status}] ${planModeActive ? "只输出计划，不执行工具。" : "正常执行模式。"}`);
-		},
-	});
+	// Note: Tab shortcut removed — conflicts with TUI input.tab (autocomplete).
+	// Use /plan-mode command instead, or Ctrl+Shift+P if we add it later.
 
 	// Inject plan mode instructions into system prompt
 	pi.on("before_agent_start", (event) => {

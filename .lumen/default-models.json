@@ -1,29 +1,28 @@
-{
-	"_comment": "Lumen 默认模型配置 - 复制到 ~/.lumen/agent/models.json 使用",
-	"models": [
-		{
-			"id": "mimo-v2.5-pro",
-			"name": "MiMo V2.5 Pro (本地)",
-			"provider": "local-mimo",
-			"api": "openai-completions",
-			"baseUrl": "http://192.168.31.160:8007/v1",
-			"apiKey": "not-needed",
-			"reasoning": true,
-			"input": ["text"],
-			"maxInput": 131072,
-			"maxTokens": 131072
-		},
-		{
-			"id": "mimo-v2.5",
-			"name": "MiMo V2.5 (本地多模态)",
-			"provider": "local-mimo",
-			"api": "openai-completions",
-			"baseUrl": "http://192.168.31.160:8007/v1",
-			"apiKey": "not-needed",
-			"reasoning": true,
-			"input": ["text", "image"],
-			"maxInput": 131072,
-			"maxTokens": 131072
-		}
-	]
-}
+[
+	{
+		"id": "mimo-v2.5-pro",
+		"name": "MiMo V2.5 Pro",
+		"provider": "local-mimo",
+		"api": "openai-completions",
+		"baseUrl": "http://192.168.31.160:8007/v1",
+		"apiKey": "sk-TQaosgtGZDZy0t78Wyf72hdsTCtLbOBEhLTFWHznSHvtMEEZ",
+		"reasoning": true,
+		"input": ["text"],
+		"contextWindow": 131072,
+		"maxTokens": 131072,
+		"cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+	},
+	{
+		"id": "mimo-v2.5",
+		"name": "MiMo V2.5 (多模态)",
+		"provider": "local-mimo",
+		"api": "openai-completions",
+		"baseUrl": "http://192.168.31.160:8007/v1",
+		"apiKey": "sk-TQaosgtGZDZy0t78Wyf72hdsTCtLbOBEhLTFWHznSHvtMEEZ",
+		"reasoning": true,
+		"input": ["text", "image"],
+		"contextWindow": 131072,
+		"maxTokens": 131072,
+		"cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+	}
+]
