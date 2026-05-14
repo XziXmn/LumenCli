@@ -22,12 +22,12 @@ const SETTINGS_SUBMENU_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
 };
 
 const THINKING_DESCRIPTIONS: Record<ThinkingLevel, string> = {
-	off: "No reasoning",
-	minimal: "Very brief reasoning (~1k tokens)",
-	low: "Light reasoning (~2k tokens)",
-	medium: "Moderate reasoning (~8k tokens)",
-	high: "Deep reasoning (~16k tokens)",
-	xhigh: "Maximum reasoning (~32k tokens)",
+	off: "不推理",
+	minimal: "极简推理（~1k tokens）",
+	low: "轻度推理（~2k tokens）",
+	medium: "中等推理（~8k tokens）",
+	high: "深度推理（~16k tokens）",
+	xhigh: "最大推理（~32k tokens）",
 };
 
 export interface SettingsConfig {
@@ -101,8 +101,8 @@ class WarningSettingsSubmenu extends Container {
 		const items: SettingItem[] = [
 			{
 				id: "anthropic-extra-usage",
-				label: "Anthropic extra usage",
-				description: "Warn when Anthropic subscription auth may use paid extra usage",
+				label: "Anthropic 额外用量",
+				description: "Anthropic 订阅认证可能产生付费额外用量时警告",
 				currentValue: (this.state.anthropicExtraUsage ?? true) ? "true" : "false",
 				values: ["true", "false"],
 			},
@@ -187,7 +187,7 @@ class SelectSubmenu extends Container {
 
 		// Hint
 		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.fg("dim", "  Enter to select · Esc to go back"), 0, 0));
+		this.addChild(new Text(theme.fg("dim", "  Enter 选择 · Esc 返回"), 0, 0));
 	}
 
 	handleInput(data: string): void {
@@ -225,64 +225,64 @@ export class SettingsSelectorComponent extends Container {
 			},
 			{
 				id: "follow-up-mode",
-				label: "Follow-up mode",
-				description: `${followUpKey} queues follow-up messages until agent stops. 'one-at-a-time': deliver one, wait for response. 'all': deliver all at once.`,
+				label: "后续消息模式",
+				description: `${followUpKey} 排队后续消息。'one-at-a-time': 逐条发送等回复。'all': 一次全发。`,
 				currentValue: config.followUpMode,
 				values: ["one-at-a-time", "all"],
 			},
 			{
 				id: "transport",
-				label: "Transport",
-				description: "Preferred transport for providers that support multiple transports",
+				label: "传输协议",
+				description: "支持多种传输的 provider 优先使用的协议",
 				currentValue: config.transport,
 				values: ["sse", "websocket", "websocket-cached", "auto"],
 			},
 			{
 				id: "hide-thinking",
-				label: "Hide thinking",
-				description: "Hide thinking blocks in assistant responses",
+				label: "隐藏思考",
+				description: "隐藏助手回复中的思考内容",
 				currentValue: config.hideThinkingBlock ? "true" : "false",
 				values: ["true", "false"],
 			},
 			{
 				id: "collapse-changelog",
-				label: "Collapse changelog",
-				description: "Show condensed changelog after updates",
+				label: "折叠更新日志",
+				description: "更新后显示精简版 changelog",
 				currentValue: config.collapseChangelog ? "true" : "false",
 				values: ["true", "false"],
 			},
 			{
 				id: "quiet-startup",
-				label: "Quiet startup",
-				description: "Disable verbose printing at startup",
+				label: "安静启动",
+				description: "启动时不显示详细信息",
 				currentValue: config.quietStartup ? "true" : "false",
 				values: ["true", "false"],
 			},
 			{
 				id: "install-telemetry",
-				label: "Install telemetry",
-				description: "Send an anonymous version/update ping after changelog-detected updates",
+				label: "安装遥测",
+				description: "更新后发送匿名版本 ping",
 				currentValue: config.enableInstallTelemetry ? "true" : "false",
 				values: ["true", "false"],
 			},
 			{
 				id: "double-escape-action",
-				label: "Double-escape action",
-				description: "Action when pressing Escape twice with empty editor",
+				label: "双击 Escape 动作",
+				description: "编辑器为空时连按两次 Escape 的行为",
 				currentValue: config.doubleEscapeAction,
 				values: ["tree", "fork", "none"],
 			},
 			{
 				id: "tree-filter-mode",
-				label: "Tree filter mode",
-				description: "Default filter when opening /tree",
+				label: "树过滤模式",
+				description: "打开 /tree 时的默认过滤",
 				currentValue: config.treeFilterMode,
 				values: ["default", "no-tools", "user-only", "labeled-only", "all"],
 			},
 			{
 				id: "warnings",
-				label: "Warnings",
-				description: "Enable or disable individual warnings",
+				label: "警告设置",
+				description: "启用或禁用各类警告",
 				currentValue: "configure",
 				submenu: (_currentValue, done) =>
 					new WarningSettingsSubmenu(
@@ -296,13 +296,13 @@ export class SettingsSelectorComponent extends Container {
 			},
 			{
 				id: "thinking",
-				label: "Thinking level",
-				description: "Reasoning depth for thinking-capable models",
+				label: "思考等级",
+				description: "支持思考的模型的推理深度",
 				currentValue: config.thinkingLevel,
 				submenu: (currentValue, done) =>
 					new SelectSubmenu(
-						"Thinking Level",
-						"Select reasoning depth for thinking-capable models",
+						"思考等级",
+						"选择推理深度（token 消耗越高，思考越深入）",
 						config.availableThinkingLevels.map((level) => ({
 							value: level,
 							label: level,
@@ -318,13 +318,13 @@ export class SettingsSelectorComponent extends Container {
 			},
 			{
 				id: "theme",
-				label: "Theme",
-				description: "Color theme for the interface",
+				label: "主题",
+				description: "界面颜色主题",
 				currentValue: config.currentTheme,
 				submenu: (currentValue, done) =>
 					new SelectSubmenu(
-						"Theme",
-						"Select color theme",
+						"主题",
+						"选择颜色主题",
 						config.availableThemes.map((t) => ({
 							value: t,
 							label: t,
@@ -352,15 +352,15 @@ export class SettingsSelectorComponent extends Container {
 			// Insert after autocompact
 			items.splice(1, 0, {
 				id: "show-images",
-				label: "Show images",
-				description: "Render images inline in terminal",
+				label: "显示图片",
+				description: "在终端内联渲染图片",
 				currentValue: config.showImages ? "true" : "false",
 				values: ["true", "false"],
 			});
 			items.splice(2, 0, {
 				id: "image-width-cells",
-				label: "Image width",
-				description: "Preferred inline image width in terminal cells",
+				label: "图片宽度",
+				description: "内联图片的终端字符宽度",
 				currentValue: String(config.imageWidthCells),
 				values: ["60", "80", "120"],
 			});
