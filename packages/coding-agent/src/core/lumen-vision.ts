@@ -2,14 +2,23 @@
  * Lumen Vision Tool
  *
  * 当主模型不支持图片时，LLM 可调用此工具让 vision 模型描述图片。
- * 图片数据由 agent-session 在检测到不支持时暂存到 _pendingVisionImages。
  *
- * [Provenance] 来源: 自研（独创的 vision sub-agent 工具化方案）
+ * [Provenance] 来源: 自研（独创的 vision tool 方案）
  */
 
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionContext, ToolRenderResultOptions } from "./extensions/types.js";
+
+// ============================================================================
+// Global image storage (set by agent-session, read by tool)
+// ============================================================================
+
+export let globalPendingImages: any[] | undefined;
+
+export function setPendingVisionImages(images: any[] | undefined): void {
+	globalPendingImages = images;
+}
 
 // ============================================================================
 // Schema
@@ -62,14 +71,7 @@ export default function lumenVisionExtension(pi: ExtensionAPI): void {
 			_onUpdate: undefined,
 			ctx: ExtensionContext,
 		) {
-			// Access pending images from the session
-			const session = (ctx as any).session ?? (ctx as any)._session;
-			// Try to get pendingVisionImages from the agent session
-			let pendingImages: any[] | undefined;
-
-			// The session object is accessible via the model registry's parent
-			// We need a different approach - store images globally
-			pendingImages = globalPendingImages;
+			const pendingImages = globalPendingImages;
 
 			if (!pendingImages || pendingImages.length === 0) {
 				return {
@@ -88,18 +90,6 @@ export default function lumenVisionExtension(pi: ExtensionAPI): void {
 				};
 			}
 
-			// Check auth
-			if (!ctx.modelRegistry.hasConfiguredAuth(visionModel)) {
-				return {
-					content: [{ type: "text" as const, text: `Vision 模型 ${visionModel.id} 没有配置认证。` }],
-					details: {
-						imageCount: pendingImages.length,
-						descriptionLength: 0,
-						model: visionModel.id,
-					} as VisionDetails,
-				};
-			}
-
 			// Build prompt based on detail level
 			let prompt = "请详细描述这些图片的内容。";
 			if (params.detail === "code") {
@@ -110,16 +100,18 @@ export default function lumenVisionExtension(pi: ExtensionAPI): void {
 
 			try {
 				const { streamSimple } = await import("@earendil-works/pi-ai");
+
+				// Get API key — try multiple methods
+				let apiKey: string | undefined;
+				let headers: Record<string, string> | undefined;
+
 				const authResult = await ctx.modelRegistry.getApiKeyAndHeaders(visionModel);
-				if (!authResult.ok) {
-					return {
-						content: [{ type: "text" as const, text: "获取 API key 失败。" }],
-						details: {
-							imageCount: pendingImages.length,
-							descriptionLength: 0,
-							model: visionModel.id,
-						} as VisionDetails,
-					};
+				if (authResult.ok) {
+					apiKey = (authResult as any).apiKey;
+					headers = (authResult as any).headers;
+				}
+				if (!apiKey) {
+					apiKey = await ctx.modelRegistry.getApiKeyForProvider(visionModel.provider);
 				}
 
 				const content = [{ type: "text" as const, text: prompt }, ...pendingImages];
@@ -130,7 +122,7 @@ export default function lumenVisionExtension(pi: ExtensionAPI): void {
 						messages: [{ role: "user" as const, content, timestamp: Date.now() }],
 						systemPrompt: "精确描述图片内容。代码截图完整转录。不要添加评论。",
 					},
-					{ apiKey: (authResult as any).apiKey, headers: (authResult as any).headers },
+					{ apiKey, headers },
 				);
 
 				let description = "";
@@ -167,7 +159,10 @@ export default function lumenVisionExtension(pi: ExtensionAPI): void {
 			} catch (err) {
 				return {
 					content: [
-						{ type: "text" as const, text: `图片描述失败: ${err instanceof Error ? err.message : String(err)}` },
+						{
+							type: "text" as const,
+							text: `图片描述失败: ${err instanceof Error ? err.message : String(err)}`,
+						},
 					],
 					details: {
 						imageCount: pendingImages.length,
@@ -197,11 +192,4 @@ export default function lumenVisionExtension(pi: ExtensionAPI): void {
 			);
 		},
 	});
-}
-
-// Global storage for pending vision images (set by agent-session, read by tool)
-export let globalPendingImages: any[] | undefined;
-
-export function setPendingVisionImages(images: any[] | undefined): void {
-	globalPendingImages = images;
 }
