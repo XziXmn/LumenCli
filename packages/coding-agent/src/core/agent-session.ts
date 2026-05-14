@@ -615,6 +615,28 @@ export class AgentSession {
 		return undefined;
 	}
 
+	/**
+	 * [Lumen] Find a vision-capable model to fall back to when the current model
+	 * doesn't support images. Looks for any model in the same provider that has
+	 * "image" in its input array, or any available model with image support.
+	 */
+	private _findVisionFallbackModel(): Model<any> | undefined {
+		const currentProvider = this.model?.provider;
+		const allModels = this._modelRegistry.getAll();
+
+		// First: try same provider
+		if (currentProvider) {
+			const sameProviderVision = allModels.find(
+				(m) => m.provider === currentProvider && m.input.includes("image") && m.id !== this.model?.id,
+			);
+			if (sameProviderVision) return sameProviderVision;
+		}
+
+		// Second: any available model with image support
+		const anyVision = this._modelRegistry.getAvailable().find((m) => m.input.includes("image"));
+		return anyVision;
+	}
+
 	private _replaceMessageInPlace(target: AgentMessage, replacement: AgentMessage): void {
 		// Agent-core stores the finalized message object in its state before emitting message_end.
 		// SessionManager persistence happens later in _processAgentEvent() with event.message.
@@ -1047,6 +1069,15 @@ export class AgentSession {
 			const lastAssistant = this._findLastAssistantMessage();
 			if (lastAssistant) {
 				await this._checkCompaction(lastAssistant, false);
+			}
+
+			// [Lumen] Auto-switch to vision model if current model doesn't support images
+			// but the user message contains images. Reads vision model from preset config.
+			if (currentImages && currentImages.length > 0 && this.model && !this.model.input.includes("image")) {
+				const visionModel = this._findVisionFallbackModel();
+				if (visionModel && this._modelRegistry.hasConfiguredAuth(visionModel)) {
+					await this.setModel(visionModel);
+				}
 			}
 
 			// Build messages array (custom message if any, then user message)
