@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
-import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
+import { CONFIG_DIR_NAME, getAgentDir, LEGACY_CONFIG_DIR_NAME } from "../config.js";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
@@ -160,7 +160,10 @@ export class FileSettingsStorage implements SettingsStorage {
 
 	constructor(cwd: string, agentDir: string) {
 		this.globalSettingsPath = join(agentDir, "settings.json");
-		this.projectSettingsPath = join(cwd, CONFIG_DIR_NAME, "settings.json");
+		// Prefer .lumen/settings.json, fall back to .pi/settings.json
+		const primaryProjectPath = join(cwd, CONFIG_DIR_NAME, "settings.json");
+		const legacyProjectPath = join(cwd, LEGACY_CONFIG_DIR_NAME, "settings.json");
+		this.projectSettingsPath = existsSync(primaryProjectPath) ? primaryProjectPath : legacyProjectPath;
 	}
 
 	private acquireLockSyncWithRetry(path: string): () => void {

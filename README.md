@@ -1,77 +1,102 @@
-<p align="center">
-  <a href="https://pi.dev">
-    <img alt="pi logo" src="https://pi.dev/logo-auto.svg" width="128">
-  </a>
-</p>
-<p align="center">
-  <a href="https://discord.com/invite/3cU7Bz4UPx"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
-</p>
-<p align="center">
-  <a href="https://pi.dev">pi.dev</a> domain graciously donated by
-  <br /><br />
-  <a href="https://exe.dev"><img src="packages/coding-agent/docs/images/exy.png" alt="Exy mascot" width="48" /><br />exe.dev</a>
-</p>
+# LumenCli
 
-> New issues and PRs from new contributors are auto-closed by default. Maintainers review auto-closed issues daily. See [CONTRIBUTING.md](CONTRIBUTING.md).
+个人深度定制的 [Pi](https://github.com/earendil-works/pi-mono) coding agent fork。
 
----
+## 特性
 
-# Pi Agent Harness Mono Repo
+- **中文优先**：系统提示词默认中文回复，slash 命令描述中文化
+- **本地推理**：默认配置指向本地 mimo 推理服务（mimo-v2.5-pro 编程特化 + mimo-v2.5 多模态）
+- **Pi 全功能继承**：所有 Pi 原生功能（tools、extensions、themes、skills）完整保留
+- **社区兼容**：`.pi/` 目录 fallback 读取，社区插件可直接使用
 
-This is the home of the pi agent harness project including our self extensible coding agent.
-
-* **[@earendil-works/pi-coding-agent](packages/coding-agent)**: Interactive coding agent CLI
-* **[@earendil-works/pi-agent-core](packages/agent)**: Agent runtime with tool calling and state management
-* **[@earendil-works/pi-ai](packages/ai)**: Unified multi-provider LLM API (OpenAI, Anthropic, Google, …)
-
-To learn more about pi:
-
-* [Visit pi.dev](https://pi.dev), the project website with demos
-* [Read the documentation](https://pi.dev/docs/latest), but you can also ask the agent to explain itself
-
-## Share your OSS coding agent sessions
-
-If you use pi or other coding agents for open source work, please share your sessions.
-
-Public OSS session data helps improve coding agents with real-world tasks, tool use, failures, and fixes instead of toy benchmarks.
-
-For the full explanation, see [this post on X](https://x.com/badlogicgames/status/2037811643774652911).
-
-To publish sessions, use [`badlogic/pi-share-hf`](https://github.com/badlogic/pi-share-hf). Read its README.md for setup instructions. All you need is a Hugging Face account, the Hugging Face CLI, and `pi-share-hf`.
-
-You can also watch [this video](https://x.com/badlogicgames/status/2041151967695634619), where I show how I publish my `pi-mono` sessions.
-
-I regularly publish my own `pi-mono` work sessions here:
-
-- [badlogicgames/pi-mono on Hugging Face](https://huggingface.co/datasets/badlogicgames/pi-mono)
-
-## All Packages
-
-| Package | Description |
-|---------|-------------|
-| **[@earendil-works/pi-ai](packages/ai)** | Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.) |
-| **[@earendil-works/pi-agent-core](packages/agent)** | Agent runtime with tool calling and state management |
-| **[@earendil-works/pi-coding-agent](packages/coding-agent)** | Interactive coding agent CLI |
-| **[@earendil-works/pi-tui](packages/tui)** | Terminal UI library with differential rendering |
-| **[@earendil-works/pi-web-ui](packages/web-ui)** | Web components for AI chat interfaces |
-
-For Slack/chat automation and workflows see [earendil-works/pi-chat](https://github.com/earendil-works/pi-chat).
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and [AGENTS.md](AGENTS.md) for project-specific rules (for both humans and agents).
-
-## Development
+## 安装
 
 ```bash
-npm install          # Install all dependencies
-npm run build        # Build all packages
-npm run check        # Lint, format, and type check
-./test.sh            # Run tests (skips LLM-dependent tests without API keys)
-./pi-test.sh         # Run pi from sources (can be run from any directory)
+npm install
+npm run build
+# 全局链接（可选）
+npm link -w packages/coding-agent
 ```
 
-> **Note:** `npm run check` requires `npm run build` to be run first. The web-ui package uses `tsc` which needs compiled `.d.ts` files from dependencies.
+## 使用
+
+```bash
+# 交互模式
+lumen
+
+# 带初始提示
+lumen "列出 src/ 下所有 .ts 文件"
+
+# 非交互模式
+lumen -p "重构这段代码"
+
+# 使用本地 mimo
+lumen --provider local-mimo --model mimo-v2.5-pro
+
+# 从源码运行（开发时）
+npx tsx packages/coding-agent/src/cli.ts
+```
+
+## 配置
+
+配置目录：`~/.lumen/agent/`（兼容读取 `~/.pi/agent/`）
+
+### 本地 mimo 推理服务
+
+将 `.lumen/default-models.json` 复制到 `~/.lumen/agent/models.json`：
+
+```bash
+mkdir -p ~/.lumen/agent
+cp .lumen/default-models.json ~/.lumen/agent/models.json
+```
+
+### 项目级配置
+
+项目根目录下 `.lumen/` 目录（兼容读取 `.pi/`）：
+- `extensions/` — 项目扩展
+- `prompts/` — 提示词模板
+- `skills/` — 技能文件
+- `themes/` — 主题
+- `settings.json` — 项目设置
+- `SYSTEM.md` — 自定义系统提示词
+- `APPEND_SYSTEM.md` — 追加系统提示词
+
+## 包结构
+
+| 包 | 说明 |
+|---|------|
+| [packages/coding-agent](packages/coding-agent) | 交互式编程 agent CLI |
+| [packages/agent](packages/agent) | Agent 运行时（tool calling、状态管理） |
+| [packages/ai](packages/ai) | 统一多 provider LLM API |
+| [packages/tui](packages/tui) | 终端 UI 库（差分渲染） |
+| [packages/web-ui](packages/web-ui) | Web AI 聊天组件 |
+
+## 开发
+
+```bash
+npm install          # 安装依赖
+npm run build        # 构建所有包
+npm run check        # Lint + 类型检查
+```
+
+## 合并上游
+
+```bash
+git fetch upstream
+git merge upstream/main
+# 冲突交给 AI 处理
+```
+
+## 路线图
+
+- [x] Phase 1：品牌与深度定制（pi → lumen，中文化，配置目录）
+- [ ] Phase 2：功能集成（写作工作流、增强记忆、orchestrator）
+- [ ] Phase 3：验证与清理
+- [ ] Cherry-pick oh-my-pi 功能（hashline、TTSR、plan mode、memory、commit tool）
+
+## 上游
+
+Fork from [earendil-works/pi-mono](https://github.com/earendil-works/pi-mono)
 
 ## License
 

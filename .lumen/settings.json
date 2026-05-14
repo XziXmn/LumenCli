@@ -1,0 +1,8 @@
+{
+	"quietStartup": true,
+	"defaultThinkingLevel": "medium",
+	"compaction": {
+		"enabled": true
+	},
+	"enableSkillCommands": true
+}

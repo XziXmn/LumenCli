@@ -12,6 +12,7 @@ import { formatDimensionNote, resizeImage } from "../../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
 import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
+import { formatHashLines } from "../lumen-hashline.js";
 import { resolveReadPath } from "./path-utils.js";
 import { getTextOutput, invalidArgText, replaceTabs, shortenPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
@@ -24,6 +25,11 @@ const readSchema = Type.Object({
 });
 
 export type ReadToolInput = Static<typeof readSchema>;
+
+/** Add compact line number prefixes to file content (hashline format: "42sr|code") */
+function addLineNumbers(content: string, startLine: number): string {
+	return formatHashLines(content, startLine);
+}
 
 export interface ReadToolDetails {
 	truncation?: TruncationResult;
@@ -326,6 +332,8 @@ export function createReadToolDefinition(
 									// No truncation and no remaining user-limited content.
 									outputText = truncation.content;
 								}
+								// Add line number prefixes for better edit targeting
+								outputText = addLineNumbers(outputText, startLineDisplay);
 								content = [{ type: "text", text: outputText }];
 							}
 

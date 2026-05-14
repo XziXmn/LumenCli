@@ -38,4 +38,9 @@ todo.md
 plans/
 .pi/hf-sessions/
 .pi/hf-sessions-backup/
+.lumen/hf-sessions/
+.lumen/hf-sessions-backup/
 collect.sh
+
+# Reference projects (local only, not committed)
+references/

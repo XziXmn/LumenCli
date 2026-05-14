@@ -199,19 +199,19 @@ export function printHelp(extensionFlags?: ExtensionFlag[]): void {
 					})
 					.join("\n")}\n`
 			: "";
-	console.log(`${chalk.bold(APP_NAME)} - AI coding assistant with read, bash, edit, write tools
+	console.log(`${chalk.bold(APP_NAME)} - AI 编程助手，支持 read、bash、edit、write 工具
 
 ${chalk.bold("Usage:")}
   ${APP_NAME} [options] [@files...] [messages...]
 
 ${chalk.bold("Commands:")}
-  ${APP_NAME} install <source> [-l]     Install extension source and add to settings
-  ${APP_NAME} remove <source> [-l]      Remove extension source from settings
-  ${APP_NAME} uninstall <source> [-l]   Alias for remove
-  ${APP_NAME} update [source|self|pi]   Update pi and installed extensions
-  ${APP_NAME} list                      List installed extensions from settings
-  ${APP_NAME} config                    Open TUI to enable/disable package resources
-  ${APP_NAME} <command> --help          Show help for install/remove/uninstall/update/list
+  ${APP_NAME} install <source> [-l]     安装扩展源并添加到设置
+  ${APP_NAME} remove <source> [-l]      从设置中移除扩展源
+  ${APP_NAME} uninstall <source> [-l]   remove 的别名
+  ${APP_NAME} update [source|self|lumen]   更新 lumen 和已安装的扩展
+  ${APP_NAME} list                      列出已安装的扩展
+  ${APP_NAME} config                    打开 TUI 启用/禁用包资源
+  ${APP_NAME} <command> --help          显示 install/remove/uninstall/update/list 的帮助
 
 ${chalk.bold("Options:")}
   --provider <name>              Provider name (default: google)
@@ -246,7 +246,7 @@ ${chalk.bold("Options:")}
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
   --verbose                      Force verbose startup (overrides quietStartup setting)
-  --offline                      Disable startup network operations (same as PI_OFFLINE=1)
+  --offline                      Disable startup network operations (same as LUMEN_OFFLINE=1)
   --help, -h                     Show this help
   --version, -v                  Show version number
 
@@ -338,9 +338,9 @@ ${chalk.bold("Environment Variables:")}
   ${ENV_AGENT_DIR.padEnd(32)} - Config directory (default: ~/${CONFIG_DIR_NAME}/agent)
   ${ENV_SESSION_DIR.padEnd(32)} - Session storage directory (overridden by --session-dir)
   PI_PACKAGE_DIR                   - Override package directory (for Nix/Guix store paths)
-  PI_OFFLINE                       - Disable startup network operations when set to 1/true/yes
-  PI_TELEMETRY                     - Override install telemetry when set to 1/true/yes or 0/false/no
-  PI_SHARE_VIEWER_URL              - Base URL for /share command (default: https://pi.dev/session/)
+  LUMEN_OFFLINE                    - Disable startup network operations when set to 1/true/yes
+  LUMEN_TELEMETRY                  - Override install telemetry when set to 1/true/yes or 0/false/no
+  LUMEN_SHARE_VIEWER_URL           - Base URL for /share command
 
 ${chalk.bold("Built-in Tool Names:")}
   read   - Read file contents

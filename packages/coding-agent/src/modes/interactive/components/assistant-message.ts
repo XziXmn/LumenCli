@@ -7,11 +7,44 @@ const OSC133_ZONE_END = "\x1b]133;B\x07";
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
 
 /**
- * Component that renders a complete assistant message
+ * Thinking display mode:
+ * - "full": show complete thinking content (italic, colored)
+ * - "summary": show one-line summary with char count (collapsible)
+ * - "hidden": show static "Thinking..." label
+ *
+ * [Lumen customization] Added "summary" mode for opencode-style collapsible reasoning.
+ */
+export type ThinkingDisplayMode = "full" | "summary" | "hidden";
+
+/**
+ * Format a thinking summary line.
+ * Example: "▸ Reasoning (4,521 chars) — click to expand"
+ */
+function formatThinkingSummary(thinkingText: string): string {
+	const chars = thinkingText.length;
+	const lines = thinkingText.split("\n").length;
+	const charsFormatted = chars >= 1000 ? `${(chars / 1000).toFixed(1)}k` : `${chars}`;
+	// Extract first meaningful line as preview
+	const firstLine = thinkingText
+		.split("\n")
+		.find((l) => l.trim().length > 10)
+		?.trim()
+		.slice(0, 60);
+	const preview = firstLine ? ` — ${firstLine}${firstLine.length >= 60 ? "..." : ""}` : "";
+	return `\u25B8 Reasoning (${charsFormatted} chars, ${lines} lines)${preview}`;
+}
+
+/**
+ * Component that renders a complete assistant message.
+ *
+ * [Lumen customization] Enhanced thinking display:
+ * - Three modes: full / summary / hidden
+ * - Summary mode shows a one-line collapsible indicator with char count
+ * - Supports toggling via setThinkingDisplayMode()
  */
 export class AssistantMessageComponent extends Container {
 	private contentContainer: Container;
-	private hideThinkingBlock: boolean;
+	private thinkingMode: ThinkingDisplayMode;
 	private markdownTheme: MarkdownTheme;
 	private hiddenThinkingLabel: string;
 	private lastMessage?: AssistantMessage;
@@ -25,7 +58,8 @@ export class AssistantMessageComponent extends Container {
 	) {
 		super();
 
-		this.hideThinkingBlock = hideThinkingBlock;
+		// Map legacy boolean to new mode
+		this.thinkingMode = hideThinkingBlock ? "hidden" : "summary";
 		this.markdownTheme = markdownTheme;
 		this.hiddenThinkingLabel = hiddenThinkingLabel;
 
@@ -45,8 +79,35 @@ export class AssistantMessageComponent extends Container {
 		}
 	}
 
+	/** Legacy API: maps boolean to mode. */
 	setHideThinkingBlock(hide: boolean): void {
-		this.hideThinkingBlock = hide;
+		this.thinkingMode = hide ? "hidden" : "summary";
+		if (this.lastMessage) {
+			this.updateContent(this.lastMessage);
+		}
+	}
+
+	/** New API: set thinking display mode directly. */
+	setThinkingDisplayMode(mode: ThinkingDisplayMode): void {
+		this.thinkingMode = mode;
+		if (this.lastMessage) {
+			this.updateContent(this.lastMessage);
+		}
+	}
+
+	/** Get current thinking display mode. */
+	getThinkingDisplayMode(): ThinkingDisplayMode {
+		return this.thinkingMode;
+	}
+
+	/** Toggle between summary and full. */
+	toggleThinkingExpansion(): void {
+		if (this.thinkingMode === "summary") {
+			this.thinkingMode = "full";
+		} else if (this.thinkingMode === "full") {
+			this.thinkingMode = "summary";
+		}
+		// "hidden" stays hidden (user must explicitly change)
 		if (this.lastMessage) {
 			this.updateContent(this.lastMessage);
 		}
@@ -98,25 +159,34 @@ export class AssistantMessageComponent extends Container {
 					.slice(i + 1)
 					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
 
-				if (this.hideThinkingBlock) {
-					// Show static thinking label when hidden
-					this.contentContainer.addChild(
-						new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), 1, 0),
-					);
-					if (hasVisibleContentAfter) {
-						this.contentContainer.addChild(new Spacer(1));
+				switch (this.thinkingMode) {
+					case "hidden": {
+						// Show static thinking label
+						this.contentContainer.addChild(
+							new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), 1, 0),
+						);
+						break;
 					}
-				} else {
-					// Thinking traces in thinkingText color, italic
-					this.contentContainer.addChild(
-						new Markdown(content.thinking.trim(), 1, 0, this.markdownTheme, {
-							color: (text: string) => theme.fg("thinkingText", text),
-							italic: true,
-						}),
-					);
-					if (hasVisibleContentAfter) {
-						this.contentContainer.addChild(new Spacer(1));
+					case "summary": {
+						// Show collapsible one-liner with char count and preview
+						const summary = formatThinkingSummary(content.thinking);
+						this.contentContainer.addChild(new Text(theme.fg("thinkingText", theme.italic(summary)), 1, 0));
+						break;
 					}
+					case "full": {
+						// Full thinking traces in thinkingText color, italic
+						this.contentContainer.addChild(
+							new Markdown(content.thinking.trim(), 1, 0, this.markdownTheme, {
+								color: (text: string) => theme.fg("thinkingText", text),
+								italic: true,
+							}),
+						);
+						break;
+					}
+				}
+
+				if (hasVisibleContentAfter) {
+					this.contentContainer.addChild(new Spacer(1));
 				}
 			}
 		}
