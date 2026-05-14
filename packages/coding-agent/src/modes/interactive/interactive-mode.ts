@@ -107,7 +107,7 @@ import { EarendilAnnouncementComponent } from "./components/earendil-announcemen
 import { ExtensionEditorComponent } from "./components/extension-editor.js";
 import { ExtensionInputComponent } from "./components/extension-input.js";
 import { ExtensionSelectorComponent } from "./components/extension-selector.js";
-import { FooterComponent } from "./components/footer.js";
+import { FooterComponent, notifyToolEnd, notifyToolStart } from "./components/footer.js";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
 import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
@@ -2774,6 +2774,14 @@ export class InteractiveMode {
 				break;
 
 			case "tool_execution_start": {
+				// Notify footer HUD of tool activity
+				const toolTarget =
+					(event.args as { path?: string; file?: string; command?: string })?.path ??
+					(event.args as { file?: string })?.file ??
+					(event.args as { command?: string })?.command?.slice(0, 40) ??
+					undefined;
+				notifyToolStart(event.toolName, toolTarget);
+
 				let component = this.pendingTools.get(event.toolCallId);
 				if (!component) {
 					component = new ToolExecutionComponent(
@@ -2807,6 +2815,7 @@ export class InteractiveMode {
 			}
 
 			case "tool_execution_end": {
+				notifyToolEnd(event.toolName);
 				const component = this.pendingTools.get(event.toolCallId);
 				if (component) {
 					component.updateResult({ ...event.result, isError: event.isError });
