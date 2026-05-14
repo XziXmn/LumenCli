@@ -31,6 +31,7 @@ import {
 	isContextOverflow,
 	modelsAreEqual,
 	resetApiProviders,
+	streamSimple,
 } from "@earendil-works/pi-ai";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { stripFrontmatter } from "../utils/frontmatter.js";
@@ -637,6 +638,52 @@ export class AgentSession {
 		return anyVision;
 	}
 
+	/**
+	 * [Lumen] Use a vision model to describe images, returning text descriptions.
+	 * This runs a single-turn request to the vision model asking it to describe the images.
+	 */
+	private async _describeImagesWithVisionModel(
+		images: ImageContent[],
+		visionModel: Model<any>,
+	): Promise<string | undefined> {
+		try {
+			const authResult = await this._modelRegistry.getApiKeyAndHeaders(visionModel);
+			if (!authResult.ok || !authResult.apiKey) return undefined;
+
+			// Build a simple request to describe the images
+			const content: (TextContent | ImageContent)[] = [
+				{
+					type: "text",
+					text: "请详细描述这些图片的内容。如果是代码截图，请完整转录代码。如果是界面截图，描述布局和文字内容。",
+				},
+				...images,
+			];
+
+			// Use the streaming API to get a response from the vision model
+			const stream = streamSimple(
+				visionModel,
+				{
+					messages: [{ role: "user" as const, content, timestamp: Date.now() }],
+					systemPrompt: "你是一个图片描述助手。精确描述图片内容，不要添加评论。如果是代码截图，完整转录代码。",
+				},
+				{ apiKey: authResult.apiKey, headers: authResult.headers },
+			);
+
+			let description = "";
+			for await (const event of stream) {
+				if (event.type === "text_delta") {
+					description += event.delta;
+				} else if (event.type === "done" || event.type === "error") {
+					break;
+				}
+			}
+
+			return description.trim() || undefined;
+		} catch {
+			return undefined;
+		}
+	}
+
 	private _replaceMessageInPlace(target: AgentMessage, replacement: AgentMessage): void {
 		// Agent-core stores the finalized message object in its state before emitting message_end.
 		// SessionManager persistence happens later in _processAgentEvent() with event.message.
@@ -1071,12 +1118,18 @@ export class AgentSession {
 				await this._checkCompaction(lastAssistant, false);
 			}
 
-			// [Lumen] Auto-switch to vision model if current model doesn't support images
-			// but the user message contains images. Reads vision model from preset config.
+			// [Lumen] If current model doesn't support images but user sent images,
+			// use a vision-capable model as a sub-agent to describe the images,
+			// then replace images with text descriptions for the main model.
 			if (currentImages && currentImages.length > 0 && this.model && !this.model.input.includes("image")) {
 				const visionModel = this._findVisionFallbackModel();
 				if (visionModel && this._modelRegistry.hasConfiguredAuth(visionModel)) {
-					await this.setModel(visionModel);
+					const descriptions = await this._describeImagesWithVisionModel(currentImages, visionModel);
+					if (descriptions) {
+						// Replace images with text descriptions
+						currentImages = undefined;
+						expandedText = `${expandedText}\n\n[图片描述]\n${descriptions}`;
+					}
 				}
 			}
 
