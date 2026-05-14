@@ -150,7 +150,7 @@ export interface BashToolOptions {
 	spawnHook?: BashSpawnHook;
 }
 
-const BASH_PREVIEW_LINES = 5;
+const BASH_PREVIEW_LINES = 2;
 const BASH_UPDATE_THROTTLE_MS = 100;
 
 type BashRenderState = {

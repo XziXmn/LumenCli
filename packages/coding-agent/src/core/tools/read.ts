@@ -185,6 +185,14 @@ function formatReadResult(
 
 	const rawPath = str(args?.file_path ?? args?.path);
 	const output = getTextOutput(result, showImages);
+
+	// [Lumen] In collapsed mode, show minimal info (just line count).
+	// User can press Ctrl+O to expand and see content.
+	if (!options.expanded && !isError) {
+		const lineCount = output.split("\n").length;
+		return theme.fg("dim", `(${lineCount} 行)`);
+	}
+
 	const lang = rawPath ? getLanguageFromPath(rawPath) : undefined;
 	const renderedLines = lang ? highlightCode(replaceTabs(output), lang) : output.split("\n");
 	const lines = trimTrailingEmptyLines(renderedLines);
