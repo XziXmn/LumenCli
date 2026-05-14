@@ -1,6 +1,6 @@
 ---
-description: Finish the current task end-to-end with changelog, commit, and push
-argument-hint: "[instructions]"
+description: 完成当前任务（changelog + commit + push 一条龙）
+argument-hint: "[指示]"
 ---
 Wrap it.
 

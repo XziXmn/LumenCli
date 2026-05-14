@@ -1,5 +1,5 @@
 ---
-description: Analyze GitHub issues (bugs or feature requests)
+description: 分析 GitHub issue（bug 或功能请求）
 argument-hint: "<issue>"
 ---
 Analyze GitHub issue(s): $ARGUMENTS

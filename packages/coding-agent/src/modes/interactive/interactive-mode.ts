@@ -577,8 +577,9 @@ export class InteractiveMode {
 
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
+			const lumenVersion = "0.1.0"; // Lumen 自己的版本号
 			const logo = theme.bold(theme.fg("accent", `╭─ ${APP_NAME} ─╮`));
-			const version = theme.fg("dim", `v${this.version}`);
+			const version = theme.fg("dim", `v${lumenVersion}`);
 
 			// Build startup instructions using keybinding hint helpers
 			const hint = (keybinding: AppKeybinding, description: string) => keyHint(keybinding, description);
@@ -1265,7 +1266,9 @@ export class InteractiveMode {
 		force?: boolean;
 		showDiagnosticsWhenQuiet?: boolean;
 	}): void {
-		const showListing = options?.force || this.options.verbose || !this.settingsManager.getQuietStartup();
+		// [Lumen] Only show resource listing when explicitly forced (e.g., /reload).
+		// Normal startup skips the [Context]/[Extensions]/[Prompts] sections — too noisy.
+		const showListing = options?.force === true;
 		const showDiagnostics = showListing || options?.showDiagnosticsWhenQuiet === true;
 		if (!showListing && !showDiagnostics) {
 			return;

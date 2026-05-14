@@ -1,5 +1,5 @@
 ---
-description: Audit changelog entries before release
+description: 审计 changelog 条目（发布前检查）
 ---
 Audit changelog entries for all commits since the last release.
 

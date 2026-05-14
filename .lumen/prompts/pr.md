@@ -1,5 +1,5 @@
 ---
-description: Review PRs from URLs with structured issue and code analysis
+description: 审查 PR（结构化代码分析）
 argument-hint: "<PR-URL>"
 ---
 You are given one or more GitHub PR URLs: $@

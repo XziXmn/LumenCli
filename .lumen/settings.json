@@ -1,5 +1,5 @@
 {
-	"quietStartup": true,
+	"quietStartup": false,
 	"defaultProvider": "local-mimo",
 	"defaultModel": "mimo-v2.5-pro",
 	"defaultThinkingLevel": "medium",

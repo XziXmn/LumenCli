@@ -239,9 +239,7 @@ export class SettingsList implements Component {
 		lines.push(
 			truncateToWidth(
 				this.theme.hint(
-					this.searchEnabled
-						? "  Type to search · Enter/Space to change · Esc to cancel"
-						: "  Enter/Space to change · Esc to cancel",
+					this.searchEnabled ? "  输入搜索 · Enter/Space 切换 · Esc 取消" : "  Enter/Space 切换 · Esc 取消",
 				),
 				width,
 			),
