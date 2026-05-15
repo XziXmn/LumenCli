@@ -13,7 +13,7 @@ export interface VisualTruncateResult {
 }
 
 /**
- * Truncate text to a maximum number of visual lines (from the end).
+ * Truncate text to a maximum number of visual lines.
  * This accounts for line wrapping based on terminal width.
  *
  * @param text - The text content (may contain newlines)
@@ -22,6 +22,8 @@ export interface VisualTruncateResult {
  * @param paddingX - Horizontal padding for Text component (default 0).
  *                   Use 0 when result will be placed in a Box (Box adds its own padding).
  *                   Use 1 when result will be placed in a plain Container.
+ * @param from - Which side to keep when truncating: "tail" (default, for streaming logs)
+ *               or "head" (for sorted/ranked results). [Lumen extension]
  * @returns The truncated visual lines and count of skipped lines
  */
 export function truncateToVisualLines(
@@ -29,6 +31,7 @@ export function truncateToVisualLines(
 	maxVisualLines: number,
 	width: number,
 	paddingX: number = 0,
+	from: "head" | "tail" = "tail",
 ): VisualTruncateResult {
 	if (!text) {
 		return { visualLines: [], skippedCount: 0 };
@@ -42,8 +45,8 @@ export function truncateToVisualLines(
 		return { visualLines: allVisualLines, skippedCount: 0 };
 	}
 
-	// Take the last N visual lines
-	const truncatedLines = allVisualLines.slice(-maxVisualLines);
+	const truncatedLines =
+		from === "head" ? allVisualLines.slice(0, maxVisualLines) : allVisualLines.slice(-maxVisualLines);
 	const skippedCount = allVisualLines.length - maxVisualLines;
 
 	return { visualLines: truncatedLines, skippedCount };

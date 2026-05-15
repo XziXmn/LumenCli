@@ -1049,7 +1049,6 @@ export class AgentSession {
 				await this._checkCompaction(lastAssistant, false);
 			}
 
-
 			// Build messages array (custom message if any, then user message)
 			messages = [];
 

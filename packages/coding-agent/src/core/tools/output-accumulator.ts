@@ -143,6 +143,11 @@ export class OutputAccumulator {
 		return this.currentLineBytes;
 	}
 
+	/** [Lumen] expose total line count for live progress display. */
+	getTotalLines(): number {
+		return this.totalLines;
+	}
+
 	private appendDecodedText(text: string): void {
 		if (text.length === 0) {
 			return;

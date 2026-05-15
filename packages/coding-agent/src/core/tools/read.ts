@@ -6,7 +6,7 @@ import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
 import { type Static, Type } from "typebox";
 import { getReadmePath } from "../../config.js";
-import { keyHint, keyText } from "../../modes/interactive/components/keybinding-hints.js";
+import { keyText } from "../../modes/interactive/components/keybinding-hints.js";
 import { getLanguageFromPath, highlightCode, type Theme } from "../../modes/interactive/theme/theme.js";
 import { formatDimensionNote, resizeImage } from "../../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
@@ -176,33 +176,23 @@ function formatReadResult(
 	options: ToolRenderResultOptions,
 	theme: Theme,
 	showImages: boolean,
-	cwd: string,
+	_cwd: string,
 	isError: boolean,
 ): string {
-	if (!options.expanded && !isError && getCompactReadClassification(args, cwd)) {
+	// [Lumen] Collapsed mode: 不显示折叠了多少行，只在错误时显示文件信息
+	if (!options.expanded && !isError) {
 		return "";
 	}
 
 	const rawPath = str(args?.file_path ?? args?.path);
 	const output = getTextOutput(result, showImages);
 
-	// [Lumen] In collapsed mode, show minimal info (just line count).
-	// User can press Ctrl+O to expand and see content.
-	if (!options.expanded && !isError) {
-		const lineCount = output.split("\n").length;
-		return theme.fg("dim", `(${lineCount} 行)`);
-	}
-
 	const lang = rawPath ? getLanguageFromPath(rawPath) : undefined;
 	const renderedLines = lang ? highlightCode(replaceTabs(output), lang) : output.split("\n");
 	const lines = trimTrailingEmptyLines(renderedLines);
 	const maxLines = options.expanded ? lines.length : 10;
 	const displayLines = lines.slice(0, maxLines);
-	const remaining = lines.length - maxLines;
 	let text = `\n${displayLines.map((line) => (lang ? replaceTabs(line) : theme.fg("toolOutput", replaceTabs(line)))).join("\n")}`;
-	if (remaining > 0) {
-		text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand", "to expand")})`;
-	}
 
 	const truncation = result.details?.truncation;
 	if (truncation?.truncated) {
