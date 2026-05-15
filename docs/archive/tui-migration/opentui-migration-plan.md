@@ -138,6 +138,64 @@ references/opencode/packages/opencode/src/cli/cmd/tui/
 
 ## 下一步
 
-1. 先验证 `@opentui/core` 能否在当前项目中安装和运行
-2. 如果 Zig 依赖是阻碍，考虑使用 OpenTUI 的预编译包
-3. 如果 OpenTUI 不可行，退回到 Ink (React) 方案
+1. ~~先验证 `@opentui/core` 能否在当前项目中安装和运行~~
+2. ~~如果 Zig 依赖是阻碍，考虑使用 OpenTUI 的预编译包~~
+3. ~~如果 OpenTUI 不可行，退回到 Ink (React) 方案~~
+
+## 实施进度
+
+### Phase 1: 基础设施 — 已完成骨架
+
+**已创建文件：**
+- `packages/coding-agent/src/modes/tui/index.ts` — 模块入口
+- `packages/coding-agent/src/modes/tui/tui-mode.ts` — TUI mode 启动器
+- `packages/coding-agent/src/modes/tui/app.tsx` — SolidJS 根组件
+- `packages/coding-agent/src/modes/tui/adapter/types.ts` — 状态类型定义
+- `packages/coding-agent/src/modes/tui/adapter/session-store.ts` — AgentSession → SolidJS store 桥接
+- `packages/coding-agent/src/modes/tui/adapter/index.ts` — adapter 导出
+- `packages/coding-agent/src/modes/tui/context/session.tsx` — Session context provider
+- `packages/coding-agent/src/modes/tui/context/theme.tsx` — Theme context provider
+- `packages/coding-agent/src/modes/tui/routes/session/index.tsx` — 会话主视图
+- `packages/coding-agent/src/modes/tui/routes/session/footer.tsx` — 底部状态栏
+- `packages/coding-agent/src/modes/tui/component/message-bubble.tsx` — 消息气泡
+- `packages/coding-agent/src/modes/tui/component/tool-call.tsx` — 工具调用显示
+- `packages/coding-agent/src/modes/tui/component/thinking.tsx` — Thinking 指示器
+
+**已修改文件：**
+- `packages/coding-agent/package.json` — 添加 OpenTUI/SolidJS 依赖
+- `packages/coding-agent/tsconfig.build.json` — 添加 JSX 配置
+- `packages/coding-agent/src/cli/args.ts` — 添加 `--tui` flag
+- `packages/coding-agent/src/main.ts` — 添加 TUI mode 分发
+- `packages/coding-agent/src/modes/index.ts` — 导出 TUI mode
+
+**使用方式：** `lumen --tui` 启动新界面
+
+**待完成：**
+- [ ] `bun install` 安装新依赖
+- [ ] 验证 `@opentui/solid` 的 JSX 类型是否正确（需要 Bun 环境）
+- [x] 添加输入框组件（prompt input）— `component/prompt-input.tsx`
+- [ ] 添加 keymap 系统（Ctrl+C 退出、Escape 取消等）
+- [x] 添加滚动支持 — `<scrollbox>` with stickyScroll
+- [x] 添加 spinner 动画 — `component/spinner.tsx` + tool-call 中使用
+- [x] 添加 welcome 空状态 — `component/welcome.tsx`
+- [ ] 测试 Bun 下的完整渲染流程
+
+### Phase 2: 核心 UI — 已完成骨架
+
+**新增文件：**
+- `component/prompt-input.tsx` — 多行输入框（使用 OpenTUI `<textarea>`）
+- `component/spinner.tsx` — Braille spinner 动画
+- `component/welcome.tsx` — 空状态欢迎页
+
+**改进：**
+- Session 视图使用 `<scrollbox>` 实现自动滚动到底部
+- Tool call 组件使用 `<spinner>` 替代静态图标
+- App 布局：messages(scrollbox) + input + footer 三段式
+
+**下一步（Phase 3）：**
+- [ ] 运行 `bun install` 安装依赖并验证
+- [ ] 用 `bun run src/cli.ts --tui` 测试渲染
+- [ ] 修复类型错误和运行时问题
+- [ ] 添加 Markdown 渲染（使用 OpenTUI 的 `MarkdownRenderable`）
+- [ ] 添加 keymap 系统（model selector、session list 等对话框）
+- [ ] 从 OpenCode 复制更多组件（border、dialog 等）

@@ -1,19 +1,22 @@
 /**
- * Lumen Todo Tool
+ * Lumen Todo Tool (Session-Level)
  *
  * 结构化任务跟踪。LLM 可通过 todo tool 管理分阶段任务列表。
  * 支持 init/start/done/drop/rm/append/note 操作。
- * 状态持久化到 `.lumen/todo.json`，session 内通过 tool result details 追踪。
+ *
+ * 状态仅存内存，session 结束即清空。
+ * 用户可通过 /todo-export 导出为 markdown，/todo-import 从文件导入。
+ *
+ * 设计对齐：Claude Code / opencode 均为会话级 todo。
  *
  * [Provenance] 来源: oh-my-pi src/tools/todo-write.ts + pi examples/extensions/todo.ts
  * [Provenance] 移植方式: 参考重写，适配 extension API
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, resolve } from "node:path";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { CONFIG_DIR_NAME } from "../config.js";
 import type { ExtensionAPI, ExtensionContext, ToolRenderResultOptions } from "./extensions/types.js";
 
 // ============================================================================
@@ -95,6 +98,13 @@ const TodoParams = Type.Object(
 	},
 	{ description: "Apply ordered todo operations to the task list" },
 );
+
+// ============================================================================
+// Session-Level State
+// ============================================================================
+
+/** In-memory state — cleared when session ends. */
+let sessionPhases: TodoPhase[] = [];
 
 // ============================================================================
 // State Helpers
@@ -285,29 +295,81 @@ function applyOps(phases: TodoPhase[], ops: TodoOpEntry[]): { phases: TodoPhase[
 }
 
 // ============================================================================
-// Persistence
+// Export / Import (Markdown format)
 // ============================================================================
 
-function getTodoPath(cwd: string): string {
-	return join(cwd, CONFIG_DIR_NAME, "todo.json");
+function phasesToMarkdown(phases: TodoPhase[]): string {
+	const lines: string[] = ["# Todo"];
+	lines.push("");
+
+	for (const phase of phases) {
+		lines.push(`## ${phase.name}`);
+		lines.push("");
+		for (const task of phase.tasks) {
+			const checked = task.status === "completed" ? "x" : " ";
+			const prefix = task.status === "abandoned" ? "~~" : task.status === "in_progress" ? "**" : "";
+			const suffix = task.status === "abandoned" ? "~~" : task.status === "in_progress" ? "** (in progress)" : "";
+			lines.push(`- [${checked}] ${prefix}${task.content}${suffix}`);
+			if (task.notes && task.notes.length > 0) {
+				for (const note of task.notes) {
+					lines.push(`  - ${note}`);
+				}
+			}
+		}
+		lines.push("");
+	}
+
+	return lines.join("\n");
 }
 
-function loadTodoPhases(cwd: string): TodoPhase[] {
-	const todoPath = getTodoPath(cwd);
-	if (!existsSync(todoPath)) return [];
-	try {
-		const content = readFileSync(todoPath, "utf8");
-		const data = JSON.parse(content);
-		if (Array.isArray(data.phases)) return data.phases as TodoPhase[];
-	} catch {}
-	return [];
-}
+function markdownToPhases(content: string): TodoPhase[] {
+	const phases: TodoPhase[] = [];
+	let currentPhase: TodoPhase | undefined;
 
-function saveTodoPhases(cwd: string, phases: TodoPhase[]): void {
-	const todoPath = getTodoPath(cwd);
-	const dir = dirname(todoPath);
-	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-	writeFileSync(todoPath, JSON.stringify({ phases }, null, 2), "utf8");
+	for (const line of content.split(/\r?\n/)) {
+		const h2Match = line.match(/^##\s+(.+)/);
+		if (h2Match) {
+			currentPhase = { name: h2Match[1].trim(), tasks: [] };
+			phases.push(currentPhase);
+			continue;
+		}
+
+		if (!currentPhase) continue;
+
+		const taskMatch = line.match(/^-\s+\[([ xX])\]\s+(.+)/);
+		if (taskMatch) {
+			const isCompleted = taskMatch[1].toLowerCase() === "x";
+			let taskContent = taskMatch[2].trim();
+			let status: TodoStatus = isCompleted ? "completed" : "pending";
+
+			// Detect abandoned (strikethrough)
+			if (taskContent.startsWith("~~") && taskContent.endsWith("~~")) {
+				taskContent = taskContent.slice(2, -2);
+				status = "abandoned";
+			}
+			// Detect in_progress (bold + suffix)
+			if (taskContent.startsWith("**")) {
+				taskContent = taskContent
+					.replace(/^\*\*/, "")
+					.replace(/\*\*\s*\(in progress\)$/, "")
+					.trim();
+				if (!isCompleted) status = "in_progress";
+			}
+
+			currentPhase.tasks.push({ content: taskContent, status });
+			continue;
+		}
+
+		// Sub-bullet = note on last task
+		const noteMatch = line.match(/^\s+-\s+(.+)/);
+		if (noteMatch && currentPhase.tasks.length > 0) {
+			const lastTask = currentPhase.tasks[currentPhase.tasks.length - 1];
+			lastTask.notes = lastTask.notes ?? [];
+			lastTask.notes.push(noteMatch[1].trim());
+		}
+	}
+
+	return phases;
 }
 
 // ============================================================================
@@ -354,6 +416,11 @@ function formatSummary(phases: TodoPhase[], errors: string[]): string {
 // ============================================================================
 
 export default function lumenTodoExtension(pi: ExtensionAPI): void {
+	// Reset state on session start
+	pi.on("session_start", () => {
+		sessionPhases = [];
+	});
+
 	// Register the todo tool for LLM
 	pi.registerTool({
 		name: "todo",
@@ -361,12 +428,14 @@ export default function lumenTodoExtension(pi: ExtensionAPI): void {
 		description:
 			"Manage a structured, phased task list. Use to track progress on multi-step work. " +
 			"Operations: init (create phased list), start (mark task in_progress), done (mark completed), " +
-			"drop (mark abandoned), rm (remove task/phase), append (add tasks to phase), note (attach note to task).",
+			"drop (mark abandoned), rm (remove task/phase), append (add tasks to phase), note (attach note to task). " +
+			"State is session-level only (cleared on exit). Use /todo-export to save.",
 		promptSnippet: "todo — structured task tracking with phases and progress",
 		promptGuidelines: [
 			"Use todo tool to track multi-step plans. Init with phases, start tasks as you work on them, mark done when complete.",
 			"Only one task can be in_progress at a time. Starting a new task demotes the current one to pending.",
 			"Task content must be unique across all phases (used as identifier).",
+			"State is session-level. If you need to persist across sessions, tell the user to /todo-export.",
 		],
 		parameters: TodoParams,
 
@@ -389,14 +458,13 @@ export default function lumenTodoExtension(pi: ExtensionAPI): void {
 			params: { ops: TodoOpEntry[] },
 			_signal: AbortSignal | undefined,
 			_onUpdate: undefined,
-			ctx: ExtensionContext,
+			_ctx: ExtensionContext,
 		) {
-			const cwd = ctx.cwd;
-			const currentPhases = clonePhases(loadTodoPhases(cwd));
+			const currentPhases = clonePhases(sessionPhases);
 			const { phases: updated, errors } = applyOps(currentPhases, params.ops);
 
-			// Persist
-			saveTodoPhases(cwd, updated);
+			// Store in memory only
+			sessionPhases = updated;
 
 			const summary = formatSummary(updated, errors);
 			return {
@@ -462,17 +530,14 @@ export default function lumenTodoExtension(pi: ExtensionAPI): void {
 
 	// Register /todo command for user viewing
 	pi.registerCommand("todo", {
-		description: "查看当前任务列表",
-		handler: async (_args, ctx) => {
-			const cwd = ctx.cwd;
-			const phases = loadTodoPhases(cwd);
-
-			if (phases.length === 0) {
+		description: "查看当前任务列表（会话级）",
+		handler: async () => {
+			if (sessionPhases.length === 0) {
 				pi.sendUserMessage("当前没有任务。LLM 可通过 todo tool 创建任务列表。");
 				return;
 			}
 
-			const allTasks = phases.flatMap((p) => p.tasks);
+			const allTasks = sessionPhases.flatMap((p) => p.tasks);
 			const completed = allTasks.filter((t) => t.status === "completed").length;
 			const inProgress = allTasks.find((t) => t.status === "in_progress");
 
@@ -481,7 +546,7 @@ export default function lumenTodoExtension(pi: ExtensionAPI): void {
 			if (inProgress) lines.push(`当前: ${inProgress.content}`);
 			lines.push("");
 
-			for (const phase of phases) {
+			for (const phase of sessionPhases) {
 				lines.push(`## ${phase.name}`);
 				for (const task of phase.tasks) {
 					const sym =
@@ -502,6 +567,49 @@ export default function lumenTodoExtension(pi: ExtensionAPI): void {
 			}
 
 			pi.sendUserMessage(lines.join("\n"));
+		},
+	});
+
+	// /todo-export: save current todo to markdown file
+	pi.registerCommand("todo-export", {
+		description: "导出当前 todo 为 markdown 文件（默认 ./TODO.md）",
+		handler: async (args, ctx) => {
+			if (sessionPhases.length === 0) {
+				pi.sendUserMessage("当前没有任务可导出。");
+				return;
+			}
+
+			const targetPath = resolve(ctx.cwd, args.trim() || "TODO.md");
+			const dir = dirname(targetPath);
+			if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+
+			const markdown = phasesToMarkdown(sessionPhases);
+			writeFileSync(targetPath, markdown, "utf8");
+			pi.sendUserMessage(`已导出 ${sessionPhases.flatMap((p) => p.tasks).length} 个任务到 ${targetPath}`);
+		},
+	});
+
+	// /todo-import: load todo from markdown file
+	pi.registerCommand("todo-import", {
+		description: "从 markdown 文件导入 todo（默认 ./TODO.md）",
+		handler: async (args, ctx) => {
+			const targetPath = resolve(ctx.cwd, args.trim() || "TODO.md");
+			if (!existsSync(targetPath)) {
+				pi.sendUserMessage(`文件不存在: ${targetPath}`);
+				return;
+			}
+
+			const content = readFileSync(targetPath, "utf8");
+			const imported = markdownToPhases(content);
+
+			if (imported.length === 0) {
+				pi.sendUserMessage("未能从文件中解析出任务。确保文件包含 ## 标题和 - [x]/- [ ] 格式的任务。");
+				return;
+			}
+
+			sessionPhases = imported;
+			const allTasks = imported.flatMap((p) => p.tasks);
+			pi.sendUserMessage(`已导入 ${allTasks.length} 个任务（${imported.length} 个阶段）从 ${targetPath}`);
 		},
 	});
 }

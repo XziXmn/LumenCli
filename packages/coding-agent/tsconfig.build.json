@@ -2,8 +2,10 @@
 	"extends": "../../tsconfig.base.json",
 	"compilerOptions": {
 		"outDir": "./dist",
-		"rootDir": "./src"
+		"rootDir": "./src",
+		"jsx": "preserve",
+		"jsxImportSource": "@opentui/solid"
 	},
-	"include": ["src/**/*.ts", "src/**/*.d.ts"],
+	"include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts"],
 	"exclude": ["node_modules", "dist"]
 }

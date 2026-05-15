@@ -21,6 +21,7 @@ export interface Args {
 	help?: boolean;
 	version?: boolean;
 	mode?: Mode;
+	tui?: boolean;
 	noSession?: boolean;
 	session?: string;
 	fork?: string;
@@ -160,6 +161,8 @@ export function parseArgs(args: string[]): Args {
 			}
 		} else if (arg === "--verbose") {
 			result.verbose = true;
+		} else if (arg === "--tui") {
+			result.tui = true;
 		} else if (arg === "--offline") {
 			result.offline = true;
 		} else if (arg.startsWith("@")) {

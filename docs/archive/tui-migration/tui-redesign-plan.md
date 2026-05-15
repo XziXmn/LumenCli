@@ -1,5 +1,7 @@
 # TUI 渲染改造计划
 
+> **已归档** — 此计划基于 pi-tui 框架的渐进改造。已决定改用 OpenTUI + SolidJS 全面迁移方案，见 `opentui-migration-plan.md`。
+
 ## 当前问题
 
 1. **工具调用显示太简陋** — 没有 spinner 动画，折叠态只有一行文字，没有进度指示

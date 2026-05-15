@@ -50,8 +50,8 @@
 
 | 文件 | 用途 |
 |------|------|
-| `packages/coding-agent/src/core/lumen-writing.ts` | 已删除 — 见 docs/lumen-writing-deprecated.md |
-| `packages/coding-agent/src/core/lumen-memory.ts` | 已删除 — 见 docs/lumen-memory-deprecated.md |
+| `packages/coding-agent/src/core/lumen-writing.ts` | 已删除 — 见 docs/archive/deprecated-core/lumen-writing-deprecated.md |
+| `packages/coding-agent/src/core/lumen-memory.ts` | 已删除 — 见 docs/archive/deprecated-core/lumen-memory-deprecated.md |
 | `packages/coding-agent/src/core/lumen-novel.ts` | .novel 项目检测 + 系统提示词注入 |
 | `packages/coding-agent/src/core/lumen-todo.ts` | todo tool — 会话级结构化任务跟踪 + /todo-export /todo-import |
 | `packages/coding-agent/src/core/lumen-askuser.ts` | ask_user tool — 结构化提问（select/confirm/text） |

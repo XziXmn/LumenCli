@@ -2,6 +2,8 @@
 	"extends": "./tsconfig.base.json",
 	"compilerOptions": {
 		"noEmit": true,
+		"jsx": "preserve",
+		"jsxImportSource": "@opentui/solid",
 		"paths": {
 			"*": ["./*"],
 			"@earendil-works/pi-ai": ["./packages/ai/src/index.ts"],
@@ -22,6 +24,6 @@
 			"@earendil-works/pi-agent-old/*": ["./packages/agent-old/src/*"]
 		}
 	},
-	"include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/coding-agent/examples/**/*"],
+	"include": ["packages/*/src/**/*", "packages/*/src/**/*.tsx", "packages/*/test/**/*", "packages/coding-agent/examples/**/*"],
 	"exclude": ["packages/web-ui/**/*", "**/dist/**"]
 }
