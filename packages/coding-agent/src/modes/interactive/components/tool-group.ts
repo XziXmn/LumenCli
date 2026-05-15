@@ -1,67 +1,76 @@
 /**
- * Tool Group Component — merges consecutive same-type tool calls into a single display.
+ * Collapsed Tool Group — Claude Code style collapseReadSearch.
  *
- * When collapsed:
- *   ✓ Read 4 files: src/config.ts, src/main.ts, src/cli.ts (+1 more)
+ * Merges ALL consecutive collapsible tool calls (read, grep, find, ls, bash-search)
+ * into a single summary line, regardless of tool type.
  *
- * When expanded:
- *   ✓ Read 4 files
- *   ├─ ✓ src/config.ts (45 lines)
- *   ├─ ✓ src/main.ts (120 lines)
- *   ├─ ✓ src/cli.ts (80 lines)
- *   └─ ✓ src/utils.ts (30 lines)
+ * Active (in-progress):
+ *   ● Reading 3 files, searching 2 patterns…
+ *     ⎿  src/config.ts
  *
- * [Provenance] 来源: Claude Code GroupedToolUseContent + oh-my-pi tree-list 概念
- * [Provenance] 移植方式: 自研
+ * Completed:
+ *   ✓ Read 3 files, searched 2 patterns
+ *
+ * Expanded (ctrl+o):
+ *   ✓ Read 3 files, searched 2 patterns
+ *   ├─ ✓ read: src/config.ts
+ *   ├─ ✓ grep: "pattern"
+ *   └─ ✓ read: src/main.ts
+ *
+ * [Provenance] 来源: Claude Code collapseReadSearch.ts + CollapsedReadSearchContent.tsx
+ * [Provenance] 移植方式: 自研 (用我们的 TUI 组件 API)
  */
 
-import { Container, Spacer, Text } from "@earendil-works/pi-tui";
+import { Container, Text, type TUI } from "@earendil-works/pi-tui";
 import { theme } from "../theme/theme.js";
 import { SPINNER_FRAMES, STATUS_SYMBOLS, TREE_SYMBOLS } from "./lumen-tui-utils.js";
 import type { ToolExecutionComponent } from "./tool-execution.js";
 
 // ============================================================================
-// Tool Group Configuration
+// Collapsible Tool Configuration
 // ============================================================================
 
-/** Tools that can be grouped when called consecutively. */
-const GROUPABLE_TOOLS: Record<string, { label: string; argKey: string }> = {
-	read: { label: "Read", argKey: "file_path" },
-	grep: { label: "Searched", argKey: "pattern" },
-	find: { label: "Find", argKey: "glob" },
-	ls: { label: "Listed", argKey: "path" },
+/** Tools that are collapsible (merged into a single summary line). */
+const COLLAPSIBLE_TOOLS: Record<
+	string,
+	{ activeVerb: string; doneVerb: string; noun: string; pluralNoun: string; argKey: string }
+> = {
+	read: { activeVerb: "Reading", doneVerb: "Read", noun: "file", pluralNoun: "files", argKey: "file_path" },
+	grep: { activeVerb: "Searching", doneVerb: "Searched", noun: "pattern", pluralNoun: "patterns", argKey: "pattern" },
+	find: { activeVerb: "Finding", doneVerb: "Found", noun: "glob", pluralNoun: "globs", argKey: "glob" },
+	ls: { activeVerb: "Listing", doneVerb: "Listed", noun: "directory", pluralNoun: "directories", argKey: "path" },
 };
 
-/** Maximum items to show in collapsed inline preview. */
-const MAX_INLINE_ITEMS = 3;
-
 // ============================================================================
-// Tool Group Component
+// Collapsed Tool Group Component
 // ============================================================================
 
 export class ToolGroupComponent extends Container {
-	private toolName: string;
-	private members: ToolGroupMember[] = [];
+	private members: CollapsedMember[] = [];
 	private expanded = false;
 	private headerText: Text;
+	private hintText: Text;
 	private detailContainer: Container;
-	private spacer: Spacer;
+	private ui: TUI;
+	private spinnerInterval: ReturnType<typeof setInterval> | undefined;
 
-	constructor(toolName: string) {
+	constructor(_toolName: string, ui?: TUI) {
 		super();
-		this.toolName = toolName;
-		this.spacer = new Spacer(1);
+		this.ui = ui as TUI;
 		this.headerText = new Text("", 0, 0);
+		this.hintText = new Text("", 0, 0);
 		this.detailContainer = new Container();
-		this.addChild(this.spacer);
 		this.addChild(this.headerText);
+		this.addChild(this.hintText);
 		this.addChild(this.detailContainer);
 		this.updateDisplay();
 	}
 
 	/** Add a tool execution to this group. */
 	addMember(component: ToolExecutionComponent, args: Record<string, unknown>): void {
-		this.members.push({ component, args, completed: false, isError: false });
+		const toolName = component.getToolName();
+		this.members.push({ component, args, toolName, completed: false, isError: false });
+		this.ensureSpinner();
 		this.updateDisplay();
 	}
 
@@ -71,13 +80,16 @@ export class ToolGroupComponent extends Container {
 		if (member) {
 			member.completed = true;
 			member.isError = isError;
+			if (this.isAllCompleted()) {
+				this.stopSpinner();
+			}
 			this.updateDisplay();
 		}
 	}
 
-	/** Get the tool name this group handles. */
+	/** Get the tool name of the first member (for backward compat). */
 	getToolName(): string {
-		return this.toolName;
+		return this.members[0]?.toolName ?? "read";
 	}
 
 	/** Get the number of members in this group. */
@@ -99,17 +111,37 @@ export class ToolGroupComponent extends Container {
 		this.updateDisplay();
 	}
 
+	/** Dispose of resources. */
+	dispose(): void {
+		this.stopSpinner();
+	}
+
+	private ensureSpinner(): void {
+		if (this.spinnerInterval) return;
+		this.spinnerInterval = setInterval(() => {
+			this.updateDisplay();
+			this.ui?.requestRender();
+		}, 500);
+	}
+
+	private stopSpinner(): void {
+		if (this.spinnerInterval) {
+			clearInterval(this.spinnerInterval);
+			this.spinnerInterval = undefined;
+		}
+	}
+
 	private updateDisplay(): void {
 		this.detailContainer.clear();
 
-		const config = GROUPABLE_TOOLS[this.toolName];
-		const label = config?.label ?? this.toolName;
-		const argKey = config?.argKey ?? "path";
-
-		// Determine overall status
 		const allCompleted = this.isAllCompleted();
 		const hasError = this.members.some((m) => m.isError);
-		const allRunning = !allCompleted && this.members.length > 0;
+
+		// Count by tool type
+		const counts = new Map<string, number>();
+		for (const m of this.members) {
+			counts.set(m.toolName, (counts.get(m.toolName) ?? 0) + 1);
+		}
 
 		// Status icon
 		let icon: string;
@@ -117,36 +149,51 @@ export class ToolGroupComponent extends Container {
 			icon = theme.fg("error", STATUS_SYMBOLS.error);
 		} else if (allCompleted) {
 			icon = theme.fg("success", STATUS_SYMBOLS.success);
-		} else if (allRunning) {
-			icon = theme.fg("accent", SPINNER_FRAMES[0]);
 		} else {
-			icon = theme.fg("muted", STATUS_SYMBOLS.pending);
+			// Animated spinner
+			const frameIdx = Math.floor(Date.now() / 500) % SPINNER_FRAMES.length;
+			icon = theme.fg("accent", SPINNER_FRAMES[frameIdx]);
 		}
 
-		// Build header
-		const count = this.members.length;
-		const noun = count === 1 ? "file" : "files";
-		const headerTitle = `${icon} ${theme.fg("toolTitle", theme.bold(`${label} ${count} ${noun}`))}`;
-
-		if (!this.expanded) {
-			// Collapsed: show inline preview of file paths
-			const paths = this.members
-				.map((m) => extractArgValue(m.args, argKey))
-				.filter(Boolean)
-				.map((p) => shortenForInline(p as string));
-
-			const shown = paths.slice(0, MAX_INLINE_ITEMS);
-			const remaining = paths.length - shown.length;
-			let inline = shown.join(", ");
-			if (remaining > 0) {
-				inline += theme.fg("dim", ` (+${remaining} more)`);
+		// Build summary text: "Reading 3 files, searching 2 patterns…" or "Read 3 files, searched 2 patterns"
+		const parts: string[] = [];
+		for (const [toolName, count] of counts) {
+			const config = COLLAPSIBLE_TOOLS[toolName];
+			if (!config) {
+				// Unknown collapsible tool — use generic
+				const verb = allCompleted ? toolName : `${toolName}ing`;
+				parts.push(`${verb} ${count}`);
+				continue;
 			}
+			const verb = allCompleted ? config.doneVerb : config.activeVerb;
+			const noun = count === 1 ? config.noun : config.pluralNoun;
+			parts.push(`${verb} ${count} ${noun}`);
+		}
 
-			this.headerText.setText(`${headerTitle}: ${theme.fg("muted", inline)}`);
+		const summaryText = parts.join(", ");
+		const suffix = allCompleted ? "" : "\u2026"; // …
+		const headerLine = `${icon} ${theme.fg("toolTitle", theme.bold(summaryText))}${suffix}`;
+		this.headerText.setText(headerLine);
+
+		// Hint line: show the latest file/pattern being processed (only when active)
+		if (!allCompleted && !this.expanded) {
+			const lastActive = this.members.filter((m) => !m.completed).at(-1) ?? this.members.at(-1);
+			if (lastActive) {
+				const config = COLLAPSIBLE_TOOLS[lastActive.toolName];
+				const argKey = config?.argKey ?? "path";
+				const hint = extractArgValue(lastActive.args, argKey);
+				if (hint) {
+					this.hintText.setText(theme.fg("dim", `  \u239C  ${shortenPath(hint)}`)); // ⎜
+				} else {
+					this.hintText.setText("");
+				}
+			}
 		} else {
-			// Expanded: show tree list
-			this.headerText.setText(headerTitle);
+			this.hintText.setText("");
+		}
 
+		// Expanded: show tree list of all members
+		if (this.expanded) {
 			for (let i = 0; i < this.members.length; i++) {
 				const member = this.members[i];
 				const isLast = i === this.members.length - 1;
@@ -163,8 +210,11 @@ export class ToolGroupComponent extends Container {
 					memberIcon = theme.fg("accent", SPINNER_FRAMES[0]);
 				}
 
+				const config = COLLAPSIBLE_TOOLS[member.toolName];
+				const argKey = config?.argKey ?? "path";
 				const argValue = extractArgValue(member.args, argKey) ?? "?";
-				const memberLine = ` ${branchStr} ${memberIcon} ${theme.fg("muted", String(argValue))}`;
+				const toolLabel = theme.fg("dim", `${member.toolName}:`);
+				const memberLine = ` ${branchStr} ${memberIcon} ${toolLabel} ${theme.fg("muted", String(argValue))}`;
 				this.detailContainer.addChild(new Text(memberLine, 0, 0));
 			}
 		}
@@ -175,9 +225,10 @@ export class ToolGroupComponent extends Container {
 // Types
 // ============================================================================
 
-interface ToolGroupMember {
+interface CollapsedMember {
 	component: ToolExecutionComponent;
 	args: Record<string, unknown>;
+	toolName: string;
 	completed: boolean;
 	isError: boolean;
 }
@@ -187,21 +238,21 @@ interface ToolGroupMember {
 // ============================================================================
 
 function extractArgValue(args: Record<string, unknown>, key: string): string | undefined {
-	// Try the specified key, then common fallbacks
-	const value = args[key] ?? args.path ?? args.file_path ?? args.file;
+	const value = args[key] ?? args.path ?? args.file_path ?? args.file ?? args.pattern ?? args.glob;
 	if (typeof value === "string") return value;
 	return undefined;
 }
 
-function shortenForInline(path: string): string {
-	// Show just the filename or last path segment
+function shortenPath(path: string): string {
+	// Show last 2 segments for readability
 	const parts = path.replace(/\\/g, "/").split("/");
-	return parts[parts.length - 1] ?? path;
+	if (parts.length <= 2) return path;
+	return parts.slice(-2).join("/");
 }
 
 /**
- * Check if a tool name is groupable.
+ * Check if a tool name is collapsible (can be merged into a collapsed group).
  */
 export function isGroupableTool(toolName: string): boolean {
-	return toolName in GROUPABLE_TOOLS;
+	return toolName in COLLAPSIBLE_TOOLS;
 }

@@ -494,12 +494,28 @@ export default function lumenRepoExtension(pi: ExtensionAPI): void {
 			return new Text(text, 0, 0);
 		},
 
-		renderResult(result, _options: ToolRenderResultOptions, theme, _context) {
-			const text = result.content[0];
-			const content = text?.type === "text" ? (text.text ?? "") : "";
-			// Show first few lines as summary
-			const lines = content.split("\n").slice(0, 5);
-			return new Text(theme.fg("success", "\u2713 ") + theme.fg("muted", lines.join("\n  ")), 0, 0);
+		renderResult(result, options: ToolRenderResultOptions, theme, _context) {
+			const details = result.details as RepoOverviewDetails | undefined;
+			if (!details) {
+				const text = result.content[0];
+				const content = text?.type === "text" ? (text.text ?? "") : "";
+				return new Text(theme.fg("muted", content.split("\n")[0] ?? ""), 0, 0);
+			}
+
+			// Compact one-line summary (Claude Code style)
+			const parts: string[] = [];
+			if (details.ecosystems?.length) parts.push(details.ecosystems.join(", "));
+			if (details.packageManager) parts.push(details.packageManager);
+			const summary = parts.length > 0 ? parts.join(" \u00B7 ") : "analyzed";
+
+			if (options.expanded) {
+				// Expanded: show full output
+				const text = result.content[0];
+				const content = text?.type === "text" ? (text.text ?? "") : "";
+				return new Text(theme.fg("muted", content), 0, 0);
+			}
+
+			return new Text(theme.fg("dim", summary), 0, 0);
 		},
 	});
 }

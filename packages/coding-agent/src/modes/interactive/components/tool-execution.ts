@@ -6,6 +6,9 @@ import { convertToPng } from "../../../utils/image-convert.js";
 import { theme } from "../theme/theme.js";
 import { SPINNER_FRAMES, STATUS_SYMBOLS } from "./lumen-tui-utils.js";
 
+/** Claude Code style: TEARDROP_ASTERISK for the spinner glyph */
+const TEARDROP_ASTERISK = "\u273B"; // ✻
+
 export interface ToolExecutionOptions {
 	showImages?: boolean;
 	imageWidthCells?: number;
@@ -63,13 +66,12 @@ export class ToolExecutionComponent extends Container {
 		this.ui = ui;
 		this.cwd = cwd;
 
-		this.addChild(new Spacer(1));
-
-		// Always create all shell variants. contentBox is used for default renderer-based composition.
-		// selfRenderContainer is used when the tool renders its own framing.
-		// contentText is reserved for generic fallback rendering when no tool definition exists.
-		this.contentBox = new Box(1, 1, (text: string) => theme.bg("toolPendingBg", text));
-		this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
+		// Claude Code style: NO spacer before tool calls — compact layout.
+		// The selfRenderContainer is used when the tool renders its own framing.
+		// contentBox is used for default renderer-based composition (no padding in collapsed state).
+		// contentText is reserved for generic fallback rendering.
+		this.contentBox = new Box(0, 0);
+		this.contentText = new Text("", 0, 0);
 		this.selfRenderContainer = new Container();
 
 		if (this.hasRendererDefinition()) {
@@ -158,12 +160,12 @@ export class ToolExecutionComponent extends Container {
 			return theme.fg("success", STATUS_SYMBOLS.success);
 		}
 		if (this.executionStarted) {
-			// Running — show spinner
+			// Running — Claude Code style: teardrop asterisk with spinner animation
 			const frame = SPINNER_FRAMES[this.spinnerFrame % SPINNER_FRAMES.length];
 			return theme.fg("accent", frame);
 		}
-		// Pending (args still streaming)
-		return theme.fg("muted", STATUS_SYMBOLS.pending);
+		// Pending (args still streaming) — use teardrop asterisk
+		return theme.fg("muted", TEARDROP_ASTERISK);
 	}
 
 	updateArgs(args: any): void {
@@ -183,7 +185,11 @@ export class ToolExecutionComponent extends Container {
 
 	markExecutionStarted(): void {
 		this.executionStarted = true;
-		this.startSpinner();
+		// Only start the built-in spinner for tools that don't manage their own animation.
+		// Tools with renderShell="self" typically have their own renderResult interval.
+		if (this.getRenderShell() !== "self") {
+			this.startSpinner();
+		}
 		this.updateDisplay();
 		this.ui.requestRender();
 	}
@@ -283,11 +289,15 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private updateDisplay(): void {
-		const bgFn = this.isPartial
-			? (text: string) => theme.bg("toolPendingBg", text)
-			: this.result?.isError
-				? (text: string) => theme.bg("toolErrorBg", text)
-				: (text: string) => theme.bg("toolSuccessBg", text);
+		// Claude Code style: no background color on tool calls in collapsed state.
+		// Only apply background when expanded and showing output content.
+		const bgFn = this.expanded
+			? this.isPartial
+				? (text: string) => theme.bg("toolPendingBg", text)
+				: this.result?.isError
+					? (text: string) => theme.bg("toolErrorBg", text)
+					: (text: string) => theme.bg("toolSuccessBg", text)
+			: undefined;
 
 		let hasContent = false;
 		this.hideComponent = false;
@@ -345,7 +355,7 @@ export class ToolExecutionComponent extends Container {
 				}
 			}
 		} else {
-			this.contentText.setCustomBgFn(bgFn);
+			this.contentText.setCustomBgFn(this.expanded ? bgFn : undefined);
 			this.contentText.setText(this.formatToolExecution());
 			hasContent = true;
 		}

@@ -414,31 +414,48 @@ function renderTaskProgress(progressMap: Map<string, SubagentProgress>, _expande
 			icon = theme.fg("error", STATUS_SYMBOLS.error);
 		} else if (p.status === "running") {
 			const elapsed = Date.now() - p.startedAt;
-			const frameIdx = Math.floor(elapsed / 80) % SPINNER_FRAMES.length;
+			const frameIdx = Math.floor(elapsed / 500) % SPINNER_FRAMES.length;
 			icon = theme.fg("accent", SPINNER_FRAMES[frameIdx]);
 		} else {
 			icon = theme.fg("muted", STATUS_SYMBOLS.pending);
 		}
 
-		// Main line
-		let line = ` ${branchStr} ${icon} ${theme.fg("accent", p.description)}`;
+		// Main line: Claude Code style — agent(description)
+		const agentLabel = theme.bold(p.agent);
+		const line = ` ${branchStr} ${icon} ${agentLabel}(${theme.fg("accent", p.description)})`;
 
-		// Meta info
+		// Sub-line with status details (Claude Code style)
+		const continuation = isLast ? "    " : `${theme.fg("dim", TREE_SYMBOLS.vertical)}   `;
+		const subLinePrefix = `${continuation} `;
+
 		const meta: string[] = [];
-		if (p.currentTool) {
-			meta.push(p.currentTool + (p.currentToolArgs ? `: ${p.currentToolArgs}` : ""));
-		}
-		if (p.status === "completed" || p.status === "failed") {
+		if (p.status === "running") {
+			if (p.currentTool) {
+				// Show current tool activity like Claude Code
+				meta.push(p.currentTool + (p.currentToolArgs ? ` ${p.currentToolArgs}` : ""));
+			} else {
+				meta.push("In progress\u2026");
+			}
+			if (p.toolCount > 0) {
+				meta.push(`${p.toolCount} tool ${p.toolCount === 1 ? "use" : "uses"}`);
+			}
+			if (p.tokens > 0) {
+				meta.push(`${p.tokens} tokens`);
+			}
+		} else if (p.status === "completed") {
+			meta.push("Done");
+			meta.push(`${p.toolCount} tool ${p.toolCount === 1 ? "use" : "uses"}`);
+			if (p.tokens > 0) meta.push(`${p.tokens} tokens`);
 			meta.push(formatDuration(p.durationMs));
-		}
-		if (p.tokens > 0) {
-			meta.push(`${p.tokens} tok`);
-		}
-		if (meta.length > 0) {
-			line += ` ${theme.fg("dim", meta.join(" \u00B7 "))}`;
+		} else if (p.status === "failed") {
+			meta.push("Failed");
+			meta.push(formatDuration(p.durationMs));
 		}
 
 		lines.push(line);
+		if (meta.length > 0) {
+			lines.push(`${subLinePrefix}${theme.fg("dim", meta.join(" \u00B7 "))}`);
+		}
 	}
 
 	return lines;
@@ -607,12 +624,13 @@ export default function lumenTaskExtension(pi: ExtensionAPI): void {
 				icon = "pending";
 			}
 
+			// Claude Code style: Agent(description) format
 			const line = renderStatusLine(
 				{
 					icon: icon as any,
-					title: `task`,
+					title: agentName,
 					titleColor: "toolTitle",
-					description: `${agentName} \u00B7 ${taskCount} ${noun}`,
+					description: `${taskCount} ${noun}`,
 				},
 				theme,
 			);
@@ -637,10 +655,12 @@ export default function lumenTaskExtension(pi: ExtensionAPI): void {
 				}
 			}
 
-			// Start interval for spinner animation during partial results
+			// Start interval for spinner animation during partial results.
+			// Use a slower rate (500ms) to avoid excessive redraws that cause flickering.
+			// Real progress updates come from onProgress callbacks which trigger updateResult.
 			if (options.isPartial && !state.interval) {
 				state.startedAt ??= Date.now();
-				state.interval = setInterval(() => context.invalidate(), 80);
+				state.interval = setInterval(() => context.invalidate(), 500);
 			}
 			if (!options.isPartial && state.interval) {
 				clearInterval(state.interval);

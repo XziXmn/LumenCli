@@ -274,11 +274,8 @@ export class InteractiveMode {
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
 
-	// Tool grouping: tracks the last group component for consecutive same-type tools
+	// Tool grouping: tracks the last group component for consecutive collapsible tools
 	private lastToolGroup: ToolGroupComponent | undefined;
-	private lastToolName: string | undefined;
-	private lastToolComponent: ToolExecutionComponent | undefined;
-	private lastToolArgs: Record<string, unknown> | undefined;
 	private toolCallToGroup = new Map<string, ToolGroupComponent>();
 
 	// Tool output expansion state
@@ -586,11 +583,23 @@ export class InteractiveMode {
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
 			const lumenVersion = "0.1.0"; // Lumen 自己的版本号
-			const logo = theme.bold(theme.fg("accent", `╭─ ${APP_NAME} ─╮`));
-			const version = theme.fg("dim", `v${lumenVersion}`);
 
 			// Build startup instructions using keybinding hint helpers
 			const hint = (keybinding: AppKeybinding, description: string) => keyHint(keybinding, description);
+
+			// Claude Code style: bordered welcome card
+			// ╭─ Lumen ──────────────────────────────╮
+			// │                                       │
+			// │  model · API Billing                  │
+			// │  D:\UGit\LumenAgent                   │
+			// │                                       │
+			// ╰───────────────────────────────────────╯
+			const modelName = this.session.state.model?.name || this.session.state.model?.id || "未选择模型";
+			let cwdDisplay = this.sessionManager.getCwd();
+			const home = process.env.HOME || process.env.USERPROFILE;
+			if (home && cwdDisplay.startsWith(home)) {
+				cwdDisplay = `~${cwdDisplay.slice(home.length)}`;
+			}
 
 			const expandedInstructions = [
 				theme.fg("muted", "─── 快捷键 ───"),
@@ -617,21 +626,39 @@ export class InteractiveMode {
 				rawKeyHint("!!", "执行 shell（不进入上下文）"),
 				hint("app.tools.expand", "展开工具输出"),
 			].join("\n");
-			const compactInstructions = [
-				hint("app.interrupt", "中断"),
-				rawKeyHint("/", "命令"),
-				rawKeyHint("!", "shell"),
-				hint("app.thinking.cycle", "思考"),
-				hint("app.tools.expand", "展开"),
-			].join(theme.fg("muted", " · "));
-			const compactOnboarding = theme.fg(
-				"dim",
-				`按 ${keyText("app.tools.expand")} 显示完整快捷键。输入 /help 查看所有命令。`,
+
+			// Claude Code style: bordered welcome card with dynamic width
+			const topTitle = ` ${APP_TITLE} v${lumenVersion} `;
+			const topTitleWidth = visibleWidth(topTitle);
+			// Compute content widths to determine box width
+			const contentLines = [modelName, cwdDisplay];
+			const maxContentWidth = Math.max(...contentLines.map((l) => visibleWidth(l)), topTitleWidth);
+			const boxInnerWidth = maxContentWidth + 2; // 2 for padding inside │
+			const topBorderFill = boxInnerWidth - topTitleWidth;
+			const topBorderLeft = "\u2500"; // ─
+			const topBorderRight = "\u2500".repeat(Math.max(0, topBorderFill - 1));
+			const bottomBorder = "\u2500".repeat(boxInnerWidth);
+
+			const buildCard = (footer: string) => {
+				return [
+					theme.fg("accent", `\u256D${topBorderLeft}${topTitle}${topBorderRight}\u256E`),
+					`${theme.fg("accent", "\u2502")}  ${theme.fg("muted", modelName)}`,
+					`${theme.fg("accent", "\u2502")}  ${theme.fg("dim", cwdDisplay)}`,
+					theme.fg("accent", `\u2570${bottomBorder}\u256F`),
+					"",
+					footer,
+				].join("\n");
+			};
+
+			const compactCard = buildCard(
+				theme.fg("dim", `  ${keyText("app.tools.expand")} 显示快捷键 \u00B7 / 命令 \u00B7 ! shell`),
 			);
-			const onboarding = theme.fg("dim", "直接输入问题开始对话。Lumen 可以读写文件、执行命令、搜索代码。");
+
+			const expandedCard = buildCard(expandedInstructions);
+
 			this.builtInHeader = new ExpandableText(
-				() => `${logo} ${version}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
-				() => `${logo} ${version}\n\n${expandedInstructions}\n\n${onboarding}`,
+				() => compactCard,
+				() => expandedCard,
 				this.getStartupExpansionState(),
 				1,
 				0,
@@ -1670,13 +1697,50 @@ export class InteractiveMode {
 	}
 
 	private getWorkingLoaderMessage(): string {
-		return this.workingMessage ?? this.defaultWorkingMessage;
+		return this.workingMessage ?? this.getRandomSpinnerVerb();
+	}
+
+	/** Claude Code style: random verb for the spinner message */
+	private spinnerVerb: string | undefined;
+	private getRandomSpinnerVerb(): string {
+		if (!this.spinnerVerb) {
+			const SPINNER_VERBS = [
+				"Working",
+				"Thinking",
+				"Processing",
+				"Computing",
+				"Crafting",
+				"Analyzing",
+				"Generating",
+				"Composing",
+				"Orchestrating",
+				"Synthesizing",
+				"Brewing",
+				"Cooking",
+				"Pondering",
+				"Mulling",
+				"Deliberating",
+				"Moonwalking",
+				"Percolating",
+				"Channeling",
+				"Hatching",
+				"Forging",
+			];
+			this.spinnerVerb = SPINNER_VERBS[Math.floor(Math.random() * SPINNER_VERBS.length)];
+		}
+		return `${this.spinnerVerb}\u2026`; // verb…
+	}
+
+	/** Reset the spinner verb for the next turn */
+	private resetSpinnerVerb(): void {
+		this.spinnerVerb = undefined;
 	}
 
 	private createWorkingLoader(): Loader {
+		// Claude Code style: ✻ Moonwalking… (Ns · ↓ Nk tokens)
 		return new Loader(
 			this.ui,
-			(spinner) => theme.fg("accent", spinner),
+			(_spinner) => theme.fg("accent", "\u273B"), // ✻ teardrop asterisk
 			(text) => theme.fg("muted", text),
 			this.getWorkingLoaderMessage(),
 			this.workingIndicatorOptions,
@@ -1806,6 +1870,7 @@ export class InteractiveMode {
 		this.updateTerminalTitle();
 		this.workingMessage = undefined;
 		this.workingVisible = true;
+		this.resetSpinnerVerb();
 		this.setWorkingIndicator();
 		if (this.loadingAnimation) {
 			this.loadingAnimation.setMessage(`${this.defaultWorkingMessage} (${keyText("app.interrupt")} to interrupt)`);
@@ -2645,6 +2710,7 @@ export class InteractiveMode {
 		switch (event.type) {
 			case "agent_start":
 				this.pendingTools.clear();
+				this.resetSpinnerVerb(); // New random verb for each turn
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(true);
 				}
@@ -2695,11 +2761,11 @@ export class InteractiveMode {
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
-					// Reset tool grouping for new assistant turn
-					this.lastToolGroup = undefined;
-					this.lastToolName = undefined;
-					this.lastToolComponent = undefined;
-					this.lastToolArgs = undefined;
+					// Claude Code style: DON'T reset tool grouping on new assistant message.
+					// Consecutive collapsible tools across multiple assistant messages should
+					// still be collapsed into one group. Only reset on non-collapsible content
+					// or agent_end.
+
 					this.streamingComponent = new AssistantMessageComponent(
 						undefined,
 						this.hideThinkingBlock,
@@ -2718,6 +2784,14 @@ export class InteractiveMode {
 					this.streamingMessage = event.message;
 					this.streamingComponent.updateContent(this.streamingMessage);
 
+					// Claude Code style: break the collapse group if assistant emits text content
+					const hasTextContent = this.streamingMessage.content.some(
+						(c) => c.type === "text" && c.text.trim().length > 0,
+					);
+					if (hasTextContent && this.lastToolGroup) {
+						this.lastToolGroup = undefined;
+					}
+
 					for (const content of this.streamingMessage.content) {
 						if (content.type === "toolCall") {
 							if (!this.pendingTools.has(content.id)) {
@@ -2735,42 +2809,26 @@ export class InteractiveMode {
 								);
 								component.setExpanded(this.toolOutputExpanded);
 
-								// Tool grouping: merge consecutive same-type groupable tools
-								if (isGroupableTool(content.name) && this.lastToolName === content.name) {
+								// Claude Code style: collapse ALL consecutive collapsible tools into one group
+								if (isGroupableTool(content.name)) {
 									if (this.lastToolGroup) {
-										// Already have a group — add to it
+										// Already have a collapse group — add to it regardless of tool type
 										this.lastToolGroup.addMember(component, content.arguments ?? {});
 										this.toolCallToGroup.set(content.id, this.lastToolGroup);
-									} else if (this.lastToolComponent) {
-										// Second consecutive same-type tool — create group, move first into it
-										const group = new ToolGroupComponent(content.name);
-										// Remove the first component from chatContainer and add to group
-										this.chatContainer.removeChild(this.lastToolComponent);
-										group.addMember(this.lastToolComponent, this.lastToolArgs ?? {});
-										this.toolCallToGroup.set(this.lastToolComponent.getToolCallId(), group);
-										// Add the new one
+									} else {
+										// First collapsible tool — immediately create a group (even for 1 item)
+										// This ensures even a single read shows as collapsed format
+										const group = new ToolGroupComponent(content.name, this.ui);
 										group.addMember(component, content.arguments ?? {});
 										this.toolCallToGroup.set(content.id, group);
 										group.setExpanded(this.toolOutputExpanded);
 										this.chatContainer.addChild(group);
 										this.lastToolGroup = group;
-										this.lastToolComponent = undefined;
-										this.lastToolArgs = undefined;
 									}
-								} else if (isGroupableTool(content.name)) {
-									// First groupable tool — add normally, remember for potential grouping
-									this.chatContainer.addChild(component);
-									this.lastToolGroup = undefined;
-									this.lastToolName = content.name;
-									this.lastToolComponent = component;
-									this.lastToolArgs = content.arguments ?? {};
 								} else {
-									// Non-groupable tool — add directly, reset group state
+									// Non-collapsible tool — add directly, reset group state
 									this.chatContainer.addChild(component);
 									this.lastToolGroup = undefined;
-									this.lastToolName = content.name;
-									this.lastToolComponent = undefined;
-									this.lastToolArgs = undefined;
 								}
 
 								this.pendingTools.set(content.id, component);
@@ -2818,6 +2876,17 @@ export class InteractiveMode {
 							component.setArgsComplete();
 						}
 					}
+
+					// Remove the streaming component only if it has no visible content at all
+					const hasVisibleText = this.streamingMessage.content.some((c) => c.type === "text" && c.text.trim());
+					if (
+						!hasVisibleText &&
+						this.streamingMessage.stopReason !== "aborted" &&
+						this.streamingMessage.stopReason !== "error"
+					) {
+						this.chatContainer.removeChild(this.streamingComponent);
+					}
+
 					this.streamingComponent = undefined;
 					this.streamingMessage = undefined;
 					this.footer.invalidate();
@@ -2850,36 +2919,23 @@ export class InteractiveMode {
 					);
 					component.setExpanded(this.toolOutputExpanded);
 
-					// Apply grouping logic for late-arriving tools
-					if (isGroupableTool(event.toolName) && this.lastToolName === event.toolName) {
+					// Claude Code style: collapse ALL consecutive collapsible tools
+					if (isGroupableTool(event.toolName)) {
 						if (this.lastToolGroup) {
 							this.lastToolGroup.addMember(component, event.args ?? {});
 							this.toolCallToGroup.set(event.toolCallId, this.lastToolGroup);
-						} else if (this.lastToolComponent) {
-							const group = new ToolGroupComponent(event.toolName);
-							this.chatContainer.removeChild(this.lastToolComponent);
-							group.addMember(this.lastToolComponent, this.lastToolArgs ?? {});
-							this.toolCallToGroup.set(this.lastToolComponent.getToolCallId(), group);
+						} else {
+							// Immediately create a group (even for 1 item)
+							const group = new ToolGroupComponent(event.toolName, this.ui);
 							group.addMember(component, event.args ?? {});
 							this.toolCallToGroup.set(event.toolCallId, group);
 							group.setExpanded(this.toolOutputExpanded);
 							this.chatContainer.addChild(group);
 							this.lastToolGroup = group;
-							this.lastToolComponent = undefined;
-							this.lastToolArgs = undefined;
 						}
-					} else if (isGroupableTool(event.toolName)) {
-						this.chatContainer.addChild(component);
-						this.lastToolGroup = undefined;
-						this.lastToolName = event.toolName;
-						this.lastToolComponent = component;
-						this.lastToolArgs = event.args ?? {};
 					} else {
 						this.chatContainer.addChild(component);
 						this.lastToolGroup = undefined;
-						this.lastToolName = event.toolName;
-						this.lastToolComponent = undefined;
-						this.lastToolArgs = undefined;
 					}
 
 					this.pendingTools.set(event.toolCallId, component);
@@ -2931,9 +2987,6 @@ export class InteractiveMode {
 				}
 				this.pendingTools.clear();
 				this.lastToolGroup = undefined;
-				this.lastToolName = undefined;
-				this.lastToolComponent = undefined;
-				this.lastToolArgs = undefined;
 				this.toolCallToGroup.clear();
 
 				await this.checkShutdownRequested();
@@ -3146,8 +3199,11 @@ export class InteractiveMode {
 			case "user": {
 				const textContent = this.getUserMessageText(message);
 				if (textContent) {
-					if (this.chatContainer.children.length > 0) {
-						this.chatContainer.addChild(new Spacer(1));
+					// System-injected steer messages (e.g. TTSR rule reminders):
+					// Show as dim italic text, distinct from user messages
+					if (textContent.startsWith("[规则提醒]") || textContent.startsWith("[Rule Reminder]")) {
+						this.chatContainer.addChild(new Text(theme.fg("dim", theme.italic(textContent)), 1, 0));
+						break;
 					}
 					const skillBlock = parseSkillBlock(textContent);
 					if (skillBlock) {

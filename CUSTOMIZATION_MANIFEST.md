@@ -23,6 +23,7 @@
 | `packages/coding-agent/src/utils/version-check.ts` | 禁用 pi.dev 版本检查 |
 | `packages/coding-agent/src/package-manager-cli.ts` | "lumen" self-reference, .lumen/ paths |
 | `packages/coding-agent/src/modes/interactive/interactive-mode.ts` | 中文欢迎语/onboarding |
+| `packages/coding-agent/src/modes/interactive/interactive-mode.ts` | Phase 4 Claude Code TUI 复刻：带边框欢迎卡片 + ✻ 随机动词 spinner + 每 turn 重置 |
 | `packages/tui/src/tui.ts` | .lumen/ debug/crash log paths |
 | `packages/coding-agent/src/core/tools/read.ts` | 添加 hashline 前缀（2字符hash锚点）提升编辑定位准确性 + 折叠时不显示行数提示 |
 | `packages/coding-agent/src/core/tools/write.ts` | 折叠时不显示 "+N more lines" 提示 |
@@ -34,11 +35,15 @@
 | `packages/coding-agent/src/modes/interactive/components/thinking-selector.ts` | 增强 thinking level 选择器：彩色 tier dot + token 预估 + 描述 |
 | `packages/coding-agent/src/modes/interactive/components/assistant-message.ts` | 三态 thinking 显示：full/summary/hidden + 折叠摘要 + streaming 结束后移除 thinking 节点（Claude Code 风格） |
 | `packages/coding-agent/src/modes/interactive/components/tool-execution.ts` | TUI Phase 1：spinner 动画（80ms braille 帧）+ 状态图标（✓/✗/○）+ dispose 方法 |
+| `packages/coding-agent/src/modes/interactive/components/tool-execution.ts` | Phase 4：去掉 Spacer/Box 背景（Claude Code 紧凑风格）+ ✻ pending 图标 |
 | `packages/coding-agent/src/core/lumen-agents-bg.ts` | renderCall/renderResult 改用 renderStatusLine 格式化（icon + title + description + meta） |
 | `packages/coding-agent/src/modes/interactive/theme/theme.ts` | TUI Phase 1：添加 spinnerFrames、tree、boxSharp、sep、format、styledSymbol() 到 Theme 类 |
 | `packages/coding-agent/src/core/tools/bash.ts` | TUI Phase 1：renderCall 加 spinner/状态图标前缀 |
 | `packages/coding-agent/src/core/lumen-powershell.ts` | TUI Phase 1：renderCall 用 renderStatusLine；renderResult 展开态用 CachedOutputBlock 带边框渲染 |
 | `packages/coding-agent/src/modes/interactive/interactive-mode.ts` | Phase 3：工具分组逻辑 — 连续同类 tool 合并到 ToolGroupComponent |
+| `packages/coding-agent/src/modes/interactive/components/tool-group.ts` | Phase 4：Claude Code collapseReadSearch 全面复刻 — 所有连续 collapsible tool 折叠为一行摘要（Reading N files, searching M patterns…） |
+| `packages/coding-agent/src/modes/interactive/components/user-message.ts` | Phase 4：全宽深色背景 + ▶ 前缀（Claude Code 风格） |
+| `packages/coding-agent/src/core/lumen-task.ts` | Phase 4：Claude Code 风格子代理树形渲染 — agent(desc) + ⎿ 状态行 + currentTool 实时显示 |
 | `.gitignore` | .lumen/ patterns |
 
 ## 新增文件（零冲突）

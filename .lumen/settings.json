@@ -1,6 +1,7 @@
 {
 	"quietStartup": false,
-	"defaultThinkingLevel": "medium",
+	"defaultThinkingLevel": "high",
+	"hideThinkingBlock": false,
 	"compaction": {
 		"enabled": true
 	},

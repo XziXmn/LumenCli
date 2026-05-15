@@ -17,24 +17,6 @@ const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
 export type ThinkingDisplayMode = "full" | "summary" | "hidden";
 
 /**
- * Format a thinking summary line.
- * Example: "▸ Reasoning (4,521 chars) — click to expand"
- */
-function formatThinkingSummary(thinkingText: string): string {
-	const chars = thinkingText.length;
-	const lines = thinkingText.split("\n").length;
-	const charsFormatted = chars >= 1000 ? `${(chars / 1000).toFixed(1)}k` : `${chars}`;
-	// Extract first meaningful line as preview
-	const firstLine = thinkingText
-		.split("\n")
-		.find((l) => l.trim().length > 10)
-		?.trim()
-		.slice(0, 60);
-	const preview = firstLine ? ` — ${firstLine}${firstLine.length >= 60 ? "..." : ""}` : "";
-	return `\u25B8 Reasoning (${charsFormatted} chars, ${lines} lines)${preview}`;
-}
-
-/**
  * Component that renders a complete assistant message.
  *
  * [Lumen customization] Enhanced thinking display:
@@ -59,6 +41,7 @@ export class AssistantMessageComponent extends Container {
 		super();
 
 		// Map legacy boolean to new mode
+		// Default "summary": shows thinking during streaming (Claude Code style), hides after completion
 		this.thinkingMode = hideThinkingBlock ? "hidden" : "summary";
 		this.markdownTheme = markdownTheme;
 		this.hiddenThinkingLabel = hiddenThinkingLabel;
@@ -137,11 +120,10 @@ export class AssistantMessageComponent extends Container {
 		// Clear content container
 		this.contentContainer.clear();
 
-		const hasVisibleContent = message.content.some(
-			(c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()),
-		);
-
-		if (hasVisibleContent) {
+		// Only add top spacer if there's actual visible text content
+		// (not thinking — thinking is transient and hidden after completion)
+		const hasTextContent = message.content.some((c) => c.type === "text" && c.text.trim());
+		if (hasTextContent) {
 			this.contentContainer.addChild(new Spacer(1));
 		}
 
@@ -153,6 +135,11 @@ export class AssistantMessageComponent extends Container {
 				// Set paddingY=0 to avoid extra spacing before tool executions
 				this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, this.markdownTheme));
 			} else if (content.type === "thinking" && content.thinking.trim()) {
+				// Show thinking content regardless of streaming state.
+				// In summary mode: show ".: Thinking..." + preview
+				// In full mode: show complete thinking
+				// In hidden mode: show "Thinking..." label
+
 				// Add spacing only when another visible assistant content block follows.
 				// This avoids a superfluous blank line before separately-rendered tool execution blocks.
 				const hasVisibleContentAfter = message.content
@@ -161,16 +148,32 @@ export class AssistantMessageComponent extends Container {
 
 				switch (this.thinkingMode) {
 					case "hidden": {
-						// Show static thinking label
+						// Show static thinking label (only during streaming)
 						this.contentContainer.addChild(
 							new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), 1, 0),
 						);
 						break;
 					}
 					case "summary": {
-						// Show collapsible one-liner with char count and preview
-						const summary = formatThinkingSummary(content.thinking);
-						this.contentContainer.addChild(new Text(theme.fg("thinkingText", theme.italic(summary)), 1, 0));
+						// Claude Code style: ".: Thinking..." on one line, then a single-line preview
+						this.contentContainer.addChild(
+							new Text(
+								`${theme.fg("dim", ".: ")}${theme.italic(theme.fg("thinkingText", "Thinking..."))}`,
+								1,
+								0,
+							),
+						);
+						// Show only the first meaningful line as a dim preview
+						const firstLine = content.thinking
+							.split("\n")
+							.find((l) => l.trim().length > 0)
+							?.trim()
+							.slice(0, 80);
+						if (firstLine) {
+							this.contentContainer.addChild(
+								new Text(theme.fg("dim", `  ${firstLine}${firstLine.length >= 80 ? "..." : ""}`), 0, 0),
+							);
+						}
 						break;
 					}
 					case "full": {
@@ -185,7 +188,7 @@ export class AssistantMessageComponent extends Container {
 					}
 				}
 
-				if (hasVisibleContentAfter) {
+				if (hasVisibleContentAfter && this.thinkingMode === "full") {
 					this.contentContainer.addChild(new Spacer(1));
 				}
 			}
@@ -201,9 +204,7 @@ export class AssistantMessageComponent extends Container {
 					message.errorMessage && message.errorMessage !== "Request was aborted"
 						? message.errorMessage
 						: "Operation aborted";
-				if (hasVisibleContent) {
-					this.contentContainer.addChild(new Spacer(1));
-				} else {
+				if (hasTextContent) {
 					this.contentContainer.addChild(new Spacer(1));
 				}
 				this.contentContainer.addChild(new Text(theme.fg("error", abortMessage), 1, 0));
