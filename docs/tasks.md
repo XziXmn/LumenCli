@@ -209,32 +209,111 @@
 
 ---
 
+## Phase 4: 参考项目精华借鉴（Kimi CLI / OpenCode / Codex / Claude Code）
+
+来源：`docs/reports/2026-05-16-kimi-cli-deep-analysis.md` 全项目对比分析
+
+### Task 33: Wire 协议层（与 TUI 改造同步）
+- [x] 33.1 定义 Wire 事件类型（TurnBegin/End, StepBegin/End, ContentPart, ToolCall, ToolResult, StatusUpdate, ApprovalRequest/Response, SteerInput, Notification）
+- [x] 33.2 定义 WireHub 接口（publish/subscribe/replay）
+- [x] 33.3 实现 JSONL 文件持久化（session trace，支持 replay）
+- [x] 33.4 在 AgentSessionTuiRuntime 中接入 WireHub，将 streaming 事件转为 Wire 事件
+- [x] 33.5 TUI 组件通过 TuiRuntime 消费 Wire 事件
+- [ ] 33.6 参考：`references/kimi-cli/src/kimi_cli/wire/`
+
+### Task 34: Steer Input（运行中注入消息）
+- [ ] 34.1 Wire 层支持 SteerInput 事件类型
+- [ ] 34.2 TUI prompt 在 agent 运行中可输入并发送（Enter 排队，Ctrl+S 立即注入）
+- [ ] 34.3 agent 核心支持 steer queue（每步结束后 drain）
+- [ ] 34.4 steer 消息作为 user message 追加到 context
+- [ ] 34.5 参考：`references/kimi-cli/src/kimi_cli/soul/kimisoul.py` 的 `_steer_queue` + `_consume_pending_steers()`
+
+### Task 35: Background Auto-trigger（后台完成自动处理）
+- [ ] 35.1 lumen-task 完成时发布 Wire Notification 事件
+- [ ] 35.2 TUI/Shell 检测到 Notification 后自动开始新 turn（注入 system-reminder）
+- [ ] 35.3 可配置：`auto_trigger_on_background_complete: true/false`
+- [ ] 35.4 参考：`references/kimi-cli/src/kimi_cli/background/manager.py` 的 completion_event + publish_terminal_notifications
+
+### Task 36: 统一 Approval Runtime + 反馈
+- [ ] 36.1 定义 ApprovalRequest/Response 类型（含 feedback 字段）
+- [ ] 36.2 统一前台 tool 审批和后台 agent 审批到同一 runtime
+- [ ] 36.3 reject 时支持附带文字反馈（指导模型下次行为）
+- [ ] 36.4 按来源（turn/background-agent）批量取消未决审批
+- [ ] 36.5 TUI 审批面板支持 approve-once / approve-always / reject-with-feedback
+- [ ] 36.6 参考：`references/kimi-cli/src/kimi_cli/approval_runtime/runtime.py`
+
+### Task 37: Session Fork/Undo
+- [ ] 37.1 `/fork` — 复制当前 session 历史到新 session
+- [ ] 37.2 `/undo` — 选择历史 turn，fork 新 session 并预填消息
+- [ ] 37.3 session 退出时显示 resume hint（session id）
+- [ ] 37.4 参考：`references/kimi-cli/src/kimi_cli/session_fork.py`
+
+### Task 38: Hooks 系统（声明式生命周期钩子）
+- [ ] 38.1 定义 HookDef 配置格式（event, command, matcher regex, timeout）
+- [ ] 38.2 支持事件：PreToolUse, PostToolUse, SessionStart, SessionEnd, Stop, UserPromptSubmit
+- [ ] 38.3 HookEngine：匹配 → 并行执行 shell 命令 → 聚合结果（block/allow）
+- [ ] 38.4 PreToolUse block 可阻止工具执行
+- [ ] 38.5 配置存储：`.lumen/hooks.json` 或 settings.json 内 `hooks` 数组
+- [ ] 38.6 `/hooks` 命令查看已配置钩子
+- [ ] 38.7 参考：`references/kimi-cli/src/kimi_cli/hooks/engine.py`
+
+### Task 39: Sensitive File Protection（工具级拦截）
+- [ ] 39.1 定义敏感文件模式列表（.env, id_rsa, id_ed25519, .aws/credentials 等）
+- [ ] 39.2 Grep tool：过滤结果中的敏感文件，附带警告
+- [ ] 39.3 Read tool：拒绝读取敏感文件（.env.example 等模板文件豁免）
+- [ ] 39.4 与现有 lumen-secrets（输出屏蔽）互补：secrets 屏蔽输出，此 task 拦截输入
+- [ ] 39.5 参考：Kimi CLI grep/read 的 sensitive file protection + Codex secrets crate
+
+---
+
 ## 执行优先级
 
+**Phase 4 优先级排序**（基于 ROI 和依赖关系）：
+
+### 第一批：与 TUI 改造同步（当前进行中）
+
+1. **Task 33 — Wire 协议层**（14h）— TUI 架构基础，为后续所有功能提供事件传输
+2. **Task 34 — Steer Input**（4h）— 依赖 Wire 层，用户价值极高
+3. **Task 35 — Background Auto-trigger**（3h）— 依赖 Wire 层，lumen-task 增强
+
+### 第二批：交互增强（Wire 层稳定后）
+
+4. **Task 36 — 统一 Approval + 反馈**（6h）— 依赖 Wire 层 ApprovalRequest 事件
+5. **Task 39 — Sensitive File Protection**（2h）— 独立，安全基础
+6. **Task 37 — Session Fork/Undo**（4h）— 独立，探索性编码必备
+
+### 第三批：可扩展性（按需）
+
+7. **Task 38 — Hooks 系统**（6h）— 独立，可扩展性基础
+
+---
+
+**历史 Phase 3 优先级（已完成，保留参考）**：
+
 **立即可做**（基础设施收尾）：
-1. Task 2 — Secrets redaction（1h）
-2. Task 3 — Memory 升级（2h）
+1. Task 2 — Secrets redaction（1h）✅
+2. Task 3 — Memory 升级（2h）✅
 
 **核心新能力**（按价值排序）：
-3. Task 28 — Snapshot/Checkpoint（3h）— 安全网，出错可回滚
-4. Task 29 — Apply Patch Tool（3h）— 多文件批量编辑
-5. Task 6-9 — Agent System（6h）
-6. Task 14 — LSP Tool（4h）
-7. Task 15 — Web Tools（3h）
-8. Task 12 — Plan Mode（4h）
-9. Task 10 — Hashline（4h）
-10. Task 11 — TTSR（3h）
-11. Task 16 — Todo Tool（2h）
-12. Task 17 — AskUser Tool（2h）
+3. Task 28 — Snapshot/Checkpoint（3h）✅
+4. Task 29 — Apply Patch Tool（3h）✅
+5. Task 6-9 — Agent System（6h）✅
+6. Task 14 — LSP Tool（4h）✅
+7. Task 15 — Web Tools（3h）✅
+8. Task 12 — Plan Mode（4h）✅
+9. Task 10 — Hashline（4h）✅
+10. Task 11 — TTSR（3h）✅
+11. Task 16 — Todo Tool（2h）✅
+12. Task 17 — AskUser Tool（2h）✅
 
 **增强**：
-13. Task 13 — Config Discovery（2h）
-14. Task 30 — Repo Clone + Overview（2h）
-15. Task 31 — CodeSearch（2h）
-16. Task 18-21 — Agent 增强（6h）
-17. Task 24 — Model Preset（4h）
-18. Task 32 — Memory Pipeline 2-phase（4h）
-19. Task 25-27 — 补充工具（3h）
+13. Task 13 — Config Discovery（2h）✅
+14. Task 30 — Repo Clone + Overview（2h）✅
+15. Task 31 — CodeSearch（2h）✅
+16. Task 18-21 — Agent 增强（6h）✅
+17. Task 24 — Model Preset（已删除）
+18. Task 32 — Memory Pipeline 2-phase（4h）✅
+19. Task 25-27 — 补充工具（3h）✅
 
 **收尾**：
-20. Task 22-23 — 文档 + 测试（5h）
+20. Task 22-23 — 文档 + 测试（5h）✅

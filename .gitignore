@@ -44,3 +44,14 @@ collect.sh
 
 # Reference projects (local only, not committed)
 references/
+# Wire / TUI runtime artefacts
+wire-trace.jsonl
+flicker-trace.log
+
+# lumen-tui build artefacts emitted into src/ by tsc
+packages/lumen-tui/src/**/*.d.ts
+packages/lumen-tui/src/**/*.d.ts.map
+packages/lumen-tui/src/**/*.jsx
+packages/lumen-tui/src/**/*.jsx.map
+packages/lumen-tui/src/**/*.js
+packages/lumen-tui/src/**/*.js.map

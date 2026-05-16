@@ -3,12 +3,9 @@
  * Launches the Lumen-native OpenTUI + SolidJS terminal interface.
  */
 
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { runLumenTui } from "../../../../lumen-tui/src/app.js";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
-import { createSessionStore, type SessionStore } from "./adapter/session-store.js";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
+import { createAgentSessionTuiRuntime } from "./adapter/agent-session-runtime.js";
 
 export interface TuiModeOptions {
 	/** Initial message to send on startup */
@@ -19,15 +16,12 @@ export async function runTuiMode(runtime: AgentSessionRuntime, options: TuiModeO
 	const session = runtime.session;
 	const cwd = session.sessionManager.getCwd();
 
-	const store = createSessionStore({
+	const tuiRuntime = createAgentSessionTuiRuntime({
+		runtime,
 		session,
 		cwd,
 		version: "0.1.0",
 	});
 
-	const appPath = resolve(__dirname, "../../../../lumen-tui/src/app.js");
-	const appModule = (await import(appPath)) as { runLumenTui: RunLumenTuiFn };
-	await appModule.runLumenTui({ store, initialMessage: options.initialMessage });
+	await runLumenTui({ runtime: tuiRuntime, initialMessage: options.initialMessage });
 }
-
-type RunLumenTuiFn = (input: { store: SessionStore; initialMessage?: string }) => Promise<void>;

@@ -11,13 +11,13 @@ import type { FauxModelDefinition, FauxProviderRegistration, FauxResponseStep, M
 import { registerFauxProvider } from "@earendil-works/pi-ai";
 import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.js";
 import { AuthStorage } from "../../src/core/auth-storage.js";
-import type { ExtensionRunner } from "../../src/core/extensions/index.js";
+import type { ExtensionFactory, ExtensionRunner } from "../../src/core/extensions/index.js";
 import { convertToLlm } from "../../src/core/messages.js";
 import { ModelRegistry } from "../../src/core/model-registry.js";
+import type { ResourceLoader } from "../../src/core/resource-loader.js";
 import { SessionManager } from "../../src/core/session-manager.js";
 import type { Settings } from "../../src/core/settings-manager.js";
 import { SettingsManager } from "../../src/core/settings-manager.js";
-import type { ExtensionFactory, ResourceLoader } from "../../src/index.js";
 import {
 	type CreateTestExtensionsResultInput,
 	createTestExtensionsResult,

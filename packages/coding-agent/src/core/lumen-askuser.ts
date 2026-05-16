@@ -89,109 +89,12 @@ export default function lumenAskUserExtension(pi: ExtensionAPI): void {
 				};
 			}
 
-			// Interactive mode: use ctx.ui.custom for selection
-			const result = await ctx.ui.custom<{ answer: string } | null>((tui, theme, _kb, done) => {
-				let selectedIndex = 0;
-				let textBuffer = "";
-				let cachedLines: string[] | undefined;
+			const answer =
+				mode === "text"
+					? await ctx.ui.input(question, params.default, { signal: _signal })
+					: await ctx.ui.select("Ask User", buildOptions(mode, options), { signal: _signal });
 
-				const allOptions = buildOptions(mode, options);
-
-				function refresh() {
-					cachedLines = undefined;
-					tui.requestRender();
-				}
-
-				function handleInput(data: string) {
-					if (mode === "text") {
-						// Simple text input handling
-						if (data === "\r" || data === "\n") {
-							const trimmed = textBuffer.trim();
-							if (trimmed) {
-								done({ answer: trimmed });
-							}
-							return;
-						}
-						if (data === "\x1b" || data === "\x03") {
-							done(null);
-							return;
-						}
-						if (data === "\x7f" || data === "\b") {
-							textBuffer = textBuffer.slice(0, -1);
-							refresh();
-							return;
-						}
-						if (data.length === 1 && data.charCodeAt(0) >= 32) {
-							textBuffer += data;
-							refresh();
-							return;
-						}
-						return;
-					}
-
-					// Select/confirm mode
-					if (data === "\x1b[A" || data === "k") {
-						// Up
-						selectedIndex = Math.max(0, selectedIndex - 1);
-						refresh();
-					} else if (data === "\x1b[B" || data === "j") {
-						// Down
-						selectedIndex = Math.min(allOptions.length - 1, selectedIndex + 1);
-						refresh();
-					} else if (data === "\r" || data === "\n") {
-						done({ answer: allOptions[selectedIndex] });
-					} else if (data === "\x1b" || data === "\x03") {
-						done(null);
-					} else if (data.length === 1) {
-						// Number key selection
-						const num = Number.parseInt(data, 10);
-						if (num >= 1 && num <= allOptions.length) {
-							done({ answer: allOptions[num - 1] });
-						}
-					}
-				}
-
-				function render(width: number): string[] {
-					if (cachedLines) return cachedLines;
-
-					const lines: string[] = [];
-					lines.push(theme.fg("accent", "\u2500".repeat(Math.min(width, 60))));
-					lines.push(theme.fg("text", ` ${question}`));
-					lines.push("");
-
-					if (mode === "text") {
-						lines.push(`  ${theme.fg("muted", "Your answer:")}`);
-						lines.push(`  ${theme.fg("accent", "> ")}${textBuffer}\u2588`);
-						lines.push("");
-						lines.push(theme.fg("dim", "  Enter to submit, Esc to cancel"));
-					} else {
-						for (let i = 0; i < allOptions.length; i++) {
-							const selected = i === selectedIndex;
-							const prefix = selected ? theme.fg("accent", "> ") : "  ";
-							const label = selected
-								? theme.fg("accent", `${i + 1}. ${allOptions[i]}`)
-								: theme.fg("text", `${i + 1}. ${allOptions[i]}`);
-							lines.push(`${prefix}${label}`);
-						}
-						lines.push("");
-						lines.push(theme.fg("dim", "  Up/Down or number to select, Enter to confirm, Esc to cancel"));
-					}
-
-					lines.push(theme.fg("accent", "\u2500".repeat(Math.min(width, 60))));
-					cachedLines = lines;
-					return lines;
-				}
-
-				return {
-					render,
-					invalidate: () => {
-						cachedLines = undefined;
-					},
-					handleInput,
-				};
-			});
-
-			if (!result) {
+			if (!answer) {
 				return {
 					content: [{ type: "text" as const, text: "User cancelled the selection." }],
 					details: { question, mode, options, answer: null, cancelled: true } as AskUserDetails,
@@ -199,8 +102,8 @@ export default function lumenAskUserExtension(pi: ExtensionAPI): void {
 			}
 
 			return {
-				content: [{ type: "text" as const, text: `User answered: ${result.answer}` }],
-				details: { question, mode, options, answer: result.answer, cancelled: false } as AskUserDetails,
+				content: [{ type: "text" as const, text: `User answered: ${answer}` }],
+				details: { question, mode, options, answer, cancelled: false } as AskUserDetails,
 			};
 		},
 

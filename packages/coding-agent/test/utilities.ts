@@ -15,9 +15,9 @@ import type { Extension, ExtensionFactory, LoadExtensionsResult } from "../src/c
 import { createExtensionRuntime, loadExtensionFromFactory } from "../src/core/extensions/loader.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
 import type { ResourceLoader } from "../src/core/resource-loader.js";
+import { createCodingTools } from "../src/core/sdk.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
-import { createCodingTools } from "../src/index.js";
 
 /**
  * API key for authenticated tests. Tests using this should be wrapped in

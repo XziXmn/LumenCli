@@ -21,9 +21,7 @@ import * as _bundledTypebox from "typebox";
 import * as _bundledTypeboxCompile from "typebox/compile";
 import * as _bundledTypeboxValue from "typebox/value";
 import { CONFIG_DIR_NAME, getAgentDir, isBunBinary, LEGACY_CONFIG_DIR_NAME } from "../../config.js";
-// NOTE: This import works because loader.ts exports are NOT re-exported from index.ts,
-// avoiding a circular dependency. Extensions can import from @earendil-works/pi-coding-agent.
-import * as _bundledPiCodingAgent from "../../index.js";
+import * as _bundledPiCodingAgent from "../../extension-api.js";
 import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec.js";
 import { execCommand } from "../exec.js";
@@ -72,7 +70,7 @@ function getAliases(): Record<string, string> {
 	if (_aliases) return _aliases;
 
 	const __dirname = path.dirname(fileURLToPath(import.meta.url));
-	const packageIndex = path.resolve(__dirname, "../..", "index.js");
+	const extensionApi = path.resolve(__dirname, "../..", "extension-api.js");
 
 	const typeboxEntry = require.resolve("typebox");
 	const typeboxCompileEntry = require.resolve("typebox/compile");
@@ -87,7 +85,7 @@ function getAliases(): Record<string, string> {
 		return fileURLToPath(import.meta.resolve(specifier));
 	};
 
-	const piCodingAgentEntry = packageIndex;
+	const piCodingAgentEntry = extensionApi;
 	const piAgentCoreEntry = resolveWorkspaceOrImport("agent/dist/index.js", "@earendil-works/pi-agent-core");
 	const piTuiEntry = resolveWorkspaceOrImport("tui/dist/index.js", "@earendil-works/pi-tui");
 	const piAiEntry = resolveWorkspaceOrImport("ai/dist/index.js", "@earendil-works/pi-ai");
