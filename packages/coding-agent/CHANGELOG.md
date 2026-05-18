@@ -4,28 +4,10 @@
 
 ### Added
 
-- Added a backend-agnostic OpenTUI runtime for the new Lumen TUI and an OpenCode-style shell with prompt, session, tools, sidebar, footer, command palette, and toast layers.
-- Added persisted TUI share metadata and real unshare support for GitHub gist-backed session shares.
-- Added a TUI activity dialog for inspecting running tools, background agents, permission waits, and queued work.
-- Added common terminal editing keybindings to the TUI prompt.
-- Added broader OpenCode-style prompt editing keymap aliases for autocomplete navigation, multiline input, selection, word deletion, and buffer movement.
-- Added explicit prompt arrow movement bindings so custom OpenTUI textarea bindings keep basic cursor navigation.
-- Added OpenCode-style dialog and command palette navigation aliases for Ctrl+P/N, PgUp/PgDn, and Home/End.
-- Added TUI status probes for LSP availability and MCP workspace config discovery.
-- Added TUI interaction transcript entries for extension answers and cancellations.
-- Added regression coverage for ask_user standard UI select/input/cancel paths.
-- Added runtime adapter coverage for TUI interaction, retry, compaction, and abort state transitions.
-- Added more TUI slash command entries for command catalog parity.
-- Added more OpenCode command catalog parity entries with explicit disabled states for backend-missing docs, plugins, MCP control, provider login, prompt stash, model favorites, variants, and session child navigation.
-- Added command-id matching to the TUI command palette so OpenCode-style searches like `docs` find disabled parity entries.
-- Added slash autocomplete disabled-state awareness for backend-missing OpenCode parity commands.
-- Added rejected interaction transcript entries for declined TUI confirm prompts.
-- Added ready OpenCode command aliases for `messages.copy`, `session.export`, `display_thinking`, and `tool_details`.
 - Added Together AI to built-in provider setup, `/login` API-key auth, and default model resolution ([#3624](https://github.com/earendil-works/pi-mono/pull/3624) by [@Nutlope](https://github.com/Nutlope)).
 
 ### Fixed
 
-- Fixed the new TUI runtime so aborting a long-running tool updates visible tool, activity, and background-task state immediately and later tool completion cannot overwrite the aborted status.
 - Fixed tool output expansion while extension confirmation dialogs are focused ([#4429](https://github.com/earendil-works/pi/issues/4429)).
 - Fixed auto-retry for Anthropic streams that end before `message_stop` ([#4433](https://github.com/earendil-works/pi/issues/4433)).
 - Fixed theme sharing across package scopes so extensions do not crash with `Theme not initialized` ([#4333](https://github.com/earendil-works/pi/issues/4333)).

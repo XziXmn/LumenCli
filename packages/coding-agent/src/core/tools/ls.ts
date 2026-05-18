@@ -56,10 +56,9 @@ function formatLsCall(
 	const path = rawPath !== null ? shortenPath(rawPath || ".") : null;
 	const limit = args?.limit;
 	const invalidArg = invalidArgText(theme);
-	let text = `${theme.fg("toolTitle", theme.bold("ls"))} ${path === null ? invalidArg : theme.fg("accent", path)}`;
-	if (limit !== undefined) {
-		text += theme.fg("toolOutput", ` (limit ${limit})`);
-	}
+	const pathText = path === null ? invalidArg : path || ".";
+	let text = theme.fg("toolTitle", theme.bold(`List(${pathText})`));
+	if (limit !== undefined) text += theme.fg("toolOutput", ` ${theme.fg("muted", `[limit ${limit}]`)}`);
 	return text;
 }
 

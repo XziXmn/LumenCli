@@ -83,7 +83,7 @@ describe("ToolExecutionComponent parity", () => {
 		);
 		component.updateResult({ content: [], details: { diff: "+1 after", firstChangedLine: 1 }, isError: false });
 		const rendered = stripAnsi(component.render(120).join("\n"));
-		expect(rendered).toContain("edit");
+		expect(rendered).toContain("Update(");
 		expect(rendered).toContain("README.md");
 		expect(rendered).not.toContain(":1");
 	});
@@ -156,7 +156,7 @@ describe("ToolExecutionComponent parity", () => {
 		component.updateResult({ content: [{ type: "text", text: "hello" }], details: undefined, isError: false }, false);
 		const rendered = stripAnsi(component.render(120).join("\n"));
 		expect(rendered).toContain("override call");
-		expect(rendered).toContain("hello");
+		expect(rendered).toContain("Read 1 line");
 	});
 
 	test("inherits missing built-in call renderer slot from the built-in tool", () => {
@@ -326,9 +326,8 @@ describe("ToolExecutionComponent parity", () => {
 			false,
 		);
 		const rendered = stripAnsi(component.render(120).join("\n"));
-		expect(rendered).toContain("one");
-		expect(rendered).toContain("two");
-		expect(rendered).not.toContain("two\n\n");
+		expect(rendered).toContain("Read 2 lines");
+		expect(rendered).not.toContain("one\ntwo");
 	});
 
 	for (const scenario of [

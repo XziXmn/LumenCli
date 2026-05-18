@@ -81,8 +81,12 @@ function formatReadCall(args: ReadRenderArgs | undefined, theme: Theme): string 
 	const rawPath = str(args?.file_path ?? args?.path);
 	const path = rawPath !== null ? shortenPath(rawPath) : null;
 	const invalidArg = invalidArgText(theme);
-	const pathDisplay = path === null ? invalidArg : path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
-	return `${theme.fg("toolTitle", theme.bold("read"))} ${pathDisplay}${formatReadLineRange(args, theme)}`;
+	const pathDisplay = path === null ? invalidArg : path || "...";
+	const rangeText = args?.offset === undefined && args?.limit === undefined ? "" : formatReadLineRange(args, theme);
+	if (!rangeText) {
+		return theme.fg("toolTitle", theme.bold(`Read(${pathDisplay})`));
+	}
+	return theme.fg("toolTitle", theme.bold(`Read(${pathDisplay} · lines ${rangeText.replace(/^:/, "")})`));
 }
 
 function trimTrailingEmptyLines(lines: string[]): string[] {
@@ -179,13 +183,18 @@ function formatReadResult(
 	_cwd: string,
 	isError: boolean,
 ): string {
-	// [Lumen] Collapsed mode: 不显示折叠了多少行，只在错误时显示文件信息
-	if (!options.expanded && !isError) {
-		return "";
+	const output = getTextOutput(result, showImages);
+	if (!isError && !options.expanded) {
+		if (result.content.some((item) => item.type === "image")) {
+			return `\n${theme.fg("toolOutput", "Read image")}`;
+		}
+		const normalized = output.replace(/(?:\r?\n)+$/, "");
+		const lineCount = normalized ? normalized.split(/\r?\n/).length : 0;
+		return `\n${theme.fg("toolOutput", `Read ${lineCount} ${lineCount === 1 ? "line" : "lines"}`)}`;
 	}
 
+	// [Lumen] Collapsed mode: 不显示折叠了多少行，只在错误时显示文件信息
 	const rawPath = str(args?.file_path ?? args?.path);
-	const output = getTextOutput(result, showImages);
 
 	const lang = rawPath ? getLanguageFromPath(rawPath) : undefined;
 	const renderedLines = lang ? highlightCode(replaceTabs(output), lang) : output.split("\n");

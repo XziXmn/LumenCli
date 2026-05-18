@@ -44,7 +44,6 @@ import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
-import { runTuiMode } from "./modes/tui/index.js";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.js";
 import { isLocalPath } from "./utils/paths.js";
 
@@ -102,9 +101,6 @@ function resolveAppMode(parsed: Args, stdinIsTTY: boolean): AppMode {
 	}
 	if (parsed.mode === "json") {
 		return "json";
-	}
-	if (parsed.tui) {
-		return "interactive";
 	}
 	if (parsed.print || !stdinIsTTY) {
 		return "print";
@@ -682,13 +678,6 @@ export async function main(args: string[], options?: MainOptions) {
 		printTimings();
 		await runRpcMode(runtime);
 	} else if (appMode === "interactive") {
-		// Check if --tui flag was passed to use the new OpenTUI-based interface
-		if (parsed.tui) {
-			printTimings();
-			await runTuiMode(runtime, { initialMessage });
-			return;
-		}
-
 		if (scopedModels.length > 0 && (parsed.verbose || !settingsManager.getQuietStartup())) {
 			const modelList = scopedModels
 				.map((sm) => {

@@ -195,8 +195,17 @@ function formatEditCall(
 	const invalidArg = invalidArgText(theme);
 	const rawPath = str(args?.file_path ?? args?.path);
 	const path = rawPath !== null ? shortenPath(rawPath) : null;
-	const pathDisplay = path === null ? invalidArg : path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
-	return `${theme.fg("toolTitle", theme.bold("edit"))} ${pathDisplay}`;
+	const pathDisplay = path === null ? invalidArg : path || "...";
+	const edits = Array.isArray(args?.edits) ? args.edits : undefined;
+	const legacyOldString =
+		typeof args === "object" && args !== undefined ? (args as { old_string?: unknown }).old_string : undefined;
+	const allEditsCreate = edits !== undefined && edits.length > 0 && edits.every((edit) => edit.oldText.length === 0);
+	const isCreate =
+		(typeof args?.oldText === "string" && args.oldText.length === 0) ||
+		(typeof legacyOldString === "string" && legacyOldString.length === 0) ||
+		allEditsCreate;
+	const verb = isCreate ? "Create" : "Update";
+	return theme.fg("toolTitle", theme.bold(`${verb}(${pathDisplay})`));
 }
 
 function formatEditResult(
