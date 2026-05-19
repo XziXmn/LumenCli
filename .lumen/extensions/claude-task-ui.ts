@@ -203,8 +203,13 @@ function inlineText(text: string, maxChars: number): string {
 	return `${normalized.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`;
 }
 
-function createWorkingIndicator(theme: ExtensionContext["ui"]["theme"], stalled: boolean): WorkingIndicatorOptions {
+function createWorkingIndicator(
+	theme: ExtensionContext["ui"]["theme"],
+	stalled: boolean,
+	mode?: "requesting" | "responding" | "tool-use" | "thinking",
+): WorkingIndicatorOptions {
 	const color = stalled ? "error" : "accent";
+	const intervalMs = stalled ? 80 : mode === "requesting" ? 80 : mode === "tool-use" ? 160 : 120;
 	return {
 		frames: [
 			theme.fg(color, "⠋"),
@@ -218,7 +223,7 @@ function createWorkingIndicator(theme: ExtensionContext["ui"]["theme"], stalled:
 			theme.fg(color, "⠇"),
 			theme.fg(color, "⠏"),
 		],
-		intervalMs: 80,
+		intervalMs,
 	};
 }
 
@@ -471,7 +476,7 @@ function renderUi(ctx: ExtensionContext, working: WorkingState) {
 	}
 
 	const workingMessage = formatWorkingMessage(snapshot, working, ctx.ui.theme);
-	ctx.ui.setWorkingIndicator(workingMessage && !working.isIdle ? createWorkingIndicator(ctx.ui.theme, working.isStalled) : undefined);
+	ctx.ui.setWorkingIndicator(workingMessage && !working.isIdle ? createWorkingIndicator(ctx.ui.theme, working.isStalled, snapshot.spinner?.mode) : undefined);
 	ctx.ui.setWorkingMessage(workingMessage);
 	const workingDetailsFactory = createWorkingDetailsFactory(snapshot);
 	ctx.ui.setWorkingDetails(workingDetailsFactory);

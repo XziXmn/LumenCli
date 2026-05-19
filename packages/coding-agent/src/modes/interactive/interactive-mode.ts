@@ -278,6 +278,7 @@ export class InteractiveMode {
 	private spinnerThinkingDurationMs: number | null = null;
 	private spinnerThoughtForVisibleUntil: number | null = null;
 	private spinnerSystemOverrideMessage: string | undefined = undefined;
+	private spinnerActiveToolCount = 0;
 
 	private lastSigintTime = 0;
 	private lastEscapeTime = 0;
@@ -1724,6 +1725,14 @@ export class InteractiveMode {
 				: undefined;
 		const budgetText = this.buildDefaultBudgetText(outputTokens, elapsedMs);
 
+		const mode: SpinnerUiState["mode"] = isThinking
+			? "thinking"
+			: this.spinnerActiveToolCount > 0
+				? "tool-use"
+				: this.spinnerResponseChars > 0
+					? "responding"
+					: "requesting";
+
 		if (
 			this.spinnerSystemOverrideMessage === undefined &&
 			tip === undefined &&
@@ -1731,7 +1740,8 @@ export class InteractiveMode {
 			elapsedMs === undefined &&
 			outputTokens === undefined &&
 			!isThinking &&
-			lastThinkingDurationMs === undefined
+			lastThinkingDurationMs === undefined &&
+			mode === "requesting"
 		) {
 			return undefined;
 		}
@@ -1744,6 +1754,7 @@ export class InteractiveMode {
 			...(outputTokens !== undefined ? { outputTokens } : {}),
 			...(isThinking ? { isThinking: true } : {}),
 			...(lastThinkingDurationMs !== undefined ? { lastThinkingDurationMs } : {}),
+			mode,
 		};
 	}
 
@@ -2861,6 +2872,7 @@ export class InteractiveMode {
 				this.spinnerThinkingMinimumVisibleUntil = null;
 				this.spinnerThinkingDurationMs = null;
 				this.spinnerThoughtForVisibleUntil = null;
+				this.spinnerActiveToolCount = 0;
 				this.pendingTools.clear();
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(true);
@@ -3103,6 +3115,7 @@ export class InteractiveMode {
 				break;
 
 			case "tool_execution_start": {
+				this.spinnerActiveToolCount++;
 				if (this.collapsedGroupByToolCallId.has(event.toolCallId)) {
 					this.ui.requestRender();
 					break;
@@ -3160,6 +3173,7 @@ export class InteractiveMode {
 			}
 
 			case "tool_execution_end": {
+				this.spinnerActiveToolCount = Math.max(0, this.spinnerActiveToolCount - 1);
 				const collapsedGroup = this.collapsedGroupByToolCallId.get(event.toolCallId);
 				if (collapsedGroup) {
 					collapsedGroup.markCompleted(event.toolCallId);

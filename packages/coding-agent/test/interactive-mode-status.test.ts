@@ -293,7 +293,7 @@ describe("InteractiveMode spinner helpers", () => {
 		};
 
 		const state = (InteractiveMode as any).prototype.buildDefaultSpinnerState.call(fakeThis);
-		expect(state).toEqual({ overrideMessage: "Compacting conversation" });
+		expect(state).toEqual({ overrideMessage: "Compacting conversation", mode: "requesting" });
 	});
 
 	test("buildDefaultSpinnerState does not synthesize task or queued tips", () => {
@@ -362,9 +362,7 @@ describe("InteractiveMode spinner helpers", () => {
 		};
 
 		const state = (InteractiveMode as any).prototype.buildDefaultSpinnerState.call(fakeThis);
-		expect(state?.tip).toBe(
-			"Long-running work is active; queue follow-ups above the prompt instead of interrupting the current turn",
-		);
+		expect(state?.tip).toBe("Enter 立即插入（工具间隙就发出），Alt+Enter 排队等本轮结束再发");
 	});
 
 	test("buildDefaultSpinnerState prefers clear tip after 30 minutes when no next task exists", () => {
@@ -399,7 +397,7 @@ describe("InteractiveMode spinner helpers", () => {
 		};
 
 		const state = (InteractiveMode as any).prototype.buildDefaultSpinnerState.call(fakeThis);
-		expect(state?.tip).toBe("Use /clear to start fresh when switching topics and free up context");
+		expect(state?.tip).toBe("切换话题时可以用 /clear 重开会话，释放上下文");
 	});
 
 	test("buildDefaultSpinnerState hides timed tips when spinner tips are disabled", () => {
@@ -434,7 +432,7 @@ describe("InteractiveMode spinner helpers", () => {
 		};
 
 		const state = (InteractiveMode as any).prototype.buildDefaultSpinnerState.call(fakeThis);
-		expect(state).toEqual({ elapsedMs: expect.any(Number) });
+		expect(state).toEqual({ elapsedMs: expect.any(Number), mode: "requesting" });
 	});
 
 	test("setWorkingDetails stores component details and renders them into the working area", () => {

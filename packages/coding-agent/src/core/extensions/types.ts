@@ -129,6 +129,14 @@ export interface SpinnerUiState {
 	isThinking?: boolean;
 	/** Most recently completed thinking duration in milliseconds. */
 	lastThinkingDurationMs?: number;
+	/**
+	 * Coarse-grained current activity mode for visual differentiation.
+	 * - "requesting": waiting for first response token (request sent, no tokens yet)
+	 * - "responding": streaming response tokens
+	 * - "tool-use": one or more tools currently executing
+	 * - "thinking": inside a thinking block (mirrors isThinking)
+	 */
+	mode?: "requesting" | "responding" | "tool-use" | "thinking";
 }
 
 /** Wrap the current autocomplete provider with additional behavior. */
