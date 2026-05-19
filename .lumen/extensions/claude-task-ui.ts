@@ -30,6 +30,9 @@ type Snapshot = {
 
 type WorkingState = {
 	randomVerb: string;
+	lastOutputTokens: number;
+	idleCycles: number;
+	isIdle: boolean;
 };
 
 type TaskGroup = {
@@ -161,36 +164,17 @@ class ClaudeTaskDetailsComponent extends Container {
 class ClaudeQueuedWidgetComponent extends Container {
 	constructor(queued: QueuedUiState, theme: ExtensionContext["ui"]["theme"]) {
 		super();
-		const items = [...queued.steering, ...queued.followUp];
+		const items = [...queued.steering, ...queued.followUp].filter((item) => !item.isMeta);
 		const total = items.length;
+		if (total === 0) return;
 		this.addChild(new Text(theme.fg("dim", total === 1 ? "1 queued command" : `${total} queued commands`), 0, 0));
 
 		for (const item of items.slice(0, MAX_QUEUED_ITEMS)) {
-			const deliveryLabel = item.delivery === "nextTurn"
-				? "Next turn"
-				: item.delivery === "steer"
-					? "Steer"
-					: "Follow-up";
-			const label = item.mode === "custom"
-				? item.customType
-					? `${deliveryLabel} ${item.customType}`
-					: `${deliveryLabel} custom`
-				: item.kind === "steer"
-					? "Steer"
-					: "Follow-up";
-			const tags = [
-				item.priority ? `[${item.priority}]` : undefined,
-				item.hasImages ? "[image]" : undefined,
-				item.isMeta ? "[meta]" : undefined,
-				item.origin ? `[${item.origin}]` : undefined,
-				item.source ? `[${item.source}]` : undefined,
-				item.skipSlashCommands ? "[raw]" : undefined,
-			].filter((part): part is string => Boolean(part));
+			const label = item.kind === "steer" ? "Steer" : "Follow-up";
 			const baseText = item.preExpansionText && item.preExpansionText !== item.text ? item.preExpansionText : item.text;
-			const suffix = tags.length > 0 ? ` ${tags.join(" ")}` : "";
 			this.addChild(
 				new Text(
-					`${theme.fg("dim", "  ⎿ ")}${theme.fg("muted", `${label}: `)}${inlineText(`${baseText}${suffix}`, MAX_QUEUED_PREVIEW_CHARS)}`,
+					`${theme.fg("dim", "  ⎿ ")}${theme.fg("muted", `${label}: `)}${inlineText(baseText, MAX_QUEUED_PREVIEW_CHARS)}`,
 					0,
 					0,
 				),
@@ -278,8 +262,8 @@ function createWorkingDetailsFactory(snapshot: Snapshot) {
 
 function createPromptWidgetFactory(snapshot: Snapshot) {
 	if (!snapshot.queued) return undefined;
-	const total = snapshot.queued.steering.length + snapshot.queued.followUp.length;
-	if (total === 0) return undefined;
+	const items = [...snapshot.queued.steering, ...snapshot.queued.followUp].filter((item) => !item.isMeta);
+	if (items.length === 0) return undefined;
 	return (_tui: TUI, theme: ExtensionContext["ui"]["theme"]) => new ClaudeQueuedWidgetComponent(snapshot.queued!, theme);
 }
 
@@ -291,11 +275,13 @@ function formatCurrentHeadline(
 	if (spinner?.overrideMessage) {
 		return inlineText(spinner.overrideMessage, MAX_WORKING_PREVIEW_CHARS);
 	}
-	if (current) {
-		return inlineText(current.activeForm ?? current.subject ?? current.content, MAX_WORKING_PREVIEW_CHARS);
+	if (current?.activeForm) {
+		return inlineText(current.activeForm, MAX_WORKING_PREVIEW_CHARS);
 	}
 	return working.randomVerb;
 }
+
+const IDLE_CYCLES_THRESHOLD = 2;
 
 function formatWorkingMessage(
 	snapshot: Snapshot,
@@ -310,6 +296,30 @@ function formatWorkingMessage(
 	const outputTokens = spinner?.outputTokens ?? 0;
 	const parts: string[] = [];
 	const showExpandedTasksInSpinnerRegion = snapshot.expanded && snapshot.tasks.length > 0;
+
+	// Idle detection: tasks running but leader not producing tokens
+	if (outputTokens === working.lastOutputTokens) {
+		working.idleCycles++;
+	} else {
+		working.idleCycles = 0;
+		working.lastOutputTokens = outputTokens;
+	}
+
+	const hasRunningTasks = snapshot.tasks.some(
+		(t) => t.status === "running" || t.status === "in_progress",
+	);
+	const leaderIsIdle =
+		hasRunningTasks && !spinner?.isThinking && working.idleCycles >= IDLE_CYCLES_THRESHOLD;
+
+	if (leaderIsIdle) {
+		working.isIdle = true;
+		const runningCount = snapshot.tasks.filter(
+			(t) => t.status === "running" || t.status === "in_progress",
+		).length;
+		const suffix = runningCount > 1 ? `${runningCount} tasks running` : "tasks running";
+		return theme.fg("dim", `✽ Idle · ${suffix}`);
+	}
+	working.isIdle = false;
 
 	if (elapsed >= 3_000) {
 		parts.push(formatElapsed(elapsed));
@@ -370,7 +380,7 @@ function renderUi(ctx: ExtensionContext, working: WorkingState) {
 	}
 
 	const workingMessage = formatWorkingMessage(snapshot, working, ctx.ui.theme);
-	ctx.ui.setWorkingIndicator(workingMessage ? createWorkingIndicator(ctx.ui.theme) : undefined);
+	ctx.ui.setWorkingIndicator(workingMessage && !working.isIdle ? createWorkingIndicator(ctx.ui.theme) : undefined);
 	ctx.ui.setWorkingMessage(workingMessage);
 	const workingDetailsFactory = createWorkingDetailsFactory(snapshot);
 	ctx.ui.setWorkingDetails(workingDetailsFactory);
@@ -379,6 +389,9 @@ function renderUi(ctx: ExtensionContext, working: WorkingState) {
 export default function (pi: ExtensionAPI) {
 	const working: WorkingState = {
 		randomVerb: sample(CLAUDE_SPINNER_VERBS, Date.now()),
+		lastOutputTokens: 0,
+		idleCycles: 0,
+		isIdle: false,
 	};
 
 	let latestCtx: ExtensionContext | undefined;
