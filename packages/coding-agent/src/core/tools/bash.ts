@@ -3,8 +3,6 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Container, Text } from "@earendil-works/pi-tui";
 import { spawn } from "child_process";
 import { type Static, Type } from "typebox";
-import { SPINNER_FRAMES, STATUS_SYMBOLS } from "../../modes/interactive/components/lumen-tui-utils.js";
-import { truncateToVisualLines } from "../../modes/interactive/components/visual-truncate.js";
 import { theme } from "../../modes/interactive/theme/theme.js";
 import { waitForChildProcess } from "../../utils/child-process.js";
 import {
@@ -30,8 +28,6 @@ export type BashToolInput = Static<typeof bashSchema>;
 export interface BashToolDetails {
 	truncation?: TruncationResult;
 	fullOutputPath?: string;
-	/** [Lumen] Authoritative total line count from OutputAccumulator (used for live progress display). */
-	liveTotalLines?: number;
 }
 
 /**
@@ -152,7 +148,6 @@ export interface BashToolOptions {
 	spawnHook?: BashSpawnHook;
 }
 
-const BASH_PREVIEW_LINES = 5;
 const BASH_UPDATE_THROTTLE_MS = 100;
 
 type BashRenderState = {
@@ -198,7 +193,6 @@ function rebuildBashResultRenderComponent(
 	startedAt: number | undefined,
 	endedAt: number | undefined,
 ): void {
-	const state = component.state;
 	component.clear();
 
 	const output = getTextOutput(result as any, showImages).trim();
@@ -209,26 +203,17 @@ function rebuildBashResultRenderComponent(
 			.map((line) => theme.fg("toolOutput", line))
 			.join("\n");
 
-		if (options.expanded) {
-			component.addChild(new Text(`\n${styledOutput}`, 0, 0));
+		if (!options.expanded) {
+			const lineCount = output.split("\n").filter(Boolean).length;
+			component.addChild(
+				new Text(
+					`\n${theme.fg("toolOutput", `Ran command · ${lineCount} ${lineCount === 1 ? "line" : "lines"} of output`)}`,
+					0,
+					0,
+				),
+			);
 		} else {
-			component.addChild({
-				render: (width: number) => {
-					if (state.cachedLines === undefined || state.cachedWidth !== width) {
-						const preview = truncateToVisualLines(styledOutput, BASH_PREVIEW_LINES, width);
-						state.cachedLines = preview.visualLines;
-						state.cachedSkipped = preview.skippedCount;
-						state.cachedWidth = width;
-					}
-					// [Lumen] 折叠时不显示 "+N earlier lines" 提示
-					return ["", ...(state.cachedLines ?? [])];
-				},
-				invalidate: () => {
-					state.cachedWidth = undefined;
-					state.cachedLines = undefined;
-					state.cachedSkipped = undefined;
-				},
-			});
+			component.addChild(new Text(`\n${styledOutput}`, 0, 0));
 		}
 	}
 
@@ -254,17 +239,7 @@ function rebuildBashResultRenderComponent(
 	if (startedAt !== undefined) {
 		const label = options.isPartial ? "Elapsed" : "Took";
 		const endTime = endedAt ?? Date.now();
-		// [Lumen] Append live line count while running so users can see progress
-		// without expanding (Claude Code style: "Elapsed 3.2s · 142 lines").
-		let footer = `${label} ${formatDuration(endTime - startedAt)}`;
-		if (options.isPartial) {
-			const liveTotalLines = result.details?.liveTotalLines;
-			if (typeof liveTotalLines === "number" && liveTotalLines > 0) {
-				const lineWord = liveTotalLines === 1 ? "line" : "lines";
-				footer += ` · ${liveTotalLines} ${lineWord}`;
-			}
-		}
-		component.addChild(new Text(`\n${theme.fg("muted", footer)}`, 0, 0));
+		component.addChild(new Text(`\n${theme.fg("muted", `${label} ${formatDuration(endTime - startedAt)}`)}`, 0, 0));
 	}
 }
 
@@ -300,15 +275,11 @@ export function createBashToolDefinition(
 				updateDirty = false;
 				lastUpdateAt = Date.now();
 				const snapshot = output.snapshot({ persistIfTruncated: true });
-				// [Lumen] Include live total-line count so the live progress block can show
-				// "Elapsed 3.2s · 142 lines" while the command is still running.
-				const liveTotalLines = output.getTotalLines();
 				onUpdate({
 					content: [{ type: "text", text: snapshot.content || "" }],
 					details: {
 						truncation: snapshot.truncation.truncated ? snapshot.truncation : undefined,
 						fullOutputPath: snapshot.fullOutputPath,
-						liveTotalLines,
 					},
 				});
 			};
@@ -414,20 +385,8 @@ export function createBashToolDefinition(
 				state.startedAt = Date.now();
 				state.endedAt = undefined;
 			}
-			// Prepend spinner/status icon to the command line
-			let icon = "";
-			if (context.isError) {
-				icon = `${theme.fg("error", STATUS_SYMBOLS.error)} `;
-			} else if (!context.isPartial && context.executionStarted) {
-				icon = `${theme.fg("success", STATUS_SYMBOLS.success)} `;
-			} else if (context.executionStarted) {
-				// Running — use spinner frame from the interval tick
-				const elapsed = state.startedAt ? Date.now() - state.startedAt : 0;
-				const frameIdx = Math.floor(elapsed / 80) % SPINNER_FRAMES.length;
-				icon = `${theme.fg("accent", SPINNER_FRAMES[frameIdx])} `;
-			}
 			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-			text.setText(`${icon}${formatBashCall(args)}`);
+			text.setText(formatBashCall(args));
 			return text;
 		},
 		renderResult(result, options, _theme, context) {

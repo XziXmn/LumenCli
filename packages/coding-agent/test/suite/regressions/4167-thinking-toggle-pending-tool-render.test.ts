@@ -29,6 +29,12 @@ const EMPTY_USAGE: Usage = {
 
 type RenderSessionContextThis = {
 	pendingTools: Map<string, ToolExecutionComponent>;
+	activeCollapsedToolGroup: unknown;
+	collapsedGroupByToolCallId: Map<string, unknown>;
+	activeToolSummary: unknown;
+	toolSummaryByToolCallId: Map<string, unknown>;
+	activeToolBatchSummary: unknown;
+	toolBatchSummaryByToolCallId: Map<string, unknown>;
 	chatContainer: Container;
 	footer: { invalidate(): void };
 	ui: TUI;
@@ -57,6 +63,12 @@ function createFakeInteractiveModeThis(): RenderSessionContextThis {
 	const chatContainer = new Container();
 	return {
 		pendingTools: new Map<string, ToolExecutionComponent>(),
+		activeCollapsedToolGroup: undefined,
+		collapsedGroupByToolCallId: new Map<string, unknown>(),
+		activeToolSummary: undefined,
+		toolSummaryByToolCallId: new Map<string, unknown>(),
+		activeToolBatchSummary: undefined,
+		toolBatchSummaryByToolCallId: new Map<string, unknown>(),
 		chatContainer,
 		footer: { invalidate: vi.fn() },
 		ui: { requestRender: vi.fn() } as unknown as TUI,
@@ -160,5 +172,52 @@ describe("InteractiveMode.renderSessionContext", () => {
 
 		expect(fakeThis.pendingTools.size).toBe(0);
 		expect(renderChat(fakeThis.chatContainer)).toContain("HISTORICAL_RESULT");
+	});
+
+	test("renders single read tool calls as transcript summaries even when assistant text is present", () => {
+		const fakeThis = createFakeInteractiveModeThis();
+		const renderSessionContext = (
+			InteractiveMode.prototype as unknown as { renderSessionContext: RenderSessionContext }
+		).renderSessionContext;
+
+		const assistantMessage: AssistantMessage = {
+			role: "assistant",
+			content: [
+				{ type: "text", text: "先看看 package.json。" },
+				{
+					type: "toolCall",
+					id: "tool-read-with-text",
+					name: "read",
+					arguments: { path: "package.json" },
+				},
+			],
+			api: "test-api",
+			provider: "test-provider",
+			model: "test-model",
+			usage: EMPTY_USAGE,
+			stopReason: "toolUse",
+			timestamp: Date.now(),
+		};
+
+		renderSessionContext.call(
+			fakeThis,
+			createSessionContext([
+				assistantMessage,
+				{
+					role: "toolResult",
+					toolCallId: "tool-read-with-text",
+					toolName: "read",
+					content: [{ type: "text", text: '{\n  "name": "demo"\n}\n' }],
+					isError: false,
+					timestamp: Date.now(),
+				},
+			]),
+		);
+
+		const rendered = renderChat(fakeThis.chatContainer);
+		expect(rendered).toContain("assistant");
+		expect(rendered).toContain("Read(package.json)");
+		expect(rendered).toContain("Read 3 lines");
+		expect(fakeThis.pendingTools.size).toBe(0);
 	});
 });

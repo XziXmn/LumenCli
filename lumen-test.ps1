@@ -5,7 +5,9 @@ $noEnv = $false
 $forwardArgs = New-Object System.Collections.Generic.List[string]
 
 foreach ($arg in $args) {
-	if ($arg -eq "--no-env") {
+	if ($arg -eq "--tui") {
+		throw "--tui has been removed. Start Lumen without --tui; the default interactive mode is now the only supported TUI."
+	} elseif ($arg -eq "--no-env") {
 		$noEnv = $true
 	} else {
 		$forwardArgs.Add($arg)

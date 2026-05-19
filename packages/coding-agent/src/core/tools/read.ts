@@ -6,13 +6,12 @@ import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
 import { type Static, Type } from "typebox";
 import { getReadmePath } from "../../config.js";
-import { keyText } from "../../modes/interactive/components/keybinding-hints.js";
+import { keyHint, keyText } from "../../modes/interactive/components/keybinding-hints.js";
 import { getLanguageFromPath, highlightCode, type Theme } from "../../modes/interactive/theme/theme.js";
 import { formatDimensionNote, resizeImage } from "../../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
 import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
-import { formatHashLines } from "../lumen-hashline.js";
 import { resolveReadPath } from "./path-utils.js";
 import { getTextOutput, invalidArgText, replaceTabs, shortenPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
@@ -25,11 +24,6 @@ const readSchema = Type.Object({
 });
 
 export type ReadToolInput = Static<typeof readSchema>;
-
-/** Add compact line number prefixes to file content (hashline format: "42sr|code") */
-function addLineNumbers(content: string, startLine: number): string {
-	return formatHashLines(content, startLine);
-}
 
 export interface ReadToolDetails {
 	truncation?: TruncationResult;
@@ -82,11 +76,11 @@ function formatReadCall(args: ReadRenderArgs | undefined, theme: Theme): string 
 	const path = rawPath !== null ? shortenPath(rawPath) : null;
 	const invalidArg = invalidArgText(theme);
 	const pathDisplay = path === null ? invalidArg : path || "...";
-	const rangeText = args?.offset === undefined && args?.limit === undefined ? "" : formatReadLineRange(args, theme);
-	if (!rangeText) {
-		return theme.fg("toolTitle", theme.bold(`Read(${pathDisplay})`));
-	}
-	return theme.fg("toolTitle", theme.bold(`Read(${pathDisplay} · lines ${rangeText.replace(/^:/, "")})`));
+	const range =
+		args?.offset === undefined && args?.limit === undefined
+			? ""
+			: ` · lines ${formatReadLineRange(args, theme).replace(/^:/, "")}`;
+	return theme.fg("toolTitle", theme.bold(`Read(${pathDisplay}${range})`));
 }
 
 function trimTrailingEmptyLines(lines: string[]): string[] {
@@ -166,9 +160,9 @@ function formatCompactReadCall(
 	}
 
 	return (
-		theme.fg("toolTitle", theme.bold(`read ${classification.kind}`)) +
+		theme.fg("dim", `read ${classification.kind}`) +
 		" " +
-		theme.fg("accent", classification.label) +
+		theme.fg("muted", classification.label) +
 		formatReadLineRange(args, theme) +
 		expandHint
 	);
@@ -180,28 +174,36 @@ function formatReadResult(
 	options: ToolRenderResultOptions,
 	theme: Theme,
 	showImages: boolean,
-	_cwd: string,
+	cwd: string,
 	isError: boolean,
 ): string {
-	const output = getTextOutput(result, showImages);
-	if (!isError && !options.expanded) {
-		if (result.content.some((item) => item.type === "image")) {
+	if (!options.expanded && !isError) {
+		const hasImage = result.content.some((item) => item.type === "image");
+		if (hasImage) {
 			return `\n${theme.fg("toolOutput", "Read image")}`;
 		}
+		const output = getTextOutput(result, showImages);
 		const normalized = output.replace(/(?:\r?\n)+$/, "");
 		const lineCount = normalized ? normalized.split(/\r?\n/).length : 0;
 		return `\n${theme.fg("toolOutput", `Read ${lineCount} ${lineCount === 1 ? "line" : "lines"}`)}`;
 	}
 
-	// [Lumen] Collapsed mode: 不显示折叠了多少行，只在错误时显示文件信息
-	const rawPath = str(args?.file_path ?? args?.path);
+	if (!options.expanded && !isError && getCompactReadClassification(args, cwd)) {
+		return "";
+	}
 
+	const rawPath = str(args?.file_path ?? args?.path);
+	const output = getTextOutput(result, showImages);
 	const lang = rawPath ? getLanguageFromPath(rawPath) : undefined;
 	const renderedLines = lang ? highlightCode(replaceTabs(output), lang) : output.split("\n");
 	const lines = trimTrailingEmptyLines(renderedLines);
 	const maxLines = options.expanded ? lines.length : 10;
 	const displayLines = lines.slice(0, maxLines);
+	const remaining = lines.length - maxLines;
 	let text = `\n${displayLines.map((line) => (lang ? replaceTabs(line) : theme.fg("toolOutput", replaceTabs(line)))).join("\n")}`;
+	if (remaining > 0) {
+		text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand", "to expand")})`;
+	}
 
 	const truncation = result.details?.truncation;
 	if (truncation?.truncated) {
@@ -339,8 +341,6 @@ export function createReadToolDefinition(
 									// No truncation and no remaining user-limited content.
 									outputText = truncation.content;
 								}
-								// Add line number prefixes for better edit targeting
-								outputText = addLineNumbers(outputText, startLineDisplay);
 								content = [{ type: "text", text: outputText }];
 							}
 

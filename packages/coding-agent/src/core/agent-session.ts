@@ -76,6 +76,9 @@ import {
 	wrapRegisteredTools,
 } from "./extensions/index.js";
 import { emitSessionShutdownEvent } from "./extensions/runner.js";
+import type { QueuedUiState, TaskUiItem, TaskUiSummary } from "./extensions/types.js";
+import { getSessionTaskUiItems, getSessionTaskUiSummary } from "./lumen-task.js";
+import { getSessionTodoUiItems, getSessionTodoUiSummary } from "./lumen-todo.js";
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
@@ -1367,6 +1370,38 @@ export class AgentSession {
 		return this._steeringMessages.length + this._followUpMessages.length;
 	}
 
+	getTaskUiItems(): TaskUiItem[] | undefined {
+		const taskItems = getSessionTaskUiItems() ?? [];
+		const todoItems = getSessionTodoUiItems() ?? [];
+		const combined = [...taskItems, ...todoItems];
+		return combined.length > 0 ? combined : undefined;
+	}
+
+	getTaskUiSummary(): TaskUiSummary | undefined {
+		const taskSummary = getSessionTaskUiSummary();
+		const todoSummary = getSessionTodoUiSummary();
+		if (!taskSummary && !todoSummary) return undefined;
+		if (!taskSummary) return todoSummary;
+		if (!todoSummary) return taskSummary;
+		return {
+			total: taskSummary.total + todoSummary.total,
+			completed: taskSummary.completed + todoSummary.completed,
+			inProgress: taskSummary.inProgress + todoSummary.inProgress,
+			pending: taskSummary.pending + todoSummary.pending,
+			failed: taskSummary.failed + todoSummary.failed,
+			abandoned: taskSummary.abandoned + todoSummary.abandoned,
+			current: taskSummary.current ?? todoSummary.current,
+			next: taskSummary.next ?? todoSummary.next,
+		};
+	}
+
+	getQueuedUiState(): QueuedUiState | undefined {
+		const steering = this._steeringMessages.map((text) => ({ kind: "steer" as const, text }));
+		const followUp = this._followUpMessages.map((text) => ({ kind: "followUp" as const, text }));
+		if (steering.length === 0 && followUp.length === 0) return undefined;
+		return { steering, followUp };
+	}
+
 	/** Get pending steering messages (read-only) */
 	getSteeringMessages(): readonly string[] {
 		return this._steeringMessages;
@@ -2209,6 +2244,9 @@ export class AgentSession {
 					this._extensionShutdownHandler?.();
 				},
 				getContextUsage: () => this.getContextUsage(),
+				getTasks: () => this.getTaskUiItems(),
+				getTaskSummary: () => this.getTaskUiSummary(),
+				getQueuedMessages: () => this.getQueuedUiState(),
 				compact: (options) => {
 					void (async () => {
 						try {

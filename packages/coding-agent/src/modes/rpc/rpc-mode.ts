@@ -185,6 +185,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// Hidden thinking label not supported in RPC mode - requires TUI message rendering access
 		},
 
+		setQueuedVisible(_visible: boolean): void {
+			// Queued area visibility not supported in RPC mode - no prompt area UI
+		},
+
 		setWidget(key: string, content: unknown, options?: ExtensionWidgetOptions): void {
 			// Only support string arrays in RPC mode - factory functions are ignored
 			if (content === undefined || Array.isArray(content)) {
@@ -300,6 +304,18 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 		setToolsExpanded(_expanded: boolean) {
 			// Tool expansion not supported in RPC mode - no TUI
+		},
+
+		getTasksExpanded() {
+			return false;
+		},
+
+		setTasksExpanded(_expanded: boolean) {
+			// Task expansion not supported in RPC mode - no TUI
+		},
+
+		toggleTasksExpanded() {
+			// Task expansion not supported in RPC mode - no TUI
 		},
 	});
 

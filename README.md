@@ -21,7 +21,7 @@ npm link -w packages/coding-agent
 ## 使用
 
 ```bash
-# 交互模式
+# 默认交互模式
 lumen
 
 # 带初始提示
@@ -33,7 +33,19 @@ lumen -p "重构这段代码"
 # 使用本地 mimo
 lumen --provider local-mimo --model mimo-v2.5-pro
 
-# 从源码运行（开发时）
+# 从源码运行（开发时，推荐）
+npx tsx packages/coding-agent/src/cli.ts
+
+# 或直接用仓库脚本
+./lumen-test.sh
+# Windows PowerShell:
+# .\lumen-test.ps1
+```
+
+`--tui` 已移除。现在直接启动就是唯一保留的 `pi-tui` 交互界面。
+
+```bash
+# 从源码运行（开发时，等价入口）
 npx tsx packages/coding-agent/src/cli.ts
 ```
 

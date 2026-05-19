@@ -49,6 +49,8 @@ import type {
 	SessionBeforeSwitchResult,
 	SessionBeforeTreeResult,
 	SessionShutdownEvent,
+	TaskUiItem,
+	TaskUiSummary,
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolResultEvent,
@@ -199,6 +201,7 @@ const noOpUIContext: ExtensionUIContext = {
 	setWorkingVisible: () => {},
 	setWorkingIndicator: () => {},
 	setHiddenThinkingLabel: () => {},
+	setQueuedVisible: () => {},
 	setWidget: () => {},
 	setFooter: () => {},
 	setHeader: () => {},
@@ -219,6 +222,9 @@ const noOpUIContext: ExtensionUIContext = {
 	setTheme: (_theme: string | Theme) => ({ success: false, error: "UI not available" }),
 	getToolsExpanded: () => false,
 	setToolsExpanded: () => {},
+	getTasksExpanded: () => false,
+	setTasksExpanded: () => {},
+	toggleTasksExpanded: () => {},
 };
 
 export class ExtensionRunner {
@@ -236,6 +242,9 @@ export class ExtensionRunner {
 	private abortFn: () => void = () => {};
 	private hasPendingMessagesFn: () => boolean = () => false;
 	private getContextUsageFn: () => ContextUsage | undefined = () => undefined;
+	private getTasksFn: () => TaskUiItem[] | undefined = () => undefined;
+	private getTaskSummaryFn: () => TaskUiSummary | undefined = () => undefined;
+	private getQueuedMessagesFn: () => import("./types.js").QueuedUiState | undefined = () => undefined;
 	private compactFn: (options?: CompactOptions) => void = () => {};
 	private getSystemPromptFn: () => string = () => "";
 	private newSessionHandler: NewSessionHandler = async () => ({ cancelled: false });
@@ -295,6 +304,9 @@ export class ExtensionRunner {
 		this.hasPendingMessagesFn = contextActions.hasPendingMessages;
 		this.shutdownHandler = contextActions.shutdown;
 		this.getContextUsageFn = contextActions.getContextUsage;
+		this.getTasksFn = contextActions.getTasks;
+		this.getTaskSummaryFn = contextActions.getTaskSummary;
+		this.getQueuedMessagesFn = contextActions.getQueuedMessages;
 		this.compactFn = contextActions.compact;
 		this.getSystemPromptFn = contextActions.getSystemPrompt;
 
@@ -621,6 +633,18 @@ export class ExtensionRunner {
 			getContextUsage: () => {
 				runner.assertActive();
 				return runner.getContextUsageFn();
+			},
+			getTasks: () => {
+				runner.assertActive();
+				return runner.getTasksFn();
+			},
+			getTaskSummary: () => {
+				runner.assertActive();
+				return runner.getTaskSummaryFn();
+			},
+			getQueuedMessages: () => {
+				runner.assertActive();
+				return runner.getQueuedMessagesFn();
 			},
 			compact: (options) => {
 				runner.assertActive();

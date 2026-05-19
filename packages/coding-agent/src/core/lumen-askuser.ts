@@ -25,6 +25,17 @@ interface AskUserDetails {
 	cancelled: boolean;
 }
 
+export function formatAskUserFooterStatus(question: string): string {
+	return `awaiting input · ${question}`;
+}
+
+export function formatAskUserResultSummary(details: AskUserDetails): string {
+	if (details.cancelled) {
+		return "Input cancelled";
+	}
+	return details.answer ? `Input received · ${details.answer}` : "Input received";
+}
+
 // ============================================================================
 // Schema
 // ============================================================================
@@ -89,31 +100,33 @@ export default function lumenAskUserExtension(pi: ExtensionAPI): void {
 				};
 			}
 
-			const answer =
-				mode === "text"
-					? await ctx.ui.input(question, params.default, { signal: _signal })
-					: await ctx.ui.select("Ask User", buildOptions(mode, options), { signal: _signal });
+			ctx.ui.setStatus("ask_user", formatAskUserFooterStatus(question));
+			try {
+				const answer =
+					mode === "text"
+						? await ctx.ui.input(question, params.default, { signal: _signal })
+						: await ctx.ui.select("Ask User", buildOptions(mode, options), { signal: _signal });
 
-			if (!answer) {
+				if (!answer) {
+					return {
+						content: [{ type: "text" as const, text: "User cancelled the selection." }],
+						details: { question, mode, options, answer: null, cancelled: true } as AskUserDetails,
+					};
+				}
+
 				return {
-					content: [{ type: "text" as const, text: "User cancelled the selection." }],
-					details: { question, mode, options, answer: null, cancelled: true } as AskUserDetails,
+					content: [{ type: "text" as const, text: `User answered: ${answer}` }],
+					details: { question, mode, options, answer, cancelled: false } as AskUserDetails,
 				};
+			} finally {
+				ctx.ui.setStatus("ask_user", undefined);
 			}
-
-			return {
-				content: [{ type: "text" as const, text: `User answered: ${answer}` }],
-				details: { question, mode, options, answer, cancelled: false } as AskUserDetails,
-			};
 		},
 
 		renderCall(args: { question?: string; mode?: string; options?: string[] }, theme, _context) {
 			const modeLabel = args.mode ?? "select";
-			let text =
+			const text =
 				theme.fg("toolTitle", theme.bold("ask_user ")) + theme.fg("muted", `[${modeLabel}] ${args.question ?? ""}`);
-			if (args.options && args.options.length > 0) {
-				text += `\n${theme.fg("dim", `  Options: ${args.options.join(", ")}`)}`;
-			}
 			return new Text(text, 0, 0);
 		},
 
@@ -129,11 +142,9 @@ export default function lumenAskUserExtension(pi: ExtensionAPI): void {
 				return new Text(text?.type === "text" ? (text.text ?? "") : "", 0, 0);
 			}
 
-			if (details.cancelled) {
-				return new Text(theme.fg("warning", "Cancelled"), 0, 0);
-			}
-
-			return new Text(theme.fg("success", "\u2713 ") + theme.fg("accent", details.answer ?? ""), 0, 0);
+			const prefix = theme.fg("dim", "⎿ ");
+			const color = details.cancelled ? "warning" : "dim";
+			return new Text(prefix + theme.fg(color, formatAskUserResultSummary(details)), 0, 0);
 		},
 	});
 }

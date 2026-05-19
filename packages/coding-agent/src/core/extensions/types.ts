@@ -159,6 +159,9 @@ export interface ExtensionUIContext {
 	/** Set the label shown for hidden thinking blocks. Call with no argument to restore default. */
 	setHiddenThinkingLabel(label?: string): void;
 
+	/** Show or hide the built-in queued message block above the editor. */
+	setQueuedVisible(visible: boolean): void;
+
 	/** Set a widget to display above or below the editor. Accepts string array or component factory. */
 	setWidget(key: string, content: string[] | undefined, options?: ExtensionWidgetOptions): void;
 	setWidget(
@@ -272,6 +275,15 @@ export interface ExtensionUIContext {
 
 	/** Set tool output expansion state. */
 	setToolsExpanded(expanded: boolean): void;
+
+	/** Get current task/todo expanded state for plugin-owned task UI. */
+	getTasksExpanded(): boolean;
+
+	/** Set task/todo expanded state for plugin-owned task UI. */
+	setTasksExpanded(expanded: boolean): void;
+
+	/** Toggle task/todo expanded state for plugin-owned task UI. */
+	toggleTasksExpanded(): void;
 }
 
 // ============================================================================
@@ -284,6 +296,37 @@ export interface ContextUsage {
 	contextWindow: number;
 	/** Context usage as percentage of context window, or null if tokens is unknown. */
 	percent: number | null;
+}
+
+export type TaskUiStatus = "pending" | "in_progress" | "completed" | "abandoned" | "running" | "failed" | "aborted";
+
+export interface TaskUiItem {
+	id: string;
+	content: string;
+	status: TaskUiStatus;
+	group?: string;
+	meta?: string;
+}
+
+export interface TaskUiSummary {
+	total: number;
+	completed: number;
+	inProgress: number;
+	pending: number;
+	failed: number;
+	abandoned: number;
+	current?: TaskUiItem;
+	next?: TaskUiItem;
+}
+
+export interface QueuedUiMessage {
+	kind: "steer" | "followUp";
+	text: string;
+}
+
+export interface QueuedUiState {
+	steering: QueuedUiMessage[];
+	followUp: QueuedUiMessage[];
 }
 
 export interface CompactOptions {
@@ -320,6 +363,12 @@ export interface ExtensionContext {
 	shutdown(): void;
 	/** Get current context usage for the active model. */
 	getContextUsage(): ContextUsage | undefined;
+	/** Get current task/todo items available to the UI layer. */
+	getTasks(): TaskUiItem[] | undefined;
+	/** Get summarized task/todo status for current session UI. */
+	getTaskSummary(): TaskUiSummary | undefined;
+	/** Get queued messages currently waiting above the prompt area. */
+	getQueuedMessages(): QueuedUiState | undefined;
 	/** Trigger compaction without awaiting completion. */
 	compact(options?: CompactOptions): void;
 	/** Get the current effective system prompt. */
@@ -1112,6 +1161,7 @@ export interface ExtensionAPI {
 	on(event: "agent_end", handler: ExtensionHandler<AgentEndEvent>): void;
 	on(event: "turn_start", handler: ExtensionHandler<TurnStartEvent>): void;
 	on(event: "turn_end", handler: ExtensionHandler<TurnEndEvent>): void;
+	on(event: "queue_update", handler: ExtensionHandler<{ type: "queue_update" }>): void;
 	on(event: "message_start", handler: ExtensionHandler<MessageStartEvent>): void;
 	on(event: "message_update", handler: ExtensionHandler<MessageUpdateEvent>): void;
 	on(event: "message_end", handler: ExtensionHandler<MessageEndEvent, MessageEndEventResult>): void;
@@ -1498,6 +1548,9 @@ export interface ExtensionContextActions {
 	hasPendingMessages: () => boolean;
 	shutdown: () => void;
 	getContextUsage: () => ContextUsage | undefined;
+	getTasks: () => TaskUiItem[] | undefined;
+	getTaskSummary: () => TaskUiSummary | undefined;
+	getQueuedMessages: () => QueuedUiState | undefined;
 	compact: (options?: CompactOptions) => void;
 	getSystemPrompt: () => string;
 }

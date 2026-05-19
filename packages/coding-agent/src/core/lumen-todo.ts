@@ -17,7 +17,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import type { ExtensionAPI, ExtensionContext, ToolRenderResultOptions } from "./extensions/types.js";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+	TaskUiItem,
+	TaskUiSummary,
+	ToolRenderResultOptions,
+} from "./extensions/types.js";
 
 // ============================================================================
 // Types
@@ -411,14 +417,75 @@ function formatSummary(phases: TodoPhase[], errors: string[]): string {
 	return lines.join("\n");
 }
 
+function formatFooterStatus(phases: TodoPhase[]): string | undefined {
+	const allTasks = phases.flatMap((phase) => phase.tasks);
+	if (allTasks.length === 0) return undefined;
+	const completed = allTasks.filter((task) => task.status === "completed").length;
+	const inProgress = allTasks.find((task) => task.status === "in_progress");
+	const suffix = inProgress ? ` · ${inProgress.content}` : "";
+	return `todo ${completed}/${allTasks.length}${suffix}`;
+}
+
+function formatCompactResult(phases: TodoPhase[], errors: string[]): string {
+	const allTasks = phases.flatMap((phase) => phase.tasks);
+	if (allTasks.length === 0) {
+		return errors.length > 0 ? `Errors: ${errors.join("; ")}` : "Todo list cleared.";
+	}
+	const remaining = allTasks.filter((task) => task.status === "pending" || task.status === "in_progress").length;
+	const completed = allTasks.filter((task) => task.status === "completed").length;
+	const inProgress = allTasks.find((task) => task.status === "in_progress");
+	let summary = `Todo ${completed}/${allTasks.length} completed · ${remaining} remaining`;
+	if (inProgress) summary += ` · Current ${inProgress.content}`;
+	if (errors.length > 0) summary += ` · Errors: ${errors.join("; ")}`;
+	return summary;
+}
+
+export function getSessionTodoUiItems(): TaskUiItem[] | undefined {
+	if (sessionPhases.length === 0) return undefined;
+	return sessionPhases.flatMap((phase, phaseIndex) =>
+		phase.tasks.map((task, taskIndex) => ({
+			id: `todo:${phaseIndex}:${taskIndex}:${task.content}`,
+			content: task.content,
+			status: task.status,
+			group: phase.name,
+			meta:
+				task.notes && task.notes.length > 0
+					? `${task.notes.length} note${task.notes.length === 1 ? "" : "s"}`
+					: undefined,
+		})),
+	);
+}
+
+export function getSessionTodoUiSummary(): TaskUiSummary | undefined {
+	const items = getSessionTodoUiItems();
+	if (!items || items.length === 0) return undefined;
+	const completed = items.filter((item) => item.status === "completed").length;
+	const inProgressItems = items.filter((item) => item.status === "in_progress");
+	const pendingItems = items.filter((item) => item.status === "pending").length;
+	const abandoned = items.filter((item) => item.status === "abandoned").length;
+	const current = inProgressItems[0];
+	const next = items.find((item) => item.status === "pending");
+	return {
+		total: items.length,
+		completed,
+		inProgress: inProgressItems.length,
+		pending: pendingItems,
+		failed: 0,
+		abandoned,
+		current,
+		next,
+	};
+}
+
 // ============================================================================
 // Extension
 // ============================================================================
 
 export default function lumenTodoExtension(pi: ExtensionAPI): void {
 	// Reset state on session start
-	pi.on("session_start", () => {
+	pi.on("session_start", (_event, ctx) => {
 		sessionPhases = [];
+		ctx.ui.setStatus("todo", undefined);
 	});
 
 	// Register the todo tool for LLM
@@ -458,13 +525,14 @@ export default function lumenTodoExtension(pi: ExtensionAPI): void {
 			params: { ops: TodoOpEntry[] },
 			_signal: AbortSignal | undefined,
 			_onUpdate: undefined,
-			_ctx: ExtensionContext,
+			ctx: ExtensionContext,
 		) {
 			const currentPhases = clonePhases(sessionPhases);
 			const { phases: updated, errors } = applyOps(currentPhases, params.ops);
 
 			// Store in memory only
 			sessionPhases = updated;
+			ctx.ui.setStatus("todo", formatFooterStatus(updated));
 
 			const summary = formatSummary(updated, errors);
 			return {
@@ -491,40 +559,12 @@ export default function lumenTodoExtension(pi: ExtensionAPI): void {
 			_context,
 		) {
 			const details = result.details;
-			if (!details || details.phases.length === 0) {
+			if (!details) {
 				const fallback = result.content?.[0]?.text ?? "No todos";
 				return new Text(theme.fg("dim", fallback), 0, 0);
 			}
-
-			const allTasks = details.phases.flatMap((p) => p.tasks);
-			const completed = allTasks.filter((t) => t.status === "completed").length;
-			const header = theme.fg("success", `[${completed}/${allTasks.length}] `);
-
-			const lines: string[] = [];
-			for (const phase of details.phases) {
-				if (phase.tasks.length === 0) continue;
-				lines.push(theme.fg("accent", `  ${phase.name}:`));
-				for (const task of phase.tasks) {
-					const sym =
-						task.status === "completed"
-							? theme.fg("success", "x")
-							: task.status === "in_progress"
-								? theme.fg("accent", ">")
-								: task.status === "abandoned"
-									? theme.fg("error", "-")
-									: theme.fg("dim", " ");
-					const content =
-						task.status === "completed" || task.status === "abandoned"
-							? theme.fg("dim", task.content)
-							: task.status === "in_progress"
-								? theme.fg("accent", task.content)
-								: theme.fg("muted", task.content);
-					lines.push(`    [${sym}] ${content}`);
-				}
-			}
-
-			const text = `${header}${theme.fg("muted", "todo")}\n${lines.join("\n")}`;
-			return new Text(text, 0, 0);
+			const summary = formatCompactResult(details.phases, details.errors);
+			return new Text(theme.fg("dim", summary), 0, 0);
 		},
 	});
 

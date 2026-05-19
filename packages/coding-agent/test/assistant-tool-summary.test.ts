@@ -1,0 +1,80 @@
+import { beforeAll, describe, expect, it } from "vitest";
+import { AssistantToolSummaryComponent } from "../src/modes/interactive/components/assistant-tool-summary.js";
+import { initTheme } from "../src/modes/interactive/theme/theme.js";
+import { stripAnsi } from "../src/utils/ansi.js";
+
+function render(component: AssistantToolSummaryComponent, width = 100): string {
+	return stripAnsi(component.render(width).join("\n"));
+}
+
+describe("AssistantToolSummaryComponent", () => {
+	beforeAll(() => {
+		initTheme("dark");
+	});
+
+	it("renders a compact two-line transcript-style summary for read", () => {
+		const component = new AssistantToolSummaryComponent(
+			"read",
+			{ path: "README.md" },
+			{
+				role: "toolResult",
+				toolCallId: "tool-read-1",
+				toolName: "read",
+				content: [{ type: "text", text: "line one\nline two\n" }],
+				timestamp: Date.now(),
+			} as any,
+			process.cwd(),
+		);
+
+		const rendered = render(component);
+		expect(rendered).toContain("Read(README.md)");
+		expect(rendered).toContain("⎿ Read 2 lines");
+	});
+
+	it("shows full output when expanded", () => {
+		const component = new AssistantToolSummaryComponent(
+			"bash",
+			{ command: "pwd" },
+			{
+				role: "toolResult",
+				toolCallId: "tool-bash-1",
+				toolName: "bash",
+				content: [{ type: "text", text: "/tmp/work\n" }],
+				timestamp: Date.now(),
+			} as any,
+			process.cwd(),
+		);
+		component.setExpanded(true);
+
+		const rendered = render(component);
+		expect(rendered).toContain("Bash(pwd)");
+		expect(rendered).toContain("⎿ Ran command");
+		expect(rendered).toContain("/tmp/work");
+	});
+
+	it("can start in pending mode and later transition to a completed summary", () => {
+		const component = new AssistantToolSummaryComponent(
+			"grep",
+			{ pattern: "todo", path: "src" },
+			undefined,
+			process.cwd(),
+		);
+
+		const pending = render(component);
+		expect(pending).toContain('Search(pattern: "todo", path: "src")');
+		expect(pending).toContain("⎿ Running…");
+		expect(pending).not.toContain("to expand");
+
+		component.updateResult({
+			role: "toolResult",
+			toolCallId: "tool-grep-1",
+			toolName: "grep",
+			content: [{ type: "text", text: "src/a.ts:1:todo\nsrc/b.ts:2:todo\n" }],
+			timestamp: Date.now(),
+		} as any);
+
+		const completed = render(component);
+		expect(completed).toContain("⎿ Found 2 matches across 2 files");
+		expect(completed).not.toContain("to expand");
+	});
+});

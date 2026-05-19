@@ -1,0 +1,183 @@
+import { Container, Spacer, Text } from "@earendil-works/pi-tui";
+import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.js";
+import type { RenderableCollapsedToolGroup } from "../output-flow/types.js";
+import { theme } from "../theme/theme.js";
+
+type CollapsedKind = "read" | "search" | "list";
+
+interface CollapsedRuntimeItem {
+	id: string;
+	name: string;
+	kind: CollapsedKind;
+	arguments: Record<string, unknown>;
+	completed: boolean;
+}
+
+function plural(count: number, singular: string, pluralForm: string): string {
+	return `${count} ${count === 1 ? singular : pluralForm}`;
+}
+
+function classifyToolName(toolName: string): CollapsedKind {
+	if (toolName === "read") return "read";
+	if (toolName === "ls") return "list";
+	return "search";
+}
+
+function buildSummary(items: CollapsedRuntimeItem[]): string {
+	const readCount = items.filter((item) => item.kind === "read").length;
+	const searchCount = items.filter((item) => item.kind === "search").length;
+	const listCount = items.filter((item) => item.kind === "list").length;
+	const allCompleted = items.length > 0 && items.every((item) => item.completed);
+	const parts: string[] = [];
+
+	if (readCount > 0) parts.push(`${allCompleted ? "Read" : "Reading"} ${plural(readCount, "file", "files")}`);
+	if (searchCount > 0)
+		parts.push(`${allCompleted ? "Searched" : "Searching"} ${plural(searchCount, "pattern", "patterns")}`);
+	if (listCount > 0)
+		parts.push(`${allCompleted ? "Listed" : "Listing"} ${plural(listCount, "directory", "directories")}`);
+
+	return parts.join(", ") + (allCompleted ? "" : "…");
+}
+
+function latestHint(items: CollapsedRuntimeItem[], cwd: string): string | undefined {
+	const latest = [...items].reverse().find((item) => !item.completed) ?? items.at(-1);
+	if (!latest) return undefined;
+	const args = latest.arguments;
+	if (typeof args.path === "string" && args.path.length > 0) {
+		return formatPathRelativeToCwdOrAbsolute(args.path, cwd);
+	}
+	if (typeof args.file_path === "string" && args.file_path.length > 0) {
+		return formatPathRelativeToCwdOrAbsolute(args.file_path, cwd);
+	}
+	if (typeof args.pattern === "string" && args.pattern.length > 0) {
+		return `"${args.pattern}"`;
+	}
+	return undefined;
+}
+
+function describeToolCallName(toolName: string): string {
+	if (toolName === "read") return "Read";
+	if (toolName === "grep" || toolName === "find") return "Search";
+	if (toolName === "ls") return "List";
+	return toolName;
+}
+
+function describeToolCallTarget(argumentsValue: Record<string, unknown>, cwd: string): string | undefined {
+	if (typeof argumentsValue.path === "string" && argumentsValue.path.length > 0) {
+		return formatPathRelativeToCwdOrAbsolute(argumentsValue.path, cwd);
+	}
+	if (typeof argumentsValue.file_path === "string" && argumentsValue.file_path.length > 0) {
+		return formatPathRelativeToCwdOrAbsolute(argumentsValue.file_path, cwd);
+	}
+	if (typeof argumentsValue.pattern === "string" && argumentsValue.pattern.length > 0) {
+		return argumentsValue.pattern;
+	}
+	return undefined;
+}
+
+export class CollapsedToolGroupComponent extends Container {
+	private expanded = false;
+	private items: CollapsedRuntimeItem[] = [];
+
+	constructor(
+		private readonly cwd: string,
+		group?: RenderableCollapsedToolGroup,
+	) {
+		super();
+		if (group) {
+			this.items = group.items.map((item) => ({
+				id: item.toolCall.id,
+				name: item.toolCall.name,
+				kind: classifyToolName(item.toolCall.name),
+				arguments: item.toolCall.arguments,
+				completed: true,
+			}));
+		}
+		this.updateDisplay();
+	}
+
+	setExpanded(expanded: boolean): void {
+		this.expanded = expanded;
+		this.updateDisplay();
+	}
+
+	addOrUpdateToolCall(id: string, name: string, argumentsValue: Record<string, unknown>): void {
+		const existing = this.items.find((item) => item.id === id);
+		if (existing) {
+			existing.arguments = argumentsValue;
+			this.updateDisplay();
+			return;
+		}
+		this.items.push({
+			id,
+			name,
+			kind: classifyToolName(name),
+			arguments: argumentsValue,
+			completed: false,
+		});
+		this.updateDisplay();
+	}
+
+	markCompleted(id: string): void {
+		const item = this.items.find((entry) => entry.id === id);
+		if (!item) return;
+		item.completed = true;
+		this.updateDisplay();
+	}
+
+	markAllCompleted(): void {
+		for (const item of this.items) {
+			item.completed = true;
+		}
+		this.updateDisplay();
+	}
+
+	hasToolCall(id: string): boolean {
+		return this.items.some((item) => item.id === id);
+	}
+
+	isComplete(): boolean {
+		return this.items.length > 0 && this.items.every((item) => item.completed);
+	}
+
+	override invalidate(): void {
+		super.invalidate();
+		this.updateDisplay();
+	}
+
+	private updateDisplay(): void {
+		this.clear();
+		if (this.items.length === 0) return;
+
+		const summary = buildSummary(this.items);
+		const hint = latestHint(this.items, this.cwd);
+
+		this.addChild(new Spacer(1));
+		this.addChild(new Text(theme.fg("toolTitle", summary), 1, 0));
+
+		if (!this.expanded && hint) {
+			this.addChild(new Text(theme.fg("dim", `  ⎿ ${hint}`), 0, 0));
+			return;
+		}
+
+		if (!this.expanded) {
+			return;
+		}
+
+		for (const item of this.items) {
+			const label = describeToolCallName(item.name);
+			const target = describeToolCallTarget(item.arguments, this.cwd);
+			const status = item.completed ? theme.fg("success", "✓ ") : theme.fg("dim", "● ");
+			this.addChild(
+				new Text(
+					theme.fg("muted", "  ⎿ ") +
+						status +
+						theme.fg("dim", label) +
+						(target ? theme.fg("muted", ` ${target}`) : ""),
+					0,
+					0,
+				),
+			);
+		}
+	}
+}

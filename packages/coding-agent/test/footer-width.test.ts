@@ -59,10 +59,13 @@ function createSession(options: {
 	return session as unknown as AgentSession;
 }
 
-function createFooterData(providerCount: number): ReadonlyFooterDataProvider {
+function createFooterData(
+	providerCount: number,
+	statuses: ReadonlyMap<string, string> = new Map<string, string>(),
+): ReadonlyFooterDataProvider {
 	const provider = {
 		getGitBranch: () => "main",
-		getExtensionStatuses: () => new Map<string, string>(),
+		getExtensionStatuses: () => statuses,
 		getAvailableProviderCount: () => providerCount,
 		onBranchChange: (callback: () => void) => {
 			void callback;
@@ -111,5 +114,26 @@ describe("FooterComponent width handling", () => {
 		for (const line of lines) {
 			expect(visibleWidth(line)).toBeLessThanOrEqual(width);
 		}
+	});
+
+	it("prioritizes prompt-adjacent statuses in the footer status line", () => {
+		const width = 120;
+		const session = createSession({ sessionName: "demo" });
+		const statuses = new Map<string, string>([
+			["todo", "todo 1/3 · polish footer"],
+			["ui", "waiting · Confirm overwrite"],
+			["task", "task running 2 · worker: read"],
+			["queue", "queued 2 · 1 steer · 1 follow-up"],
+		]);
+		const footer = new FooterComponent(session, createFooterData(1, statuses));
+
+		const lines = footer.render(width);
+		expect(lines).toHaveLength(3);
+		expect(lines[2]).toContain("waiting · Confirm overwrite");
+		expect(lines[2].indexOf("waiting · Confirm overwrite")).toBeLessThan(
+			lines[2].indexOf("task running 2 · worker: read"),
+		);
+		expect(lines[2].indexOf("task running 2 · worker: read")).toBeLessThan(lines[2].indexOf("todo 1/3"));
+		expect(lines[2].indexOf("todo 1/3")).toBeLessThan(lines[2].indexOf("queued 2 · 1 steer · 1 follow-up"));
 	});
 });

@@ -7,6 +7,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NO_ENV=false
 ARGS=()
 for arg in "$@"; do
+  if [[ "$arg" == "--tui" ]]; then
+    echo "--tui has been removed. Start Lumen without --tui; the default interactive mode is now the only supported TUI." >&2
+    exit 1
+  fi
   if [[ "$arg" == "--no-env" ]]; then
     NO_ENV=true
   else
