@@ -351,6 +351,12 @@ export interface TaskUiItem {
 	status: TaskUiStatus;
 	group?: string;
 	meta?: string;
+	/** Number of tool executions completed by this sub-agent. */
+	toolCount?: number;
+	/** Approximate output tokens consumed by this sub-agent. */
+	tokens?: number;
+	/** Wall-clock duration in milliseconds since sub-agent started. */
+	durationMs?: number;
 }
 
 export interface TaskUiSummary {

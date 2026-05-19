@@ -36,6 +36,7 @@ type WorkingState = {
 	isStalled: boolean;
 	displayedTokens: number;
 	tipState: TipState;
+	shimmerOffset: number;
 };
 
 type TaskGroup = {
@@ -203,6 +204,31 @@ function inlineText(text: string, maxChars: number): string {
 	return `${normalized.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`;
 }
 
+function shimmerText(
+	text: string,
+	offset: number,
+	theme: ExtensionContext["ui"]["theme"],
+	baseColor: "accent" | "error",
+): string {
+	const len = text.length;
+	if (len === 0) return "";
+	const cycleLen = len + 6;
+	const pos = offset % cycleLen;
+	const shimStart = pos - 1;
+	const shimEnd = pos + 1;
+	if (shimStart >= len || shimEnd < 0) {
+		return theme.bold(theme.fg(baseColor, text));
+	}
+	const cStart = Math.max(0, shimStart);
+	const cEnd = Math.min(len, shimEnd + 1);
+	const before = text.slice(0, cStart);
+	const shim = text.slice(cStart, cEnd);
+	const after = text.slice(cEnd);
+	const dimPart = (s: string) => (s ? theme.fg(baseColor, s) : "");
+	const brightPart = (s: string) => (s ? theme.bold(theme.fg(baseColor, s)) : "");
+	return dimPart(before) + brightPart(shim) + dimPart(after);
+}
+
 function createWorkingIndicator(
 	theme: ExtensionContext["ui"]["theme"],
 	stalled: boolean,
@@ -210,19 +236,13 @@ function createWorkingIndicator(
 ): WorkingIndicatorOptions {
 	const color = stalled ? "error" : "accent";
 	const intervalMs = stalled ? 80 : mode === "requesting" ? 80 : mode === "tool-use" ? 160 : 120;
+	const chars =
+		process.platform === "darwin"
+			? ["·", "✢", "✳", "✶", "✻", "✽"]
+			: ["·", "✢", "*", "✶", "✻", "✽"];
+	const bounce = [...chars, ...[...chars].reverse()];
 	return {
-		frames: [
-			theme.fg(color, "⠋"),
-			theme.fg(color, "⠙"),
-			theme.fg(color, "⠹"),
-			theme.fg(color, "⠸"),
-			theme.fg(color, "⠼"),
-			theme.fg(color, "⠴"),
-			theme.fg(color, "⠦"),
-			theme.fg(color, "⠧"),
-			theme.fg(color, "⠇"),
-			theme.fg(color, "⠏"),
-		],
+		frames: bounce.map((ch) => theme.fg(color, ch)),
 		intervalMs,
 	};
 }
@@ -429,11 +449,49 @@ function formatWorkingMessage(
 
 	const headline = formatCurrentHeadline(current, spinner, working);
 	const headlineColor = working.isStalled ? "error" : "accent";
-	const coloredHeadline = theme.bold(theme.fg(headlineColor, `${headline}…`));
+	const mode = spinner?.mode;
+	const shimmerStep = mode === "requesting" ? 3 : mode === "tool-use" ? 0 : 1;
+	working.shimmerOffset += shimmerStep;
+	const headlineText = `${headline}…`;
+	let coloredHeadline: string;
+	if (mode === "tool-use") {
+		const pulse = Math.sin((working.shimmerOffset * 0.15)) > 0;
+		working.shimmerOffset++;
+		coloredHeadline = pulse
+			? theme.bold(theme.fg(headlineColor, headlineText))
+			: theme.fg(headlineColor, headlineText);
+	} else if (shimmerStep > 0) {
+		coloredHeadline = shimmerText(headlineText, working.shimmerOffset, theme, headlineColor);
+	} else {
+		coloredHeadline = theme.bold(theme.fg(headlineColor, headlineText));
+	}
 	const coloredMeta = parts.length > 0 ? theme.fg("muted", ` (${parts.join(" · ")})`) : "";
 	const firstLine = `${coloredHeadline}${coloredMeta}`;
 	if (showExpandedTasksInSpinnerRegion) return firstLine;
 	const responseLines: string[] = [];
+
+	// Teammate tree: show running sub-agents with their current activity
+	const runningTasks = snapshot.tasks.filter(
+		(t) => t.status === "running" || t.status === "in_progress",
+	);
+	if (runningTasks.length > 0) {
+		for (let i = 0; i < runningTasks.length; i++) {
+			const t = runningTasks[i]!;
+			const prefix = i === runningTasks.length - 1 ? "└─" : "├─";
+			const agent = t.group ? `@${t.group}` : t.id;
+			const activity = t.meta ? inlineText(t.meta, 40) : t.activeForm ?? "working";
+			const stats: string[] = [];
+			if (t.toolCount) stats.push(`${t.toolCount} uses`);
+			if (t.tokens) stats.push(`${formatTokens(t.tokens)} tokens`);
+			const statsSuffix = stats.length > 0 ? ` · ${stats.join(" · ")}` : "";
+			responseLines.push(
+				theme.fg("dim", `  ${prefix} `) +
+					theme.fg("accent", agent) +
+					theme.fg("dim", `: ${activity}${statsSuffix}`),
+			);
+		}
+	}
+
 	// budgetText 暂时隐藏；core producer 保留，未来按需重新启用
 	// const budgetText = spinner?.budgetText;
 	// if (budgetText) {
@@ -491,6 +549,7 @@ export default function (pi: ExtensionAPI) {
 		isStalled: false,
 		displayedTokens: 0,
 		tipState: { shownIds: new Set(), lastTipId: undefined, lastTipCycleStart: 0 },
+		shimmerOffset: 0,
 	};
 
 	let latestCtx: ExtensionContext | undefined;

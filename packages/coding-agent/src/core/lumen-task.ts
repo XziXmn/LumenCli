@@ -241,6 +241,9 @@ export function getSessionTaskUiItems(): TaskUiItem[] | undefined {
 			meta: progress.currentTool
 				? `${progress.currentTool}${progress.currentToolArgs ? ` ${progress.currentToolArgs}` : ""}`
 				: undefined,
+			toolCount: progress.toolCount > 0 ? progress.toolCount : undefined,
+			tokens: progress.tokens > 0 ? progress.tokens : undefined,
+			durationMs: progress.durationMs > 0 ? progress.durationMs : undefined,
 		}));
 }
 
