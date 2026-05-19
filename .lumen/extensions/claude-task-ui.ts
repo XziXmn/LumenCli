@@ -218,8 +218,19 @@ function inlineText(text: string, maxChars: number): string {
 
 function createWorkingIndicator(theme: ExtensionContext["ui"]["theme"]): WorkingIndicatorOptions {
 	return {
-		frames: [theme.fg("accent", "●"), theme.fg("muted", "●"), theme.fg("accent", "●")],
-		intervalMs: 280,
+		frames: [
+			theme.fg("accent", "⠋"),
+			theme.fg("accent", "⠙"),
+			theme.fg("accent", "⠹"),
+			theme.fg("accent", "⠸"),
+			theme.fg("accent", "⠼"),
+			theme.fg("accent", "⠴"),
+			theme.fg("accent", "⠦"),
+			theme.fg("accent", "⠧"),
+			theme.fg("accent", "⠇"),
+			theme.fg("accent", "⠏"),
+		],
+		intervalMs: 80,
 	};
 }
 
@@ -320,10 +331,11 @@ function formatWorkingMessage(
 	const firstLine = `${coloredHeadline}${coloredMeta}`;
 	if (showExpandedTasksInSpinnerRegion) return firstLine;
 	const responseLines: string[] = [];
-	const budgetText = spinner?.budgetText;
-	if (budgetText) {
-		responseLines.push(theme.fg("dim", `  ⎿ `) + theme.fg("muted", budgetText));
-	}
+	// budgetText 暂时隐藏；core producer 保留，未来按需重新启用
+	// const budgetText = spinner?.budgetText;
+	// if (budgetText) {
+	// 	responseLines.push(theme.fg("dim", `  ⎿ `) + theme.fg("muted", budgetText));
+	// }
 	if (next) {
 		const nextText = `Next: ${inlineText(next.subject ?? next.content, MAX_WORKING_PREVIEW_CHARS)}`;
 		responseLines.push(theme.fg("dim", "  ⎿ ") + nextText);

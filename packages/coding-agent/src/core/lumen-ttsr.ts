@@ -181,28 +181,24 @@ export default function lumenTtsrExtension(pi: ExtensionAPI): void {
 		};
 	});
 
-	// Inject rules based on tool calls
-	pi.on("tool_call", (event) => {
+	// Inject rules by appending to tool result content (no separate message, no queue entry)
+	pi.on("tool_result", (event) => {
 		if (rules.length === 0) return;
 
-		// Find rules triggered by this tool
 		const triggered = rules.filter(
 			(r) => r.triggers.tools?.includes(event.toolName) && !lastInjectedTools.has(r.name),
 		);
 
 		if (triggered.length === 0) return;
 
-		// Mark as injected (avoid re-injecting same rule in same session)
 		for (const r of triggered) {
 			lastInjectedTools.add(r.name);
 		}
 
-		// We can't modify system prompt from tool_call, but we can steer
-		// by sending a user message with the rules
 		const injection = triggered.map((r) => r.content).join("\n\n");
-		pi.sendUserMessage(`[规则提醒]\n${injection}`, { deliverAs: "steer" });
-
-		return undefined;
+		return {
+			content: [...event.content, { type: "text" as const, text: `\n[规则提醒]\n${injection}` }],
+		};
 	});
 
 	// Reset on new session

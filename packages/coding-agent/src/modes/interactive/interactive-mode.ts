@@ -1699,12 +1699,11 @@ export class InteractiveMode {
 		let tip: string | undefined;
 		if (this.settingsManager.getSpinnerTipsEnabled() && !summary?.next && elapsedMs !== undefined) {
 			if (elapsedMs > 1_800_000) {
-				tip = "Use /clear to start fresh when switching topics and free up context";
+				tip = "切换话题时可以用 /clear 重开会话，释放上下文";
 			} else if (elapsedMs > 30_000) {
-				tip =
-					"Long-running work is active; queue follow-ups above the prompt instead of interrupting the current turn";
+				tip = "Enter 立即插入（工具间隙就发出），Alt+Enter 排队等本轮结束再发";
 			} else if (usage?.percent !== null && usage?.percent !== undefined && usage.percent >= 90) {
-				tip = "Context is getting tight; /clear or compaction may help before switching topics";
+				tip = "上下文快满了，切换话题前可以用 /clear 或等待自动 compaction";
 			}
 		}
 
