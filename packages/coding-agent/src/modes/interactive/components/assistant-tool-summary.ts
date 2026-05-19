@@ -2,6 +2,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { getTextOutput } from "../../../core/tools/render-utils.js";
 import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.js";
+import { isCollapsibleToolName } from "../output-flow/collapse.js";
 import { theme } from "../theme/theme.js";
 
 type ToolResultMessage = Extract<AgentMessage, { role: "toolResult" }>;
@@ -185,7 +186,7 @@ export class AssistantToolSummaryComponent extends Container {
 
 		if (this.expanded) {
 			this.addChild(new Text(theme.fg("toolOutput", output), 2, 0));
-		} else {
+		} else if (!isCollapsibleToolName(this.toolName)) {
 			const lines = output.split("\n");
 			const previewLines = lines.slice(0, 5);
 			const preview = previewLines.join("\n");
