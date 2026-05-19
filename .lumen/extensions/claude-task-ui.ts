@@ -33,6 +33,9 @@ type WorkingState = {
 	lastOutputTokens: number;
 	idleCycles: number;
 	isIdle: boolean;
+	isStalled: boolean;
+	displayedTokens: number;
+	tipState: TipState;
 };
 
 type TaskGroup = {
@@ -187,7 +190,7 @@ class ClaudeQueuedWidgetComponent extends Container {
 	}
 }
 
-const SHOW_TIP_AFTER_MS = 5_000;
+const SHOW_TIP_AFTER_MS = 30_000;
 const MAX_QUEUED_PREVIEW_CHARS = 96;
 const MAX_TASK_PREVIEW_CHARS = 88;
 const MAX_WORKING_PREVIEW_CHARS = 96;
@@ -200,19 +203,20 @@ function inlineText(text: string, maxChars: number): string {
 	return `${normalized.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`;
 }
 
-function createWorkingIndicator(theme: ExtensionContext["ui"]["theme"]): WorkingIndicatorOptions {
+function createWorkingIndicator(theme: ExtensionContext["ui"]["theme"], stalled: boolean): WorkingIndicatorOptions {
+	const color = stalled ? "error" : "accent";
 	return {
 		frames: [
-			theme.fg("accent", "⠋"),
-			theme.fg("accent", "⠙"),
-			theme.fg("accent", "⠹"),
-			theme.fg("accent", "⠸"),
-			theme.fg("accent", "⠼"),
-			theme.fg("accent", "⠴"),
-			theme.fg("accent", "⠦"),
-			theme.fg("accent", "⠧"),
-			theme.fg("accent", "⠇"),
-			theme.fg("accent", "⠏"),
+			theme.fg(color, "⠋"),
+			theme.fg(color, "⠙"),
+			theme.fg(color, "⠹"),
+			theme.fg(color, "⠸"),
+			theme.fg(color, "⠼"),
+			theme.fg(color, "⠴"),
+			theme.fg(color, "⠦"),
+			theme.fg(color, "⠧"),
+			theme.fg(color, "⠇"),
+			theme.fg(color, "⠏"),
 		],
 		intervalMs: 80,
 	};
@@ -281,7 +285,76 @@ function formatCurrentHeadline(
 	return working.randomVerb;
 }
 
+interface TipCandidate {
+	id: string;
+	text: string;
+	priority: number; // lower = higher priority
+	condition: (elapsed: number, snapshot: Snapshot, tipState: TipState) => boolean;
+	once?: boolean; // show only once per session
+}
+
+type TipState = {
+	shownIds: Set<string>;
+	lastTipId: string | undefined;
+	lastTipCycleStart: number;
+};
+
+const TIP_ROTATION_MS = 60_000;
+
+const TIP_POOL: TipCandidate[] = [
+	{
+		id: "clear-context",
+		text: "切换话题时可以用 /clear 重开会话，释放上下文",
+		priority: 1,
+		condition: (elapsed) => elapsed >= 1_800_000,
+	},
+	{
+		id: "queue-hint",
+		text: "Enter 立即插入（工具间隙就发出），Alt+Enter 排队等本轮结束再发",
+		priority: 2,
+		condition: (elapsed, _snapshot, tipState) => elapsed >= 30_000 && !tipState.shownIds.has("queue-hint"),
+		once: true,
+	},
+	{
+		id: "tasks-hint",
+		text: "用 tasks-ui 命令可以展开/折叠任务列表",
+		priority: 3,
+		condition: (elapsed, snapshot, tipState) =>
+			elapsed >= 60_000 && snapshot.tasks.length > 0 && !tipState.shownIds.has("tasks-hint"),
+		once: true,
+	},
+];
+
+function selectTip(elapsed: number, snapshot: Snapshot, tipState: TipState): string | undefined {
+	const now = Date.now();
+	// Rotate tip after TIP_ROTATION_MS
+	if (tipState.lastTipId && now - tipState.lastTipCycleStart < TIP_ROTATION_MS) {
+		const current = TIP_POOL.find((t) => t.id === tipState.lastTipId);
+		if (current && current.condition(elapsed, snapshot, tipState)) {
+			return current.text;
+		}
+	}
+
+	const candidates = TIP_POOL
+		.filter((t) => t.condition(elapsed, snapshot, tipState))
+		.sort((a, b) => a.priority - b.priority);
+
+	if (candidates.length === 0) return undefined;
+
+	const selected = candidates[0];
+	if (selected.id !== tipState.lastTipId) {
+		tipState.lastTipId = selected.id;
+		tipState.lastTipCycleStart = now;
+		if (selected.once) {
+			tipState.shownIds.add(selected.id);
+		}
+	}
+	return selected.text;
+}
+
 const IDLE_CYCLES_THRESHOLD = 2;
+const STALL_CYCLES_THRESHOLD = 12; // 3 seconds at 250ms refresh
+const TOKEN_ANIMATION_STEP = 0.3; // lerp factor per cycle
 
 function formatWorkingMessage(
 	snapshot: Snapshot,
@@ -297,12 +370,21 @@ function formatWorkingMessage(
 	const parts: string[] = [];
 	const showExpandedTasksInSpinnerRegion = snapshot.expanded && snapshot.tasks.length > 0;
 
-	// Idle detection: tasks running but leader not producing tokens
+	// Idle/stall detection: track cycles without token growth
 	if (outputTokens === working.lastOutputTokens) {
 		working.idleCycles++;
 	} else {
 		working.idleCycles = 0;
 		working.lastOutputTokens = outputTokens;
+	}
+
+	// Smooth token animation: lerp toward actual value
+	if (working.displayedTokens < outputTokens) {
+		const delta = outputTokens - working.displayedTokens;
+		const step = Math.max(1, Math.ceil(delta * TOKEN_ANIMATION_STEP));
+		working.displayedTokens = Math.min(outputTokens, working.displayedTokens + step);
+	} else {
+		working.displayedTokens = outputTokens;
 	}
 
 	const hasRunningTasks = snapshot.tasks.some(
@@ -313,6 +395,7 @@ function formatWorkingMessage(
 
 	if (leaderIsIdle) {
 		working.isIdle = true;
+		working.isStalled = false;
 		const runningCount = snapshot.tasks.filter(
 			(t) => t.status === "running" || t.status === "in_progress",
 		).length;
@@ -321,10 +404,14 @@ function formatWorkingMessage(
 	}
 	working.isIdle = false;
 
+	// Stall detection: no token growth for 3s, not thinking, not idle
+	working.isStalled =
+		!spinner?.isThinking && working.idleCycles >= STALL_CYCLES_THRESHOLD && outputTokens > 0;
+
 	if (elapsed >= 3_000) {
 		parts.push(formatElapsed(elapsed));
-		if (outputTokens > 0) {
-			parts.push(`↓ ${formatTokens(outputTokens)} tokens`);
+		if (working.displayedTokens > 0) {
+			parts.push(`↓ ${formatTokens(working.displayedTokens)} tokens`);
 		}
 	}
 
@@ -336,7 +423,8 @@ function formatWorkingMessage(
 	}
 
 	const headline = formatCurrentHeadline(current, spinner, working);
-	const coloredHeadline = theme.bold(theme.fg("accent", `${headline}…`));
+	const headlineColor = working.isStalled ? "error" : "accent";
+	const coloredHeadline = theme.bold(theme.fg(headlineColor, `${headline}…`));
 	const coloredMeta = parts.length > 0 ? theme.fg("muted", ` (${parts.join(" · ")})`) : "";
 	const firstLine = `${coloredHeadline}${coloredMeta}`;
 	if (showExpandedTasksInSpinnerRegion) return firstLine;
@@ -349,8 +437,11 @@ function formatWorkingMessage(
 	if (next) {
 		const nextText = `Next: ${inlineText(next.subject ?? next.content, MAX_WORKING_PREVIEW_CHARS)}`;
 		responseLines.push(theme.fg("dim", "  ⎿ ") + nextText);
-	} else if (spinner?.tip && elapsed >= SHOW_TIP_AFTER_MS) {
-		responseLines.push(theme.fg("dim", "  ⎿ ") + theme.fg("muted", `Tip: ${spinner.tip}`));
+	} else if (elapsed >= SHOW_TIP_AFTER_MS) {
+		const tip = selectTip(elapsed, snapshot, working.tipState) ?? spinner?.tip;
+		if (tip) {
+			responseLines.push(theme.fg("dim", "  ⎿ ") + theme.fg("muted", `Tip: ${tip}`));
+		}
 	}
 
 	return responseLines.length > 0 ? `${firstLine}\n${responseLines.join("\n")}` : firstLine;
@@ -380,7 +471,7 @@ function renderUi(ctx: ExtensionContext, working: WorkingState) {
 	}
 
 	const workingMessage = formatWorkingMessage(snapshot, working, ctx.ui.theme);
-	ctx.ui.setWorkingIndicator(workingMessage && !working.isIdle ? createWorkingIndicator(ctx.ui.theme) : undefined);
+	ctx.ui.setWorkingIndicator(workingMessage && !working.isIdle ? createWorkingIndicator(ctx.ui.theme, working.isStalled) : undefined);
 	ctx.ui.setWorkingMessage(workingMessage);
 	const workingDetailsFactory = createWorkingDetailsFactory(snapshot);
 	ctx.ui.setWorkingDetails(workingDetailsFactory);
@@ -392,6 +483,9 @@ export default function (pi: ExtensionAPI) {
 		lastOutputTokens: 0,
 		idleCycles: 0,
 		isIdle: false,
+		isStalled: false,
+		displayedTokens: 0,
+		tipState: { shownIds: new Set(), lastTipId: undefined, lastTipCycleStart: 0 },
 	};
 
 	let latestCtx: ExtensionContext | undefined;
