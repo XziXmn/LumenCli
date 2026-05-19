@@ -236,13 +236,19 @@ function createWorkingIndicator(
 ): WorkingIndicatorOptions {
 	const color = stalled ? "error" : "accent";
 	const intervalMs = stalled ? 80 : mode === "requesting" ? 80 : mode === "tool-use" ? 160 : 120;
-	const chars =
-		process.platform === "darwin"
-			? ["·", "✢", "✳", "✶", "✻", "✽"]
-			: ["·", "✢", "*", "✶", "✻", "✽"];
-	const bounce = [...chars, ...[...chars].reverse()];
 	return {
-		frames: bounce.map((ch) => theme.fg(color, ch)),
+		frames: [
+			theme.fg(color, "⠋"),
+			theme.fg(color, "⠙"),
+			theme.fg(color, "⠹"),
+			theme.fg(color, "⠸"),
+			theme.fg(color, "⠼"),
+			theme.fg(color, "⠴"),
+			theme.fg(color, "⠦"),
+			theme.fg(color, "⠧"),
+			theme.fg(color, "⠇"),
+			theme.fg(color, "⠏"),
+		],
 		intervalMs,
 	};
 }

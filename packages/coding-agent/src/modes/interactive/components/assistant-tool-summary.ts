@@ -180,11 +180,21 @@ export class AssistantToolSummaryComponent extends Container {
 		const summary = summaryForTool(this.toolName, this.args, this.result);
 		this.addChild(new Text(renderToolResponseLine(summary), 0, 0));
 
-		if (!this.expanded) return;
-
 		const output = getTextOutput(this.result, false).trim();
-		if (output) {
+		if (!output) return;
+
+		if (this.expanded) {
 			this.addChild(new Text(theme.fg("toolOutput", output), 2, 0));
+		} else {
+			const lines = output.split("\n");
+			const previewLines = lines.slice(0, 5);
+			const preview = previewLines.join("\n");
+			if (preview) {
+				this.addChild(new Text(theme.fg("dim", preview), 2, 0));
+			}
+			if (lines.length > 5) {
+				this.addChild(new Text(renderToolResponseLine(`… ${lines.length - 5} more lines`, "muted"), 0, 0));
+			}
 		}
 	}
 }
