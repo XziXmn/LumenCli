@@ -130,6 +130,7 @@ export interface TaskItem {
 	id: string;
 	description: string;
 	assignment: string;
+	activeForm?: string;
 }
 
 export interface SubagentProgress {
@@ -138,6 +139,7 @@ export interface SubagentProgress {
 	agent: string;
 	status: "pending" | "running" | "completed" | "failed" | "aborted";
 	description: string;
+	activeForm?: string;
 	currentTool?: string;
 	currentToolArgs?: string;
 	toolCount: number;
@@ -206,6 +208,25 @@ export const TASK_LIFECYCLE_CHANNEL = "task:lifecycle";
 
 const sessionTaskProgress = new Map<string, SubagentProgress>();
 
+if (process.env.VITEST) {
+	(
+		globalThis as typeof globalThis & {
+			__pi_test_setTaskProgress?: (progress: SubagentProgress) => void;
+			__pi_test_clearTaskProgress?: () => void;
+		}
+	).__pi_test_setTaskProgress = (progress: SubagentProgress) => {
+		sessionTaskProgress.set(progress.id, progress);
+	};
+	(
+		globalThis as typeof globalThis & {
+			__pi_test_setTaskProgress?: (progress: SubagentProgress) => void;
+			__pi_test_clearTaskProgress?: () => void;
+		}
+	).__pi_test_clearTaskProgress = () => {
+		sessionTaskProgress.clear();
+	};
+}
+
 export function getSessionTaskUiItems(): TaskUiItem[] | undefined {
 	if (sessionTaskProgress.size === 0) return undefined;
 	return Array.from(sessionTaskProgress.values())
@@ -213,6 +234,8 @@ export function getSessionTaskUiItems(): TaskUiItem[] | undefined {
 		.map((progress) => ({
 			id: `task:${progress.id}`,
 			content: progress.description,
+			subject: progress.description,
+			activeForm: progress.status === "running" ? progress.activeForm : undefined,
 			status: progress.status,
 			group: progress.agent,
 			meta: progress.currentTool
@@ -272,6 +295,7 @@ async function executeSubagent(options: ExecuteSubagentOptions): Promise<TaskRes
 		agent: agentConfig.name,
 		status: "running",
 		description: task.description,
+		activeForm: task.activeForm,
 		toolCount: 0,
 		tokens: 0,
 		durationMs: 0,
@@ -456,6 +480,11 @@ function formatDuration(ms: number): string {
 const TaskItemSchema = Type.Object({
 	id: Type.String({ description: "CamelCase identifier for this task (max 48 chars)" }),
 	description: Type.String({ description: "Short one-liner for UI display" }),
+	activeForm: Type.Optional(
+		Type.String({
+			description: "Present-continuous label for spinner headline when this task is active",
+		}),
+	),
 	assignment: Type.String({ description: "Full task instructions for the sub-agent" }),
 });
 

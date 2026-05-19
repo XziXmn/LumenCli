@@ -76,6 +76,7 @@ describe("ExtensionRunner", () => {
 		hasPendingMessages: () => false,
 		shutdown: () => {},
 		getContextUsage: () => undefined,
+		getSpinnerBudgetUsage: () => undefined,
 		getTasks: () => undefined,
 		getTaskSummary: () => undefined,
 		getQueuedMessages: () => undefined,

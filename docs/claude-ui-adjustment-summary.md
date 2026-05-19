@@ -60,9 +60,9 @@
 
 - 把普通工具标题做成绿色 accent，不像 Claude
 
-### 4. Claude 的 queued 区和 working 状态栏都使用同一类“从属结构”
+### 4. Claude 的 queued 区和 spinner / task / todo 使用同一类“从属结构”
 
-#### working 状态栏
+#### spinner 主区
 Claude 的 spinner 主区：
 
 - 第一行：主状态行（verb + elapsed + tokens + thinking）
@@ -73,6 +73,41 @@ Claude 的 spinner 主区：
 - `references/ClaudeCodeRev/src/components/Spinner.tsx:414-431`
 
 也就是第二行不是手写缩进字符串，而是直接复用 `MessageResponse` 语法。
+
+#### spinner 不是独立的通用状态栏
+
+Claude 源码里，spinner 主文案优先级是：
+
+- `overrideMessage`
+- `currentTodo.activeForm`
+- `currentTodo.subject`
+- `randomVerb`
+
+对应：
+
+- `references/ClaudeCodeRev/src/components/Spinner.tsx:206-217`
+
+这意味着：
+
+- Claude 的 spinner 直接附着在 todo/task 语义上
+- 它不是一个可以被简化为固定 `Working…` 的通用 loading 行
+- `activeForm / subject` 是状态栏正确性的核心输入
+
+#### expanded tasks 是 spinner 区的展开态
+
+Claude 在 `expandedView === 'tasks'` 时，spinner 区下方直接渲染：
+
+- `<MessageResponse><TaskListV2 tasks={tasksV2} /></MessageResponse>`
+
+对应：
+
+- `references/ClaudeCodeRev/src/components/Spinner.tsx:408-412`
+
+这意味着：
+
+- expanded task/todo list 不是独立 widget 优先
+- 它是 spinner / task / todo 一体视图的展开态
+- working、expanded list、footer toggle 必须作为同一套东西设计
 
 #### queued / pending 风格
 Lumen 当前 queued 区自己拼：
@@ -87,7 +122,7 @@ Lumen 当前 queued 区自己拼：
 
 ## 二、当前 Lumen 已经做过但需要回看/收敛的改动
 
-### 1. dynamic-status 插件已存在
+### 1. dynamic-status 插件已存在，但它不是最终形态
 
 位置：
 
@@ -104,10 +139,17 @@ Lumen 当前 queued 区自己拼：
 
 但当前仍有明显偏差：
 
+- 它把 spinner 当成可以单独加工的 working 条
+- 没有和 Claude 的 `activeForm / subject / randomVerb` 优先级对齐
 - Tip 次行是手工拼的 `"  ⎿ Tip: ..."`
 - 不是 Claude 那种 `MessageResponse` 结构
 - token / tip 出现策略仍然比较简化
 - working 主行与次行的层级还不够像 Claude
+
+结论：
+
+- 后续不应继续把 `.lumen/extensions/dynamic-status.ts` 作为目标插件
+- 应把 spinner / task / todo / queued 统一收进 `.lumen/extensions/claude-task-ui.ts`
 
 ### 2. user message 做过一轮紧凑化尝试
 
@@ -140,10 +182,11 @@ Lumen 当前 queued 区自己拼：
 
 当前明确的问题：
 
-- 有一轮把标题调成了 accent，导致在你主题里偏绿
+- 之前有一轮把标题调成了 accent，导致在你主题里偏绿
 - 这不符合 Claude 的标题策略
-- 有一轮把层级压得太小太灰，导致工具调用整体显得过小
-- batch / collapsed 还没有完全转成 Claude 的“句子化 + `⎿` 次行”结构
+- 之前有一轮把层级压得太小太灰，导致工具调用整体显得过小
+- 目前主行已补左侧 `●` 状态点，标题也已收回 bold 非统一强调色
+- 当前剩余偏差更多在 transcript 整体 tool_use / tool_result 语义，而不是单个主行组件的基础骨架
 
 ---
 
@@ -164,17 +207,23 @@ Lumen 当前 queued 区自己拼：
 
 这和 Claude 的风格差异非常明显。
 
-### 2. working 状态栏样式不对
+### 2. spinner / working 状态栏样式不对
 
 当前实现位置：
 
-- `.lumen/extensions/dynamic-status.ts`
+- `.lumen/extensions/claude-task-ui.ts`
 
 问题：
 
-- Tip 次行不是 `MessageResponse` 结构
-- 主行与次行仍是字符串拼接，不是 Claude 的层级语法
-- 现在更像“扩展做的状态提示”，而不是 Claude 自带 spinner 区
+- 如果主文案被简化成固定 `Working`，就已经偏离 Claude 源码
+- 如果主文案不来自 `activeForm / subject`，插件只能猜，无法严格对齐
+- 当前主文案优先级和统一 task/todo 语义已经基本接上
+- 当前 `elapsed / output tokens / thinking / thought for Ns` 已由 core 提供运行时语义，插件主要负责消费和渲染
+- expanded task/todo list 现已收回 spinner 区展开态，不再和 queued 作为同级 prompt widget 混放
+- 当前剩余最大偏差在：
+  - `budgetText` 还不是 Claude 的显式 turn budget
+  - `tip` 还不是完整 tip scheduler
+  - expanded list 虽已 richer，但还不是 `TaskListV2` 级组件
 
 ### 3. tool 调用仍然不够像“主行 + `⎿` 次行”
 
@@ -206,7 +255,7 @@ Lumen 当前 queued 区自己拼：
 - `packages/coding-agent/src/modes/interactive/components/assistant-tool-summary.ts`
 - `packages/coding-agent/src/modes/interactive/components/assistant-tool-batch-summary.ts`
 - `packages/coding-agent/src/modes/interactive/components/collapsed-tool-group.ts`
-- `.lumen/extensions/dynamic-status.ts`
+- `.lumen/extensions/claude-task-ui.ts`
 
 这一层可以做：
 
@@ -260,13 +309,46 @@ Lumen 当前 queued 区自己拼：
 - token
 - thinking effort
 - 中文 Tip
+- `overrideMessage`
+- expanded tasks 作为 spinner 区展开态
+- queued 保持在输入框上方但不进入 transcript
+- expanded task/todo 已走独立 spinner details 承载
+- queued 已走独立 prompt-side 组件承载
+- expanded task/todo 已不再依赖字符串 fallback，开始由组件直接理解 task state 渲染
+- queued 也已不再只是 latest 摘要块，而是开始具备 queued item 列表感
 
 ### 仍需优化的点
 
-1. Tip 次行改成 Claude 风格从属行结构，而不是手拼字符串
-2. token / elapsed / tip 的出现策略更接近 Claude
-3. working 行是否保持稳定高度，要单独决定
-4. 颜色层级再克制一点，不要像扩展 HUD
+1. `budgetText` 进一步接近 Claude 的显式 turn budget 语义
+2. `tip` 进一步接近 Claude 的完整调度策略
+3. expanded task/todo list 进一步接近 `TaskListV2` 级 richer 组件，而不是当前的轻量 details 组件
+4. queued 进一步接近 Claude queued command 模型，而不是当前的 prompt-side 列表组件
+5. working 行颜色层级继续微调，避免扩展 HUD 感
+
+补充：
+
+- 当前 core 默认 `tip` 已不再拿 task toggle 或 queued 概况冒充 Claude tip
+- 默认 tip 现在已接入更真实的触发：
+  - 30s 长时运行提示
+  - 30min `/clear` 提示
+  - context-pressure 提示
+- 并新增 `spinner.tipsEnabled` 设置开关
+- 但它仍不是 Claude 源码里的完整 tip scheduler，这一点仍然是剩余差距
+- queued 当前也已不是纯文本块，已开始携带 richer command 语义：
+  - `delivery`
+  - `mode`
+  - `priority`
+  - `preExpansionText`
+  - `customType`
+  - `hasImages`
+  - `display`
+  - `isMeta`
+  - `origin`
+  - `source`
+  - `skipSlashCommands`
+- 当前 queued 仍未对齐 Claude 完整 `QueuedCommand` 的主要缺口：
+  - `pastedContents`
+  - `bridgeOrigin`
 
 ### 但为什么不优先
 
@@ -286,16 +368,17 @@ queued 和 tool rows 则是“结构还没对齐”。
 
 ### 第一优先级
 
-1. queued 区改成 Claude 语法
-2. tool summary / batch / collapsed 改成主行 + `⎿` 次行
+1. 先把 spinner / task / todo 语义关系对齐 Claude 源码
+2. queued 区改成 Claude 语法
+3. tool summary / batch / collapsed 改成主行 + `⎿` 次行
 
 ### 第二优先级
 
-3. 再回头精修 dynamic-status 插件
+4. 再回头精修 footer 与 prompt-side toggle
 
 ### 第三优先级
 
-4. 最后才考虑是否进一步动主消息流
+5. 最后才考虑是否进一步动主消息流
 
 ---
 
@@ -315,12 +398,12 @@ queued 和 tool rows 则是“结构还没对齐”。
 
 建议：先选 **A**。
 
-### 3. dynamic-status 插件：
+### 3. spinner 插件路线：
 
-- **A. 先只修 Tip 次行结构**
-- **B. 连 token / elapsed / tip 出现策略一起重做**
+- **A. 继续把它当 working 条单独微调**
+- **B. 明确改成 Claude 的 spinner + task/todo 一体插件**
 
-建议：先选 **A**。
+建议：选 **B**。
 
 ---
 
@@ -331,6 +414,26 @@ queued 和 tool rows 则是“结构还没对齐”。
 - Claude 工具调用精确参数文档：`docs/claude-tool-call-style.md`
 - Claude 总体输出风格文档：`docs/claude-output-style.md`
 - 当前阶段决策汇总：本文档
+- `SpinnerUiState` 已补到可承载：
+  - `overrideMessage`
+  - `tip`
+  - `budgetText`
+  - `elapsedMs`
+  - `outputTokens`
+  - `isThinking`
+  - `lastThinkingDurationMs`
+- `SpinnerBudgetUsage` / `getSpinnerBudgetUsage()` 已接入 request payload 预算提取链
+- core 已能为 spinner 提供真实系统态 producer：
+  - `Running PreCompact hooks…`
+  - `Running PostCompact hooks…`
+  - `Compacting conversation`
+  - `Auto-compacting conversation`
+  - `Retrying request (n/m)`
+- `assistant-tool-summary / assistant-tool-batch-summary / collapsed-tool-group` 已补 Claude 风格左侧 `●` 状态点和更接近 Claude 的次级亮度层级
+- 自动化验证现状：
+  - `interactive-mode-status.test.ts` 当前可运行且通过
+  - `2026-spinner-budget-usage.test.ts` 当前可运行且通过
+  - `2027-compaction-hooks-events.test.ts` 当前可运行且通过
 
 ### 已明确暂停
 
@@ -343,5 +446,5 @@ queued 和 tool rows 则是“结构还没对齐”。
 不是继续写代码，而是：
 
 1. 你看完这份文档
-2. 选定 queued / tool / dynamic-status 的优先级和边界
+2. 选定 queued / tool / spinner-task-todo 插件的优先级和边界
 3. 我再按你确认的边界动手

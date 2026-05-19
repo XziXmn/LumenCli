@@ -3,7 +3,7 @@ import { Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { getTextOutput } from "../../../core/tools/render-utils.js";
 import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.js";
 import { theme } from "../theme/theme.js";
-import { summaryForTool, titleForTool } from "./assistant-tool-summary.js";
+import { renderToolResponseLine, renderToolStatusDot, summaryForTool, titleForTool } from "./assistant-tool-summary.js";
 
 type ToolResultMessage = Extract<AgentMessage, { role: "toolResult" }>;
 
@@ -118,25 +118,26 @@ export class AssistantToolBatchSummaryComponent extends Container {
 	private updateDisplay(): void {
 		this.clear();
 		if (this.items.length === 0) return;
+		const allCompleted = this.items.every((item) => item.result);
+		const hasError = this.items.some((item) => item.result?.isError);
+		const status = !allCompleted ? "pending" : hasError ? "error" : "success";
 
 		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.fg("toolTitle", formatBatchSummary(this.items)), 1, 0));
+		this.addChild(new Text(`${renderToolStatusDot(status)} ${theme.bold(formatBatchSummary(this.items))}`, 1, 0));
 		const hint = latestHint(this.items, this.cwd);
 		if (hint) {
-			this.addChild(new Text(theme.fg("dim", `  ⎿ ${hint}`), 0, 0));
+			this.addChild(new Text(renderToolResponseLine(hint), 0, 0));
 		}
 
 		if (!this.expanded) return;
 
 		for (const item of this.items) {
-			this.addChild(new Text(theme.fg("muted", `  ⎿ ${titleForTool(item.toolName, item.args, this.cwd)}`), 0, 0));
+			this.addChild(new Text(renderToolResponseLine(titleForTool(item.toolName, item.args, this.cwd)), 0, 0));
 			if (!item.result) {
-				this.addChild(new Text(theme.fg("dim", "    Running…"), 0, 0));
+				this.addChild(new Text(renderToolResponseLine("Running…", "muted"), 0, 0));
 				continue;
 			}
-			this.addChild(
-				new Text(theme.fg("muted", `    ${summaryForTool(item.toolName, item.args, item.result)}`), 0, 0),
-			);
+			this.addChild(new Text(renderToolResponseLine(summaryForTool(item.toolName, item.args, item.result)), 0, 0));
 			const output = getTextOutput(item.result, false).trim();
 			if (output) {
 				this.addChild(new Text(theme.fg("toolOutput", output), 4, 0));

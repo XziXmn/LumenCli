@@ -100,6 +100,8 @@ export type {
 	// Provider Registration
 	ProviderConfig,
 	ProviderModelConfig,
+	QueuedUiMessage,
+	QueuedUiState,
 	ReadToolCallEvent,
 	ReadToolResultEvent,
 	// Commands
@@ -130,6 +132,10 @@ export type {
 	SetLabelHandler,
 	SetModelHandler,
 	SetThinkingLevelHandler,
+	SpinnerBudgetUsage,
+	SpinnerUiState,
+	TaskUiItem,
+	TaskUiSummary,
 	TerminalInputHandler,
 	// Events - Tool
 	ToolCallEvent,

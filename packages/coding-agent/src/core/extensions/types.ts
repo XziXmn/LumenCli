@@ -113,6 +113,24 @@ export interface WorkingIndicatorOptions {
 	intervalMs?: number;
 }
 
+/** Semantic spinner state used by Claude-style prompt-side working UI. */
+export interface SpinnerUiState {
+	/** Highest-priority working headline, equivalent to Claude's overrideMessage. */
+	overrideMessage?: string;
+	/** Optional prompt-side spinner tip. */
+	tip?: string;
+	/** Optional budget/status line shown above Next/Tip. */
+	budgetText?: string;
+	/** Elapsed runtime for the current spinner session in milliseconds. */
+	elapsedMs?: number;
+	/** Reported or estimated output tokens for the current spinner session. */
+	outputTokens?: number;
+	/** Whether the agent is currently in a thinking block. */
+	isThinking?: boolean;
+	/** Most recently completed thinking duration in milliseconds. */
+	lastThinkingDurationMs?: number;
+}
+
 /** Wrap the current autocomplete provider with additional behavior. */
 export type AutocompleteProviderFactory = (current: AutocompleteProvider) => AutocompleteProvider;
 export type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => EditorComponent;
@@ -143,6 +161,10 @@ export interface ExtensionUIContext {
 	/** Set the working/loading message shown during streaming. Call with no argument to restore default. */
 	setWorkingMessage(message?: string): void;
 
+	/** Set extra spinner-owned content shown beneath the working message. Call with undefined to clear. */
+	setWorkingDetails(lines?: string[]): void;
+	setWorkingDetails(content: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;
+
 	/** Show or hide the built-in interactive working loader row during streaming. */
 	setWorkingVisible(visible: boolean): void;
 
@@ -158,6 +180,12 @@ export interface ExtensionUIContext {
 
 	/** Set the label shown for hidden thinking blocks. Call with no argument to restore default. */
 	setHiddenThinkingLabel(label?: string): void;
+
+	/** Set semantic spinner state for plugin-owned working UI. Call with undefined to clear. */
+	setSpinnerState(state?: SpinnerUiState): void;
+
+	/** Get semantic spinner state for plugin-owned working UI. */
+	getSpinnerState(): SpinnerUiState | undefined;
 
 	/** Show or hide the built-in queued message block above the editor. */
 	setQueuedVisible(visible: boolean): void;
@@ -298,11 +326,20 @@ export interface ContextUsage {
 	percent: number | null;
 }
 
+export interface SpinnerBudgetUsage {
+	/** Actual output ceiling detected from the most recent provider request payload, if known. */
+	requestMaxOutputTokens?: number;
+}
+
 export type TaskUiStatus = "pending" | "in_progress" | "completed" | "abandoned" | "running" | "failed" | "aborted";
 
 export interface TaskUiItem {
 	id: string;
 	content: string;
+	/** Claude-style imperative label, used for next-task display and generic fallbacks. */
+	subject?: string;
+	/** Claude-style present-continuous label, preferred for current spinner headline. */
+	activeForm?: string;
 	status: TaskUiStatus;
 	group?: string;
 	meta?: string;
@@ -321,7 +358,18 @@ export interface TaskUiSummary {
 
 export interface QueuedUiMessage {
 	kind: "steer" | "followUp";
+	delivery?: "steer" | "followUp" | "nextTurn";
+	mode: "prompt" | "custom";
+	priority?: "now" | "next" | "later";
 	text: string;
+	preExpansionText?: string;
+	customType?: string;
+	hasImages?: boolean;
+	display?: boolean;
+	isMeta?: boolean;
+	origin?: string;
+	source?: "interactive" | "rpc" | "extension";
+	skipSlashCommands?: boolean;
 }
 
 export interface QueuedUiState {
@@ -363,6 +411,8 @@ export interface ExtensionContext {
 	shutdown(): void;
 	/** Get current context usage for the active model. */
 	getContextUsage(): ContextUsage | undefined;
+	/** Get current spinner budget usage inferred from the latest provider request, if available. */
+	getSpinnerBudgetUsage(): SpinnerBudgetUsage | undefined;
 	/** Get current task/todo items available to the UI layer. */
 	getTasks(): TaskUiItem[] | undefined;
 	/** Get summarized task/todo status for current session UI. */
@@ -636,6 +686,13 @@ export interface SessionTreeEvent {
 	fromExtension?: boolean;
 }
 
+/** Fired when queued steer/follow-up messages above the prompt change. */
+export interface QueueUpdateEvent {
+	type: "queue_update";
+	steering: readonly string[];
+	followUp: readonly string[];
+}
+
 export type SessionEvent =
 	| SessionStartEvent
 	| SessionBeforeSwitchEvent
@@ -644,7 +701,8 @@ export type SessionEvent =
 	| SessionCompactEvent
 	| SessionShutdownEvent
 	| SessionBeforeTreeEvent
-	| SessionTreeEvent;
+	| SessionTreeEvent
+	| QueueUpdateEvent;
 
 // ============================================================================
 // Agent Events
@@ -1548,6 +1606,7 @@ export interface ExtensionContextActions {
 	hasPendingMessages: () => boolean;
 	shutdown: () => void;
 	getContextUsage: () => ContextUsage | undefined;
+	getSpinnerBudgetUsage: () => SpinnerBudgetUsage | undefined;
 	getTasks: () => TaskUiItem[] | undefined;
 	getTaskSummary: () => TaskUiSummary | undefined;
 	getQueuedMessages: () => QueuedUiState | undefined;

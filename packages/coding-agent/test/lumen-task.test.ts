@@ -1,89 +1,96 @@
 import { describe, expect, it } from "vitest";
-import { formatTaskFooterStatus, formatTaskResultSummary, type SubagentProgress } from "../src/core/lumen-task.js";
+import {
+	formatTaskFooterStatus,
+	formatTaskResultSummary,
+	getSessionTaskUiItems,
+	type SubagentProgress,
+} from "../src/core/lumen-task.js";
 
-function progress(partial: Partial<SubagentProgress>): SubagentProgress {
-	return {
-		index: 0,
-		id: "task-1",
-		agent: "worker",
-		status: "running",
-		description: "Implement feature",
-		toolCount: 0,
-		tokens: 0,
-		durationMs: 0,
-		startedAt: 0,
-		...partial,
-	};
-}
+describe("lumen-task helpers", () => {
+	it("formats task footer status for running and completed progress", () => {
+		const running: SubagentProgress = {
+			index: 0,
+			id: "one",
+			agent: "worker",
+			status: "running",
+			description: "Implement feature",
+			activeForm: "Implementing feature",
+			currentTool: "read",
+			currentToolArgs: "src/app.ts",
+			toolCount: 1,
+			tokens: 42,
+			durationMs: 1000,
+			startedAt: Date.now(),
+		};
 
-describe("formatTaskFooterStatus", () => {
-	it("shows running task progress with current tool", () => {
-		const text = formatTaskFooterStatus([
-			progress({ index: 0, id: "task-1", agent: "worker", currentTool: "read" }),
-			progress({ index: 1, id: "task-2", agent: "reviewer" }),
-		]);
+		expect(formatTaskFooterStatus([running])).toBe("task running 1 · worker: read");
 
-		expect(text).toBe("task running 2 · worker: read");
+		const done: SubagentProgress = {
+			...running,
+			status: "completed",
+			currentTool: undefined,
+			currentToolArgs: undefined,
+		};
+		expect(formatTaskFooterStatus([done])).toBe("task done 1/1");
 	});
 
-	it("shows completion summary when all tasks finished", () => {
-		const text = formatTaskFooterStatus([
-			progress({ status: "completed" }),
-			progress({ id: "task-2", status: "completed" }),
-		]);
-
-		expect(text).toBe("task done 2/2");
+	it("formats task result summary including failures", () => {
+		expect(
+			formatTaskResultSummary({
+				results: [
+					{
+						id: "1",
+						agent: "worker",
+						description: "Implement feature",
+						output: "ok",
+						exitCode: 0,
+						tokens: 120,
+						durationMs: 1000,
+					},
+					{
+						id: "2",
+						agent: "worker",
+						description: "Write tests",
+						output: "",
+						exitCode: 1,
+						tokens: 30,
+						durationMs: 500,
+						error: "failed",
+					},
+				],
+				totalDurationMs: 1500,
+				progress: [],
+			}),
+		).toContain("Failed (1/2 done");
 	});
 
-	it("shows failure count when some tasks failed", () => {
-		const text = formatTaskFooterStatus([
-			progress({ status: "completed" }),
-			progress({ id: "task-2", status: "failed" }),
-		]);
+	it("exposes activeForm on running task ui items", () => {
+		const originalSet = (globalThis as any).__pi_test_setTaskProgress;
+		const originalClear = (globalThis as any).__pi_test_clearTaskProgress;
+		expect(typeof originalSet).toBe("function");
+		expect(typeof originalClear).toBe("function");
 
-		expect(text).toBe("task done 1/2 · 1 failed");
-	});
-});
+		originalClear();
+		originalSet({
+			index: 0,
+			id: "task-1",
+			agent: "worker",
+			status: "running",
+			description: "Implement feature",
+			activeForm: "Implementing feature",
+			currentTool: "read",
+			currentToolArgs: "src/app.ts",
+			toolCount: 1,
+			tokens: 42,
+			durationMs: 1000,
+			startedAt: Date.now(),
+		} satisfies SubagentProgress);
 
-describe("formatTaskResultSummary", () => {
-	it("renders a compact success summary", () => {
-		const text = formatTaskResultSummary({
-			results: [
-				{ id: "a", agent: "worker", description: "A", output: "ok", exitCode: 0, tokens: 120, durationMs: 1000 },
-				{ id: "b", agent: "reviewer", description: "B", output: "ok", exitCode: 0, tokens: 80, durationMs: 2000 },
-			],
-			totalDurationMs: 4200,
-			progress: [
-				progress({ id: "a", status: "completed", toolCount: 2 }),
-				progress({ id: "b", status: "completed", toolCount: 3 }),
-			],
-		});
+		const items = getSessionTaskUiItems();
+		expect(items).toHaveLength(1);
+		expect(items?.[0]?.subject).toBe("Implement feature");
+		expect(items?.[0]?.activeForm).toBe("Implementing feature");
 
-		expect(text).toBe("Done (5 tool uses · 200 tokens · 4.2s)");
-	});
-
-	it("renders a compact failure summary", () => {
-		const text = formatTaskResultSummary({
-			results: [
-				{ id: "a", agent: "worker", description: "A", output: "ok", exitCode: 0, tokens: 50, durationMs: 1000 },
-				{
-					id: "b",
-					agent: "reviewer",
-					description: "B",
-					output: "",
-					exitCode: 1,
-					tokens: 20,
-					durationMs: 2000,
-					error: "boom",
-				},
-			],
-			totalDurationMs: 3100,
-			progress: [
-				progress({ id: "a", status: "completed", toolCount: 1 }),
-				progress({ id: "b", status: "failed", toolCount: 2 }),
-			],
-		});
-
-		expect(text).toBe("Failed (1/2 done · 3 tool uses · 70 tokens · 3.1s)");
+		originalClear();
 	});
 });

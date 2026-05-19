@@ -49,6 +49,7 @@ import type {
 	SessionBeforeSwitchResult,
 	SessionBeforeTreeResult,
 	SessionShutdownEvent,
+	SpinnerBudgetUsage,
 	TaskUiItem,
 	TaskUiSummary,
 	ToolCallEvent,
@@ -198,9 +199,12 @@ const noOpUIContext: ExtensionUIContext = {
 	onTerminalInput: () => () => {},
 	setStatus: () => {},
 	setWorkingMessage: () => {},
+	setWorkingDetails: () => {},
 	setWorkingVisible: () => {},
 	setWorkingIndicator: () => {},
 	setHiddenThinkingLabel: () => {},
+	setSpinnerState: () => {},
+	getSpinnerState: () => undefined,
 	setQueuedVisible: () => {},
 	setWidget: () => {},
 	setFooter: () => {},
@@ -242,6 +246,7 @@ export class ExtensionRunner {
 	private abortFn: () => void = () => {};
 	private hasPendingMessagesFn: () => boolean = () => false;
 	private getContextUsageFn: () => ContextUsage | undefined = () => undefined;
+	private getSpinnerBudgetUsageFn: () => SpinnerBudgetUsage | undefined = () => undefined;
 	private getTasksFn: () => TaskUiItem[] | undefined = () => undefined;
 	private getTaskSummaryFn: () => TaskUiSummary | undefined = () => undefined;
 	private getQueuedMessagesFn: () => import("./types.js").QueuedUiState | undefined = () => undefined;
@@ -304,6 +309,7 @@ export class ExtensionRunner {
 		this.hasPendingMessagesFn = contextActions.hasPendingMessages;
 		this.shutdownHandler = contextActions.shutdown;
 		this.getContextUsageFn = contextActions.getContextUsage;
+		this.getSpinnerBudgetUsageFn = contextActions.getSpinnerBudgetUsage;
 		this.getTasksFn = contextActions.getTasks;
 		this.getTaskSummaryFn = contextActions.getTaskSummary;
 		this.getQueuedMessagesFn = contextActions.getQueuedMessages;
@@ -633,6 +639,10 @@ export class ExtensionRunner {
 			getContextUsage: () => {
 				runner.assertActive();
 				return runner.getContextUsageFn();
+			},
+			getSpinnerBudgetUsage: () => {
+				runner.assertActive();
+				return runner.getSpinnerBudgetUsageFn();
 			},
 			getTasks: () => {
 				runner.assertActive();

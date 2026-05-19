@@ -1,7 +1,19 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "noEmit": true
+	"compilerOptions": {
+		"noEmit": true,
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"paths": {
+			"*": ["../../*"],
+      "@earendil-works/pi-ai": ["../ai/src/index.ts"],
+      "@earendil-works/pi-ai/*": ["../ai/src/*.ts", "../ai/src/providers/*.ts"],
+      "@earendil-works/pi-agent-core": ["../agent/src/index.ts"],
+      "@earendil-works/pi-agent-core/*": ["../agent/src/*"],
+      "@earendil-works/pi-tui": ["../tui/src/index.ts"],
+      "@earendil-works/pi-tui/*": ["../tui/src/*"],
+      "@earendil-works/pi-web-ui": ["./src/index.ts"],
+      "@earendil-works/pi-web-ui/*": ["./src/*"]
+    }
   },
   "include": ["src/**/*"]
 }

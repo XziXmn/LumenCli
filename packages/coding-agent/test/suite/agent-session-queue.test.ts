@@ -115,6 +115,12 @@ describe("AgentSession queue characterization", () => {
 		await new Promise((resolve) => setTimeout(resolve, 0));
 
 		extensionApi?.sendUserMessage("steer now", { deliverAs: "steer" });
+		expect(harness.session.getQueuedUiState()?.steering[0]).toMatchObject({
+			mode: "prompt",
+			delivery: "steer",
+			source: "extension",
+			preExpansionText: "steer now",
+		});
 		releaseToolExecution();
 		await promptPromise;
 
@@ -325,6 +331,65 @@ describe("AgentSession queue characterization", () => {
 		).toBe(true);
 	});
 
+	it("marks extension-origin queued slash follow-ups as raw prompt commands in queue state", async () => {
+		let extensionApi: ExtensionAPI | undefined;
+		const waiting = await createWaitingHarness({
+			extensionFactories: [
+				(pi) => {
+					extensionApi = pi;
+				},
+			],
+		});
+		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = waiting;
+		harnesses.push(harness);
+
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("first turn complete"),
+			fauxAssistantMessage("queued follow-up handled by model"),
+		]);
+
+		await waitForToolStart;
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		extensionApi?.sendUserMessage("/testcmd queued", { deliverAs: "followUp" });
+		expect(harness.session.getQueuedUiState()?.followUp[0]).toMatchObject({
+			mode: "prompt",
+			delivery: "followUp",
+			source: "extension",
+			preExpansionText: "/testcmd queued",
+			skipSlashCommands: true,
+		});
+
+		releaseToolExecution();
+		await promptPromise;
+	});
+
+	it("marks rpc-origin queued follow-ups with rpc source in queue state", async () => {
+		const waiting = await createWaitingHarness();
+		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = waiting;
+		harnesses.push(harness);
+
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("first turn complete"),
+			fauxAssistantMessage("rpc follow-up handled by model"),
+		]);
+
+		await waitForToolStart;
+		await harness.session.followUpWithSource("rpc queued", undefined, "rpc");
+		expect(harness.session.getQueuedUiState()?.followUp[0]).toMatchObject({
+			mode: "prompt",
+			delivery: "followUp",
+			source: "rpc",
+			preExpansionText: "rpc queued",
+			skipSlashCommands: false,
+		});
+
+		releaseToolExecution();
+		await promptPromise;
+	});
+
 	it("injects nextTurn custom messages into the next prompt", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
@@ -334,6 +399,15 @@ describe("AgentSession queue characterization", () => {
 			{ customType: "next-turn", content: "carry this", display: true, details: {} },
 			{ deliverAs: "nextTurn" },
 		);
+		expect(harness.session.getQueuedUiState()?.followUp).toHaveLength(1);
+		expect(harness.session.getQueuedUiState()?.followUp[0]).toMatchObject({
+			mode: "custom",
+			delivery: "nextTurn",
+			priority: "later",
+			customType: "next-turn",
+			origin: "extension",
+			source: "extension",
+		});
 
 		harness.setResponses([
 			(context) => {
@@ -351,6 +425,7 @@ describe("AgentSession queue characterization", () => {
 
 		expect(sawCustomMessage).toBe(true);
 		expect(harness.session.messages.map((message) => message.role)).toEqual(["user", "custom", "assistant"]);
+		expect(harness.session.getQueuedUiState()).toBeUndefined();
 	});
 
 	it("updates pendingMessageCount and removes queued text before message_start is emitted", async () => {

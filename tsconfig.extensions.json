@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2024",
+    "lib": ["ES2024"]
+  },
+  "include": [
+    ".lumen/extensions/**/*.ts",
+    "packages/*/src/**/*",
+    "packages/*/test/**/*"
+  ],
+  "exclude": [
+    "packages/web-ui/**/*",
+    "**/dist/**"
+  ]
+}

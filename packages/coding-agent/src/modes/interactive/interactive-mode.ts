@@ -69,6 +69,7 @@ import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
+	SpinnerUiState,
 } from "../../core/extensions/index.js";
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.js";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.js";
@@ -261,11 +262,22 @@ export class InteractiveMode {
 	private onInputCallback?: (text: string) => void;
 	private loadingAnimation: Loader | undefined = undefined;
 	private workingMessage: string | undefined = undefined;
+	private workingDetailsLines: string[] | undefined = undefined;
+	private workingDetailsComponent: (Component & { dispose?(): void }) | undefined = undefined;
 	private workingVisible = true;
 	private workingIndicatorOptions: LoaderIndicatorOptions | undefined = undefined;
 	private readonly defaultWorkingMessage = "Working...";
 	private readonly defaultHiddenThinkingLabel = "Thinking...";
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
+	private extensionSpinnerState: SpinnerUiState | undefined = undefined;
+	private spinnerStartedAt = 0;
+	private spinnerResponseChars = 0;
+	private spinnerReportedOutputTokens = 0;
+	private spinnerThinkingStartedAt: number | null = null;
+	private spinnerThinkingMinimumVisibleUntil: number | null = null;
+	private spinnerThinkingDurationMs: number | null = null;
+	private spinnerThoughtForVisibleUntil: number | null = null;
+	private spinnerSystemOverrideMessage: string | undefined = undefined;
 
 	private lastSigintTime = 0;
 	private lastEscapeTime = 0;
@@ -1636,6 +1648,7 @@ export class InteractiveMode {
 				this.shutdownRequested = true;
 			},
 			getContextUsage: () => this.session.getContextUsage(),
+			getSpinnerBudgetUsage: () => this.session.getSpinnerBudgetUsage(),
 			getTasks: () => this.session.getTaskUiItems(),
 			getTaskSummary: () => this.session.getTaskUiSummary(),
 			getQueuedMessages: () => this.session.getQueuedUiState(),
@@ -1677,6 +1690,105 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	private buildDefaultSpinnerState(): SpinnerUiState | undefined {
+		const summary = this.session.getTaskUiSummary();
+		const usage = this.session.getContextUsage();
+		const now = Date.now();
+		const elapsedMs = this.spinnerStartedAt > 0 ? Math.max(0, now - this.spinnerStartedAt) : undefined;
+
+		let tip: string | undefined;
+		if (this.settingsManager.getSpinnerTipsEnabled() && !summary?.next && elapsedMs !== undefined) {
+			if (elapsedMs > 1_800_000) {
+				tip = "Use /clear to start fresh when switching topics and free up context";
+			} else if (elapsedMs > 30_000) {
+				tip =
+					"Long-running work is active; queue follow-ups above the prompt instead of interrupting the current turn";
+			} else if (usage?.percent !== null && usage?.percent !== undefined && usage.percent >= 90) {
+				tip = "Context is getting tight; /clear or compaction may help before switching topics";
+			}
+		}
+
+		const outputTokens =
+			this.spinnerReportedOutputTokens > 0
+				? this.spinnerReportedOutputTokens
+				: this.spinnerResponseChars > 0
+					? Math.round(this.spinnerResponseChars / 4)
+					: undefined;
+		const isThinking =
+			this.spinnerThinkingStartedAt !== null ||
+			(this.spinnerThinkingMinimumVisibleUntil !== null && now < this.spinnerThinkingMinimumVisibleUntil);
+		const lastThinkingDurationMs =
+			this.spinnerThinkingDurationMs !== null &&
+			this.spinnerThoughtForVisibleUntil !== null &&
+			now < this.spinnerThoughtForVisibleUntil
+				? this.spinnerThinkingDurationMs
+				: undefined;
+		const budgetText = this.buildDefaultBudgetText(outputTokens, elapsedMs);
+
+		if (
+			this.spinnerSystemOverrideMessage === undefined &&
+			tip === undefined &&
+			budgetText === undefined &&
+			elapsedMs === undefined &&
+			outputTokens === undefined &&
+			!isThinking &&
+			lastThinkingDurationMs === undefined
+		) {
+			return undefined;
+		}
+
+		return {
+			...(tip ? { tip } : {}),
+			...(budgetText ? { budgetText } : {}),
+			...(this.spinnerSystemOverrideMessage ? { overrideMessage: this.spinnerSystemOverrideMessage } : {}),
+			...(elapsedMs !== undefined ? { elapsedMs } : {}),
+			...(outputTokens !== undefined ? { outputTokens } : {}),
+			...(isThinking ? { isThinking: true } : {}),
+			...(lastThinkingDurationMs !== undefined ? { lastThinkingDurationMs } : {}),
+		};
+	}
+
+	private buildDefaultBudgetText(outputTokens?: number, elapsedMs?: number): string | undefined {
+		const requestBudget = this.session.getSpinnerBudgetUsage()?.requestMaxOutputTokens;
+		if (!requestBudget || requestBudget <= 0) return undefined;
+
+		const used = outputTokens ?? 0;
+		if (used <= 0) return undefined;
+		if (used >= requestBudget) {
+			return `Target: ${used.toLocaleString()} used (${requestBudget.toLocaleString()} min)`;
+		}
+
+		const pct = Math.max(0, Math.min(100, Math.round((used / requestBudget) * 100)));
+		let etaSuffix = "";
+		if (elapsedMs !== undefined && elapsedMs >= 5_000 && used >= 2_000) {
+			const rate = used / elapsedMs;
+			const remaining = requestBudget - used;
+			if (rate > 0 && remaining > 0) {
+				etaSuffix = ` · ~${this.formatDurationForBudget(Math.round(remaining / rate))}`;
+			}
+		}
+		return `Target: ${used.toLocaleString()} / ${requestBudget.toLocaleString()} (${pct}% used${etaSuffix})`;
+	}
+
+	private formatDurationForBudget(ms: number): string {
+		const totalSec = Math.max(1, Math.floor(ms / 1000));
+		if (totalSec < 60) return `${totalSec}s`;
+		const minutes = Math.floor(totalSec / 60);
+		const seconds = totalSec % 60;
+		if (minutes < 60) return `${minutes}m ${seconds}s`;
+		const hours = Math.floor(minutes / 60);
+		const remainingMinutes = minutes % 60;
+		return `${hours}h ${remainingMinutes}m`;
+	}
+
+	private getSpinnerState(): SpinnerUiState | undefined {
+		const baseState = this.buildDefaultSpinnerState();
+		if (!this.extensionSpinnerState) {
+			return baseState;
+		}
+		return baseState ? { ...baseState, ...this.extensionSpinnerState } : this.extensionSpinnerState;
+	}
+
 	private getWorkingLoaderMessage(): string {
 		return this.workingMessage ?? this.defaultWorkingMessage;
 	}
@@ -1691,12 +1803,29 @@ export class InteractiveMode {
 		);
 	}
 
+	private renderWorkingArea(): void {
+		this.statusContainer.clear();
+		if (this.workingVisible && this.session.isStreaming) {
+			if (!this.loadingAnimation) {
+				this.loadingAnimation = this.createWorkingLoader();
+			}
+			this.statusContainer.addChild(this.loadingAnimation);
+		}
+		if (this.workingDetailsComponent) {
+			this.statusContainer.addChild(this.workingDetailsComponent);
+		} else if (this.workingDetailsLines && this.workingDetailsLines.length > 0) {
+			for (const line of this.workingDetailsLines) {
+				this.statusContainer.addChild(new Text(line, 0, 0));
+			}
+		}
+	}
+
 	private stopWorkingLoader(): void {
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
 			this.loadingAnimation = undefined;
 		}
-		this.statusContainer.clear();
+		this.renderWorkingArea();
 	}
 
 	private setWorkingVisible(visible: boolean): void {
@@ -1707,16 +1836,16 @@ export class InteractiveMode {
 			return;
 		}
 		if (this.session.isStreaming && !this.loadingAnimation) {
-			this.statusContainer.clear();
 			this.loadingAnimation = this.createWorkingLoader();
-			this.statusContainer.addChild(this.loadingAnimation);
 		}
+		this.renderWorkingArea();
 		this.ui.requestRender();
 	}
 
 	private setWorkingIndicator(options?: LoaderIndicatorOptions): void {
 		this.workingIndicatorOptions = options;
 		this.loadingAnimation?.setIndicator(options);
+		this.renderWorkingArea();
 		this.ui.requestRender();
 	}
 
@@ -1731,6 +1860,41 @@ export class InteractiveMode {
 			this.streamingComponent.setHiddenThinkingLabel(this.hiddenThinkingLabel);
 		}
 		this.ui.requestRender();
+	}
+
+	private setSpinnerState(state?: SpinnerUiState): void {
+		this.extensionSpinnerState = state;
+		this.ui.requestRender();
+	}
+
+	private setWorkingDetails(
+		content?: string[] | ((tui: TUI, theme: Theme) => Component & { dispose?(): void }),
+	): void {
+		if (this.workingDetailsComponent?.dispose) {
+			this.workingDetailsComponent.dispose();
+		}
+		this.workingDetailsComponent = undefined;
+		this.workingDetailsLines = undefined;
+
+		if (Array.isArray(content)) {
+			this.workingDetailsLines = content.length > 0 ? [...content] : undefined;
+		} else if (content) {
+			this.workingDetailsComponent = content(this.ui, theme);
+		}
+
+		this.renderWorkingArea();
+		this.ui.requestRender();
+	}
+
+	private resetSpinnerRuntimeState(): void {
+		this.spinnerStartedAt = 0;
+		this.spinnerResponseChars = 0;
+		this.spinnerReportedOutputTokens = 0;
+		this.spinnerThinkingStartedAt = null;
+		this.spinnerThinkingMinimumVisibleUntil = null;
+		this.spinnerThinkingDurationMs = null;
+		this.spinnerThoughtForVisibleUntil = null;
+		this.spinnerSystemOverrideMessage = undefined;
 	}
 
 	/**
@@ -1813,7 +1977,14 @@ export class InteractiveMode {
 		this.defaultEditor.onExtensionShortcut = undefined;
 		this.updateTerminalTitle();
 		this.workingMessage = undefined;
+		this.workingDetailsLines = undefined;
+		if (this.workingDetailsComponent?.dispose) {
+			this.workingDetailsComponent.dispose();
+		}
+		this.workingDetailsComponent = undefined;
 		this.workingVisible = true;
+		this.extensionSpinnerState = undefined;
+		this.resetSpinnerRuntimeState();
 		this.setWorkingIndicator();
 		if (this.loadingAnimation) {
 			this.loadingAnimation.setMessage(`${this.defaultWorkingMessage} (${keyText("app.interrupt")} to interrupt)`);
@@ -1968,10 +2139,16 @@ export class InteractiveMode {
 				if (this.loadingAnimation) {
 					this.loadingAnimation.setMessage(message ?? this.defaultWorkingMessage);
 				}
+				this.renderWorkingArea();
+			},
+			setWorkingDetails: (lines) => {
+				this.setWorkingDetails(lines);
 			},
 			setWorkingVisible: (visible) => this.setWorkingVisible(visible),
 			setWorkingIndicator: (options) => this.setWorkingIndicator(options),
 			setHiddenThinkingLabel: (label) => this.setHiddenThinkingLabel(label),
+			setSpinnerState: (state) => this.setSpinnerState(state),
+			getSpinnerState: () => this.getSpinnerState(),
 			setQueuedVisible: (visible) => this.setQueuedVisible(visible),
 			setWidget: (key, content, options) => this.setExtensionWidget(key, content, options),
 			setFooter: (factory) => this.setExtensionFooter(factory),
@@ -2654,6 +2831,21 @@ export class InteractiveMode {
 		});
 	}
 
+	private updateSpinnerRuntimeFromAssistantMessage(message: AssistantMessage): void {
+		let responseChars = 0;
+		for (const block of message.content) {
+			if (block.type === "text") {
+				responseChars += block.text.length;
+			} else if (block.type === "thinking") {
+				responseChars += block.thinking.length;
+			}
+		}
+		this.spinnerResponseChars = Math.max(this.spinnerResponseChars, responseChars);
+		if (message.usage.output > this.spinnerReportedOutputTokens) {
+			this.spinnerReportedOutputTokens = message.usage.output;
+		}
+	}
+
 	private async handleEvent(event: AgentSessionEvent): Promise<void> {
 		if (!this.isInitialized) {
 			await this.init();
@@ -2663,6 +2855,13 @@ export class InteractiveMode {
 
 		switch (event.type) {
 			case "agent_start":
+				this.spinnerStartedAt = Date.now();
+				this.spinnerResponseChars = 0;
+				this.spinnerReportedOutputTokens = 0;
+				this.spinnerThinkingStartedAt = null;
+				this.spinnerThinkingMinimumVisibleUntil = null;
+				this.spinnerThinkingDurationMs = null;
+				this.spinnerThoughtForVisibleUntil = null;
 				this.pendingTools.clear();
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(true);
@@ -2732,6 +2931,27 @@ export class InteractiveMode {
 			case "message_update":
 				if (this.streamingComponent && event.message.role === "assistant") {
 					this.streamingMessage = event.message;
+					this.updateSpinnerRuntimeFromAssistantMessage(event.message);
+					const assistantMessageEvent = event.assistantMessageEvent;
+					if (assistantMessageEvent.type === "thinking_start") {
+						if (this.spinnerThinkingStartedAt === null) {
+							this.spinnerThinkingStartedAt = Date.now();
+							this.spinnerThinkingMinimumVisibleUntil = null;
+							this.spinnerThinkingDurationMs = null;
+							this.spinnerThoughtForVisibleUntil = null;
+						}
+					} else if (assistantMessageEvent.type === "thinking_end") {
+						if (this.spinnerThinkingStartedAt !== null) {
+							const endedAt = Date.now();
+							this.spinnerThinkingDurationMs = endedAt - this.spinnerThinkingStartedAt;
+							const minimumVisibleUntil = this.spinnerThinkingStartedAt + 2000;
+							this.spinnerThinkingMinimumVisibleUntil =
+								endedAt < minimumVisibleUntil ? minimumVisibleUntil : null;
+							this.spinnerThoughtForVisibleUntil =
+								(endedAt < minimumVisibleUntil ? minimumVisibleUntil : endedAt) + 2000;
+							this.spinnerThinkingStartedAt = null;
+						}
+					}
 					const projectedTurn = projectAssistantTurn(this.streamingMessage);
 					this.streamingComponent.updateContent(this.streamingMessage);
 
@@ -2834,6 +3054,7 @@ export class InteractiveMode {
 				if (event.message.role === "user") break;
 				if (this.streamingComponent && event.message.role === "assistant") {
 					this.streamingMessage = event.message;
+					this.updateSpinnerRuntimeFromAssistantMessage(event.message);
 					const projectedTurn = projectAssistantTurn(this.streamingMessage);
 					let errorMessage: string | undefined;
 					if (this.streamingMessage.stopReason === "aborted") {
@@ -2988,6 +3209,9 @@ export class InteractiveMode {
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
 				}
+				if (this.spinnerThinkingStartedAt === null) {
+					this.spinnerThinkingMinimumVisibleUntil = null;
+				}
 				if (this.loadingAnimation) {
 					this.loadingAnimation.stop();
 					this.loadingAnimation = undefined;
@@ -3011,7 +3235,26 @@ export class InteractiveMode {
 				this.ui.requestRender();
 				break;
 
+			case "compaction_hooks_start": {
+				this.spinnerSystemOverrideMessage =
+					event.phase === "pre" ? "Running PreCompact hooks…" : "Running PostCompact hooks…";
+				this.ui.requestRender();
+				break;
+			}
+
+			case "compaction_hooks_end": {
+				this.spinnerSystemOverrideMessage = undefined;
+				this.ui.requestRender();
+				break;
+			}
+
 			case "compaction_start": {
+				this.spinnerSystemOverrideMessage =
+					event.reason === "manual"
+						? "Compacting conversation"
+						: event.reason === "overflow"
+							? "Auto-compacting after overflow"
+							: "Auto-compacting conversation";
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(true);
 				}
@@ -3038,6 +3281,7 @@ export class InteractiveMode {
 			}
 
 			case "compaction_end": {
+				this.spinnerSystemOverrideMessage = undefined;
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
 				}
@@ -3081,6 +3325,7 @@ export class InteractiveMode {
 			}
 
 			case "auto_retry_start": {
+				this.spinnerSystemOverrideMessage = `Retrying request (${event.attempt}/${event.maxAttempts})`;
 				// Set up escape to abort retry
 				this.retryEscapeHandler = this.defaultEditor.onEscape;
 				this.defaultEditor.onEscape = () => {
@@ -3113,6 +3358,7 @@ export class InteractiveMode {
 			}
 
 			case "auto_retry_end": {
+				this.spinnerSystemOverrideMessage = undefined;
 				// Restore escape handler
 				if (this.retryEscapeHandler) {
 					this.defaultEditor.onEscape = this.retryEscapeHandler;

@@ -217,6 +217,255 @@ describe("InteractiveMode.setupAutocompleteProvider", () => {
 	});
 });
 
+describe("InteractiveMode spinner helpers", () => {
+	beforeAll(() => {
+		initTheme("dark");
+	});
+
+	test("buildDefaultBudgetText prefers request payload budget over model fallback", () => {
+		const fakeThis: any = {
+			session: {
+				model: { maxTokens: 32000 },
+				thinkingLevel: "high",
+				getSpinnerBudgetUsage: () => ({ requestMaxOutputTokens: 4096 }),
+			},
+			settingsManager: {
+				getThinkingBudgets: () => undefined,
+			},
+			getResolvedSpinnerBudgetTokens: () => 99999,
+		};
+
+		const text = (InteractiveMode as any).prototype.buildDefaultBudgetText.call(fakeThis, 1024);
+		expect(text).toBe("Target: 1,024 / 4,096 (25% used)");
+	});
+
+	test("buildDefaultBudgetText stays hidden when no real request budget is available", () => {
+		const fakeThis: any = {
+			session: {
+				model: { maxTokens: 32000 },
+				thinkingLevel: "high",
+				getSpinnerBudgetUsage: () => undefined,
+			},
+			settingsManager: {
+				getThinkingBudgets: () => undefined,
+			},
+		};
+
+		const text = (InteractiveMode as any).prototype.buildDefaultBudgetText.call(fakeThis, 1024);
+		expect(text).toBeUndefined();
+	});
+
+	test("buildDefaultBudgetText includes ETA when enough progress exists", () => {
+		const fakeThis: any = {
+			session: {
+				model: { maxTokens: 32000 },
+				thinkingLevel: "high",
+				getSpinnerBudgetUsage: () => ({ requestMaxOutputTokens: 4096 }),
+			},
+			formatDurationForBudget: (ms: number) =>
+				(InteractiveMode as any).prototype.formatDurationForBudget.call({}, ms),
+		};
+
+		const text = (InteractiveMode as any).prototype.buildDefaultBudgetText.call(fakeThis, 2048, 10_000);
+		expect(text).toContain("50% used");
+		expect(text).toContain("· ~");
+	});
+
+	test("buildDefaultSpinnerState preserves overrideMessage even when it is the only signal", () => {
+		const fakeThis: any = {
+			session: {
+				getTaskUiSummary: () => undefined,
+				getContextUsage: () => undefined,
+				getSpinnerBudgetUsage: () => undefined,
+			},
+			settingsManager: {
+				getSpinnerTipsEnabled: () => true,
+			},
+			buildDefaultBudgetText: () => undefined,
+			spinnerStartedAt: 0,
+			spinnerResponseChars: 0,
+			spinnerReportedOutputTokens: 0,
+			spinnerThinkingStartedAt: null,
+			spinnerThinkingMinimumVisibleUntil: null,
+			spinnerThinkingDurationMs: null,
+			spinnerThoughtForVisibleUntil: null,
+			spinnerSystemOverrideMessage: "Compacting conversation",
+		};
+
+		const state = (InteractiveMode as any).prototype.buildDefaultSpinnerState.call(fakeThis);
+		expect(state).toEqual({ overrideMessage: "Compacting conversation" });
+	});
+
+	test("buildDefaultSpinnerState does not synthesize task or queued tips", () => {
+		const fakeThis: any = {
+			session: {
+				getTaskUiSummary: () => ({
+					total: 2,
+					completed: 0,
+					inProgress: 1,
+					pending: 1,
+					failed: 0,
+					abandoned: 0,
+					current: { id: "1", content: "Implement feature", status: "in_progress" },
+					next: { id: "2", content: "Write tests", subject: "Write tests", status: "pending" },
+				}),
+				getContextUsage: () => ({ tokens: 10, contextWindow: 1000, percent: 20 }),
+				getSpinnerBudgetUsage: () => undefined,
+			},
+			settingsManager: {
+				getSpinnerTipsEnabled: () => true,
+			},
+			buildDefaultBudgetText: () => undefined,
+			spinnerStartedAt: 0,
+			spinnerResponseChars: 0,
+			spinnerReportedOutputTokens: 0,
+			spinnerThinkingStartedAt: null,
+			spinnerThinkingMinimumVisibleUntil: null,
+			spinnerThinkingDurationMs: null,
+			spinnerThoughtForVisibleUntil: null,
+			spinnerSystemOverrideMessage: undefined,
+		};
+
+		const state = (InteractiveMode as any).prototype.buildDefaultSpinnerState.call(fakeThis);
+		expect(state).toBeUndefined();
+	});
+
+	test("buildDefaultSpinnerState shows long-running spinner tip after 30 seconds when no next task exists", () => {
+		const now = Date.now();
+		const fakeThis: any = {
+			session: {
+				getTaskUiSummary: () => ({
+					total: 1,
+					completed: 0,
+					inProgress: 1,
+					pending: 0,
+					failed: 0,
+					abandoned: 0,
+					current: { id: "1", content: "Implement feature", status: "in_progress" },
+					next: undefined,
+				}),
+				getContextUsage: () => ({ tokens: 100, contextWindow: 1000, percent: 10 }),
+				getSpinnerBudgetUsage: () => undefined,
+			},
+			settingsManager: {
+				getSpinnerTipsEnabled: () => true,
+			},
+			buildDefaultBudgetText: () => undefined,
+			spinnerStartedAt: now - 31_000,
+			spinnerResponseChars: 0,
+			spinnerReportedOutputTokens: 0,
+			spinnerThinkingStartedAt: null,
+			spinnerThinkingMinimumVisibleUntil: null,
+			spinnerThinkingDurationMs: null,
+			spinnerThoughtForVisibleUntil: null,
+			spinnerSystemOverrideMessage: undefined,
+		};
+
+		const state = (InteractiveMode as any).prototype.buildDefaultSpinnerState.call(fakeThis);
+		expect(state?.tip).toBe(
+			"Long-running work is active; queue follow-ups above the prompt instead of interrupting the current turn",
+		);
+	});
+
+	test("buildDefaultSpinnerState prefers clear tip after 30 minutes when no next task exists", () => {
+		const now = Date.now();
+		const fakeThis: any = {
+			session: {
+				getTaskUiSummary: () => ({
+					total: 1,
+					completed: 0,
+					inProgress: 1,
+					pending: 0,
+					failed: 0,
+					abandoned: 0,
+					current: { id: "1", content: "Implement feature", status: "in_progress" },
+					next: undefined,
+				}),
+				getContextUsage: () => ({ tokens: 980, contextWindow: 1000, percent: 98 }),
+				getSpinnerBudgetUsage: () => undefined,
+			},
+			settingsManager: {
+				getSpinnerTipsEnabled: () => true,
+			},
+			buildDefaultBudgetText: () => undefined,
+			spinnerStartedAt: now - 1_810_000,
+			spinnerResponseChars: 0,
+			spinnerReportedOutputTokens: 0,
+			spinnerThinkingStartedAt: null,
+			spinnerThinkingMinimumVisibleUntil: null,
+			spinnerThinkingDurationMs: null,
+			spinnerThoughtForVisibleUntil: null,
+			spinnerSystemOverrideMessage: undefined,
+		};
+
+		const state = (InteractiveMode as any).prototype.buildDefaultSpinnerState.call(fakeThis);
+		expect(state?.tip).toBe("Use /clear to start fresh when switching topics and free up context");
+	});
+
+	test("buildDefaultSpinnerState hides timed tips when spinner tips are disabled", () => {
+		const now = Date.now();
+		const fakeThis: any = {
+			session: {
+				getTaskUiSummary: () => ({
+					total: 1,
+					completed: 0,
+					inProgress: 1,
+					pending: 0,
+					failed: 0,
+					abandoned: 0,
+					current: { id: "1", content: "Implement feature", status: "in_progress" },
+					next: undefined,
+				}),
+				getContextUsage: () => ({ tokens: 980, contextWindow: 1000, percent: 98 }),
+				getSpinnerBudgetUsage: () => undefined,
+			},
+			settingsManager: {
+				getSpinnerTipsEnabled: () => false,
+			},
+			buildDefaultBudgetText: () => undefined,
+			spinnerStartedAt: now - 1_810_000,
+			spinnerResponseChars: 0,
+			spinnerReportedOutputTokens: 0,
+			spinnerThinkingStartedAt: null,
+			spinnerThinkingMinimumVisibleUntil: null,
+			spinnerThinkingDurationMs: null,
+			spinnerThoughtForVisibleUntil: null,
+			spinnerSystemOverrideMessage: undefined,
+		};
+
+		const state = (InteractiveMode as any).prototype.buildDefaultSpinnerState.call(fakeThis);
+		expect(state).toEqual({ elapsedMs: expect.any(Number) });
+	});
+
+	test("setWorkingDetails stores component details and renders them into the working area", () => {
+		initTheme("dark");
+
+		const statusContainer = new Container();
+		const fakeThis: any = {
+			workingDetailsLines: undefined,
+			workingDetailsComponent: undefined,
+			statusContainer,
+			workingVisible: false,
+			session: { isStreaming: false },
+			loadingAnimation: undefined,
+			ui: { requestRender: vi.fn() },
+			renderWorkingArea() {
+				return (InteractiveMode as any).prototype.renderWorkingArea.call(this);
+			},
+		};
+
+		(InteractiveMode as any).prototype.setWorkingDetails.call(fakeThis, () => {
+			const container = new Container();
+			container.addChild({ render: () => ["DETAILS"], invalidate: () => {} } as any);
+			return container as any;
+		});
+
+		expect(fakeThis.workingDetailsComponent).toBeDefined();
+		expect(renderAll(statusContainer)).toContain("DETAILS");
+		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(1);
+	});
+});
+
 describe("InteractiveMode.showLoadedResources", () => {
 	beforeAll(() => {
 		initTheme("dark");

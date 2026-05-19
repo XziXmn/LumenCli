@@ -140,4 +140,17 @@ describe("AgentSession.getSessionStats", () => {
 			session.dispose();
 		}
 	});
+
+	it("exposes spinner budget usage when the latest request payload contained a real output ceiling", () => {
+		const { session } = createSession();
+
+		try {
+			session.setSpinnerBudgetUsageFromPayload({ max_output_tokens: 4096 });
+			expect(session.getSpinnerBudgetUsage()).toEqual({
+				requestMaxOutputTokens: 4096,
+			});
+		} finally {
+			session.dispose();
+		}
+	});
 });

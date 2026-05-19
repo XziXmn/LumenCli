@@ -2,6 +2,7 @@ import { Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.js";
 import type { RenderableCollapsedToolGroup } from "../output-flow/types.js";
 import { theme } from "../theme/theme.js";
+import { renderToolHintLine, renderToolResponseLine, renderToolStatusDot } from "./assistant-tool-summary.js";
 
 type CollapsedKind = "read" | "search" | "list";
 
@@ -151,12 +152,13 @@ export class CollapsedToolGroupComponent extends Container {
 
 		const summary = buildSummary(this.items);
 		const hint = latestHint(this.items, this.cwd);
+		const status = this.isComplete() ? "success" : "pending";
 
 		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.fg("toolTitle", summary), 1, 0));
+		this.addChild(new Text(`${renderToolStatusDot(status)} ${theme.bold(summary)}`, 1, 0));
 
 		if (!this.expanded && hint) {
-			this.addChild(new Text(theme.fg("dim", `  ⎿ ${hint}`), 0, 0));
+			this.addChild(new Text(renderToolHintLine(hint), 0, 0));
 			return;
 		}
 
@@ -167,17 +169,9 @@ export class CollapsedToolGroupComponent extends Container {
 		for (const item of this.items) {
 			const label = describeToolCallName(item.name);
 			const target = describeToolCallTarget(item.arguments, this.cwd);
-			const status = item.completed ? theme.fg("success", "✓ ") : theme.fg("dim", "● ");
-			this.addChild(
-				new Text(
-					theme.fg("muted", "  ⎿ ") +
-						status +
-						theme.fg("dim", label) +
-						(target ? theme.fg("muted", ` ${target}`) : ""),
-					0,
-					0,
-				),
-			);
+			const stateDot = item.completed ? theme.fg("success", "✓") : theme.fg("dim", "●");
+			const body = `${stateDot} ${label}${target ? ` ${target}` : ""}`;
+			this.addChild(new Text(renderToolResponseLine(body), 0, 0));
 		}
 	}
 }

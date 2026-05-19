@@ -5,6 +5,37 @@ import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.js";
 import { theme } from "../theme/theme.js";
 
 type ToolResultMessage = Extract<AgentMessage, { role: "toolResult" }>;
+type ToolRowStatus = "pending" | "success" | "error";
+
+export function renderToolStatusDot(status: ToolRowStatus): string {
+	switch (status) {
+		case "success":
+			return theme.fg("success", "●");
+		case "error":
+			return theme.fg("error", "●");
+		default:
+			return theme.fg("dim", "●");
+	}
+}
+
+export function renderToolResponseLine(text: string, tone: "default" | "muted" = "default"): string {
+	const gutter = theme.fg("dim", "  ⎿ ");
+	const body = tone === "muted" ? theme.fg("muted", text) : text;
+	return `${gutter}${body}`;
+}
+
+export function renderToolHintLine(text: string, tone: "default" | "muted" = "default"): string {
+	const gutter = theme.fg("dim", "  ⎿  ");
+	const body = tone === "muted" ? theme.fg("muted", text) : text;
+	return `${gutter}${body}`;
+}
+
+export function renderToolResponseParts(label: string, value?: string, tone: "default" | "muted" = "default"): string {
+	const gutter = theme.fg("dim", "  ⎿ ");
+	const labelText = tone === "muted" ? theme.fg("muted", label) : label;
+	const valueText = value ? (tone === "muted" ? theme.fg("muted", value) : value) : "";
+	return `${gutter}${labelText}${valueText}`;
+}
 
 function lineCount(text: string): number {
 	const normalized = text.replace(/(?:\r?\n)+$/, "");
@@ -136,17 +167,18 @@ export class AssistantToolSummaryComponent extends Container {
 	private updateDisplay(): void {
 		this.clear();
 		const title = titleForTool(this.toolName, this.args, this.cwd);
+		const status: ToolRowStatus = !this.result ? "pending" : this.result.isError ? "error" : "success";
 
 		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.fg("toolTitle", title), 1, 0));
+		this.addChild(new Text(`${renderToolStatusDot(status)} ${theme.bold(title)}`, 1, 0));
 
 		if (!this.result) {
-			this.addChild(new Text(theme.fg("muted", "  ⎿ Running…"), 0, 0));
+			this.addChild(new Text(renderToolResponseLine("Running…", "muted"), 0, 0));
 			return;
 		}
 
 		const summary = summaryForTool(this.toolName, this.args, this.result);
-		this.addChild(new Text(theme.fg("dim", `  ⎿ ${summary}`), 0, 0));
+		this.addChild(new Text(renderToolResponseLine(summary), 0, 0));
 
 		if (!this.expanded) return;
 
