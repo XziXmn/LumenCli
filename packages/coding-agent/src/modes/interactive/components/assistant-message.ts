@@ -122,8 +122,6 @@ export class AssistantMessageComponent extends Container {
 				// Set paddingY=0 to avoid extra spacing before tool executions
 				this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, this.markdownTheme));
 			} else if (content.type === "thinking" && content.thinking.trim()) {
-				// Add spacing only when another visible assistant content block follows.
-				// This avoids a superfluous blank line before separately-rendered tool execution blocks.
 				const hasVisibleContentAfter = message.content
 					.slice(i + 1)
 					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
@@ -151,6 +149,7 @@ export class AssistantMessageComponent extends Container {
 						const previewLine = firstMeaningfulLine ?? fallbackLine;
 						this.contentContainer.addChild(new Text(theme.italic(theme.fg("thinkingText", "∴ Thinking…")), 1, 0));
 						if (previewLine) {
+							this.contentContainer.addChild(new Spacer(1));
 							this.contentContainer.addChild(
 								new Text(
 									theme.fg("thinkingText", `  ${previewLine}${previewLine.length >= 160 ? "..." : ""}`),
@@ -163,6 +162,7 @@ export class AssistantMessageComponent extends Container {
 					}
 					case "full": {
 						this.contentContainer.addChild(new Text(theme.italic(theme.fg("thinkingText", "∴ Thinking…")), 1, 0));
+						this.contentContainer.addChild(new Spacer(1));
 						this.contentContainer.addChild(
 							new Markdown(content.thinking.trim(), 2, 0, this.markdownTheme, {
 								color: (text: string) => theme.fg("thinkingText", text),
@@ -173,8 +173,8 @@ export class AssistantMessageComponent extends Container {
 					}
 				}
 
-				if (hasVisibleContentAfter && this.thinkingMode === "full") {
-					this.contentContainer.addChild(new Spacer(0));
+				if (hasVisibleContentAfter) {
+					this.contentContainer.addChild(new Spacer(1));
 				}
 			}
 		}

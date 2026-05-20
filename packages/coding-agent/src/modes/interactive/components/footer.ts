@@ -34,6 +34,10 @@ function prioritizeStatusEntries(entries: Array<[string, string]>): Array<[strin
 	});
 }
 
+function isProgressStatusKey(key: string): boolean {
+	return key === "ui" || key === "ask_user" || key === "task" || key === "todo" || key === "queue";
+}
+
 /**
  * Format token counts (similar to web-ui)
  */
@@ -227,7 +231,9 @@ export class FooterComponent implements Component {
 		const lines = [pwdLine, dimStatsLeft + dimRemainder];
 
 		// Add extension statuses on a single line, sorted by key alphabetically
-		const extensionStatuses = this.footerData.getExtensionStatuses();
+		const extensionStatuses = new Map(
+			Array.from(this.footerData.getExtensionStatuses().entries()).filter(([key]) => !isProgressStatusKey(key)),
+		);
 		if (extensionStatuses.size > 0) {
 			const sortedStatuses = prioritizeStatusEntries(Array.from(extensionStatuses.entries())).map(([, text]) =>
 				sanitizeStatusText(text),

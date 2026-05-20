@@ -2274,6 +2274,7 @@ export class InteractiveMode {
 		title: string,
 		options: string[],
 		opts?: ExtensionUIDialogOptions,
+		bannerKind: NonNullable<SpinnerUiState["banner"]>["kind"] = "input",
 	): Promise<string | undefined> {
 		return new Promise((resolve) => {
 			if (opts?.signal?.aborted) {
@@ -2282,6 +2283,11 @@ export class InteractiveMode {
 			}
 
 			this.setExtensionStatus("ui", `waiting · ${title.split("\n")[0]}`);
+			this.setSpinnerBanner({
+				kind: bannerKind,
+				title: bannerKind === "approval" ? "等待审批确认" : "等待你的选择",
+				detail: title.split("\n")[0],
+			});
 
 			const onAbort = () => {
 				this.hideExtensionSelector();
@@ -2321,6 +2327,7 @@ export class InteractiveMode {
 		this.editorContainer.addChild(this.editor);
 		this.extensionSelector = undefined;
 		this.setExtensionStatus("ui", undefined);
+		this.setSpinnerBanner(undefined);
 		this.ui.setFocus(this.editor);
 		this.ui.requestRender();
 	}
@@ -2333,7 +2340,7 @@ export class InteractiveMode {
 		message: string,
 		opts?: ExtensionUIDialogOptions,
 	): Promise<boolean> {
-		const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"], opts);
+		const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"], opts, "approval");
 		return result === "Yes";
 	}
 
@@ -2360,6 +2367,11 @@ export class InteractiveMode {
 			}
 
 			this.setExtensionStatus("ui", `waiting · ${title}`);
+			this.setSpinnerBanner({
+				kind: "input",
+				title: "等待你的输入",
+				detail: title,
+			});
 
 			const onAbort = () => {
 				this.hideExtensionInput();
@@ -2399,6 +2411,7 @@ export class InteractiveMode {
 		this.editorContainer.addChild(this.editor);
 		this.extensionInput = undefined;
 		this.setExtensionStatus("ui", undefined);
+		this.setSpinnerBanner(undefined);
 		this.ui.setFocus(this.editor);
 		this.ui.requestRender();
 	}
@@ -2409,6 +2422,11 @@ export class InteractiveMode {
 	private showExtensionEditor(title: string, prefill?: string): Promise<string | undefined> {
 		return new Promise((resolve) => {
 			this.setExtensionStatus("ui", `waiting · ${title}`);
+			this.setSpinnerBanner({
+				kind: "input",
+				title: "等待你的输入",
+				detail: title,
+			});
 			this.extensionEditor = new ExtensionEditorComponent(
 				this.ui,
 				this.keybindings,
@@ -2439,6 +2457,7 @@ export class InteractiveMode {
 		this.editorContainer.addChild(this.editor);
 		this.extensionEditor = undefined;
 		this.setExtensionStatus("ui", undefined);
+		this.setSpinnerBanner(undefined);
 		this.ui.setFocus(this.editor);
 		this.ui.requestRender();
 	}

@@ -52,6 +52,8 @@ type TaskBucket = {
 	plan: TaskUiItem[];
 };
 
+export type TaskbarSnapshot = Snapshot;
+
 const SHOW_TIP_AFTER_MS = 30_000;
 const TIP_ROTATION_MS = 60_000;
 const MAX_QUEUED_PREVIEW_CHARS = 96;
@@ -510,6 +512,23 @@ class ClaudeTaskbarComponent extends Container {
 			}
 		}
 	}
+}
+
+export function __renderTaskbarLinesForTest(
+	snapshot: Snapshot,
+	theme: ExtensionContext["ui"]["theme"],
+): string[] {
+	const working: WorkingState = {
+		randomVerb: sample(CLAUDE_SPINNER_VERBS, 0),
+		lastOutputTokens: 0,
+		idleCycles: 0,
+		isIdle: false,
+		isStalled: false,
+		displayedTokens: 0,
+		tipState: { shownIds: new Set(), lastTipId: undefined, lastTipCycleStart: 0 },
+		shimmerOffset: 0,
+	};
+	return new ClaudeTaskbarComponent(snapshot, theme, working).render(160);
 }
 
 function createTaskbarFactory(snapshot: Snapshot, working: WorkingState) {

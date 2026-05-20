@@ -473,15 +473,6 @@ function formatSummary(phases: TodoPhase[], errors: string[]): string {
 	return lines.join("\n");
 }
 
-function formatFooterStatus(phases: TodoPhase[]): string | undefined {
-	const allTasks = phases.flatMap((phase) => phase.tasks);
-	if (allTasks.length === 0) return undefined;
-	const completed = allTasks.filter((task) => task.status === "completed").length;
-	const inProgress = allTasks.find((task) => task.status === "in_progress");
-	const suffix = inProgress ? ` · ${inProgress.content}` : "";
-	return `todo ${completed}/${allTasks.length}${suffix}`;
-}
-
 function formatCompactResult(phases: TodoPhase[], errors: string[]): string {
 	const allTasks = phases.flatMap((phase) => phase.tasks);
 	if (allTasks.length === 0) {
@@ -541,9 +532,8 @@ export function getSessionTodoUiSummary(): TaskUiSummary | undefined {
 
 export default function lumenTodoExtension(pi: ExtensionAPI): void {
 	// Reset state on session start
-	pi.on("session_start", (_event, ctx) => {
+	pi.on("session_start", (_event, _ctx) => {
 		sessionPhases = [];
-		ctx.ui.setStatus("todo", undefined);
 	});
 
 	// Register the todo tool for LLM
@@ -585,14 +575,13 @@ export default function lumenTodoExtension(pi: ExtensionAPI): void {
 			params: { ops: TodoOpEntry[] },
 			_signal: AbortSignal | undefined,
 			_onUpdate: undefined,
-			ctx: ExtensionContext,
+			_ctx: ExtensionContext,
 		) {
 			const currentPhases = clonePhases(sessionPhases);
 			const { phases: updated, errors } = applyOps(currentPhases, params.ops);
 
 			// Store in memory only
 			sessionPhases = updated;
-			ctx.ui.setStatus("todo", formatFooterStatus(updated));
 
 			const summary = formatSummary(updated, errors);
 			return {

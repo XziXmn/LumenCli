@@ -98,6 +98,8 @@ export function summaryForTool(toolName: string, args: Record<string, unknown>, 
 	const hasImage = result.content.some((item) => item.type === "image");
 
 	switch (toolName) {
+		case "todo":
+			return output === "Todo list cleared." ? output : "Updated todo list";
 		case "read":
 			if (hasImage) return "Read image";
 			return `Read ${lineCount(output)} ${lineCount(output) === 1 ? "line" : "lines"}`;

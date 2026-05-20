@@ -158,7 +158,7 @@ export interface TaskResult {
 	error?: string;
 }
 
-interface TaskToolDetails {
+export interface TaskToolDetails {
 	results: TaskResult[];
 	totalDurationMs: number;
 	progress?: SubagentProgress[];
@@ -504,32 +504,6 @@ type TaskRenderState = {
 	progressMap: Map<string, SubagentProgress>;
 };
 
-function formatTaskProgressPreview(progressMap: Map<string, SubagentProgress>): string | undefined {
-	const entries = Array.from(progressMap.values());
-	if (entries.length === 0) return undefined;
-
-	const running = entries.filter((entry) => entry.status === "running").length;
-	const completed = entries.filter((entry) => entry.status === "completed").length;
-	const failed = entries.filter((entry) => entry.status === "failed" || entry.status === "aborted").length;
-	const current = entries.find((entry) => entry.status === "running");
-
-	const parts: string[] = [];
-	if (running > 0) {
-		parts.push(`${running} active`);
-	}
-	parts.push(`${completed}/${entries.length} done`);
-	if (failed > 0) {
-		parts.push(`${failed} failed`);
-	}
-	if (current?.currentTool) {
-		parts.push(`${current.currentTool}${current.currentToolArgs ? ` ${current.currentToolArgs}` : ""}`);
-	} else if (current) {
-		parts.push(current.activeForm ?? current.description);
-	}
-
-	return parts.length > 0 ? `  ⎿ ${parts.join(" · ")}` : undefined;
-}
-
 // ============================================================================
 // Extension Registration
 // ============================================================================
@@ -731,10 +705,7 @@ export default function lumenTaskExtension(pi: ExtensionAPI): void {
 
 			const lines: string[] = [];
 
-			if (options.isPartial) {
-				const preview = formatTaskProgressPreview(state.progressMap);
-				if (preview) lines.push(theme.fg("dim", preview));
-			} else if (details) {
+			if (!options.isPartial && details) {
 				lines.push(theme.fg("dim", `  ⎿ ${formatTaskResultSummary(details)}`));
 			}
 

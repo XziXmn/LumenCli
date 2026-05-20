@@ -447,6 +447,17 @@ export class AgentSession {
 
 	/** Emit an event to all listeners */
 	private _emit(event: AgentSessionEvent): void {
+		switch (event.type) {
+			case "queue_update":
+			case "compaction_hooks_start":
+			case "compaction_hooks_end":
+			case "compaction_start":
+			case "compaction_end":
+			case "auto_retry_start":
+			case "auto_retry_end":
+				void this._extensionRunner.emit(event);
+				break;
+		}
 		for (const l of this._eventListeners) {
 			l(event);
 		}
@@ -458,7 +469,6 @@ export class AgentSession {
 			steering: [...this._steeringMessages],
 			followUp: [...this._followUpMessages],
 		};
-		void this._extensionRunner.emit(event);
 		this._emit(event);
 	}
 
