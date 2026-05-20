@@ -23,7 +23,6 @@ import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { CONFIG_DIR_NAME, getAgentDir, LEGACY_CONFIG_DIR_NAME } from "../config.js";
 import { renderStatusLine } from "../modes/interactive/components/lumen-status-line.js";
-import { SPINNER_FRAMES, STATUS_SYMBOLS, TREE_SYMBOLS } from "../modes/interactive/components/lumen-tui-utils.js";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { createEventBus, type EventBus } from "./event-bus.js";
 import type {
@@ -502,74 +501,33 @@ const TaskParams = Type.Object({
 // ============================================================================
 
 type TaskRenderState = {
-	startedAt?: number;
-	interval?: ReturnType<typeof setInterval>;
 	progressMap: Map<string, SubagentProgress>;
 };
 
-function renderTaskProgress(progressMap: Map<string, SubagentProgress>, _expanded: boolean): string[] {
-	const entries = Array.from(progressMap.values()).sort((a, b) => a.index - b.index);
-	const lines: string[] = [];
+function formatTaskProgressPreview(progressMap: Map<string, SubagentProgress>): string | undefined {
+	const entries = Array.from(progressMap.values());
+	if (entries.length === 0) return undefined;
 
-	for (let i = 0; i < entries.length; i++) {
-		const p = entries[i];
-		const isLast = i === entries.length - 1;
-		const branch = isLast ? TREE_SYMBOLS.last : TREE_SYMBOLS.branch;
-		const branchStr = theme.fg("dim", branch);
+	const running = entries.filter((entry) => entry.status === "running").length;
+	const completed = entries.filter((entry) => entry.status === "completed").length;
+	const failed = entries.filter((entry) => entry.status === "failed" || entry.status === "aborted").length;
+	const current = entries.find((entry) => entry.status === "running");
 
-		// Status icon
-		let icon: string;
-		if (p.status === "completed") {
-			icon = theme.fg("success", STATUS_SYMBOLS.success);
-		} else if (p.status === "failed" || p.status === "aborted") {
-			icon = theme.fg("error", STATUS_SYMBOLS.error);
-		} else if (p.status === "running") {
-			const elapsed = Date.now() - p.startedAt;
-			const frameIdx = Math.floor(elapsed / 500) % SPINNER_FRAMES.length;
-			icon = theme.fg("accent", SPINNER_FRAMES[frameIdx]);
-		} else {
-			icon = theme.fg("muted", STATUS_SYMBOLS.pending);
-		}
-
-		// Main line: Claude Code style — agent(description)
-		const agentLabel = theme.bold(p.agent);
-		const line = ` ${branchStr} ${icon} ${agentLabel}(${theme.fg("accent", p.description)})`;
-
-		// Sub-line with status details (Claude Code style)
-		const continuation = isLast ? "    " : `${theme.fg("dim", TREE_SYMBOLS.vertical)}   `;
-		const subLinePrefix = `${continuation} `;
-
-		const meta: string[] = [];
-		if (p.status === "running") {
-			if (p.currentTool) {
-				// Show current tool activity like Claude Code
-				meta.push(p.currentTool + (p.currentToolArgs ? ` ${p.currentToolArgs}` : ""));
-			} else {
-				meta.push("In progress\u2026");
-			}
-			if (p.toolCount > 0) {
-				meta.push(`${p.toolCount} tool ${p.toolCount === 1 ? "use" : "uses"}`);
-			}
-			if (p.tokens > 0) {
-				meta.push(`${p.tokens} tokens`);
-			}
-		} else if (p.status === "completed") {
-			meta.push("Done");
-			meta.push(`${p.toolCount} tool ${p.toolCount === 1 ? "use" : "uses"}`);
-			if (p.tokens > 0) meta.push(`${p.tokens} tokens`);
-			meta.push(formatDuration(p.durationMs));
-		} else if (p.status === "failed") {
-			meta.push("Failed");
-			meta.push(formatDuration(p.durationMs));
-		}
-
-		lines.push(line);
-		if (meta.length > 0) {
-			lines.push(`${subLinePrefix}${theme.fg("dim", meta.join(" \u00B7 "))}`);
-		}
+	const parts: string[] = [];
+	if (running > 0) {
+		parts.push(`${running} active`);
+	}
+	parts.push(`${completed}/${entries.length} done`);
+	if (failed > 0) {
+		parts.push(`${failed} failed`);
+	}
+	if (current?.currentTool) {
+		parts.push(`${current.currentTool}${current.currentToolArgs ? ` ${current.currentToolArgs}` : ""}`);
+	} else if (current) {
+		parts.push(current.activeForm ?? current.description);
 	}
 
-	return lines;
+	return parts.length > 0 ? `  ⎿ ${parts.join(" · ")}` : undefined;
 }
 
 // ============================================================================
@@ -585,13 +543,11 @@ export default function lumenTaskExtension(pi: ExtensionAPI): void {
 		cwd = ctx.cwd;
 		agents = discoverAgents(cwd);
 		sessionTaskProgress.clear();
-		ctx.ui.setStatus("task", undefined);
 	});
 
-	pi.on("session_shutdown", (_event, ctx) => {
+	pi.on("session_shutdown", () => {
 		taskEventBus.clear();
 		sessionTaskProgress.clear();
-		ctx.ui.setStatus("task", undefined);
 	});
 
 	pi.registerTool({
@@ -657,7 +613,6 @@ export default function lumenTaskExtension(pi: ExtensionAPI): void {
 
 				// Progress update callback
 				const emitUpdate = () => {
-					ctx.ui.setStatus("task", formatTaskFooterStatus(progressMap.values()));
 					if (!onUpdate) return;
 					const results: TaskResult[] = [];
 					onUpdate({
@@ -709,7 +664,6 @@ export default function lumenTaskExtension(pi: ExtensionAPI): void {
 					details: { results, totalDurationMs, progress: Array.from(progressMap.values()) } as TaskToolDetails,
 				};
 			} finally {
-				ctx.ui.setStatus("task", undefined);
 			}
 		},
 
@@ -775,27 +729,13 @@ export default function lumenTaskExtension(pi: ExtensionAPI): void {
 				}
 			}
 
-			// Start interval for spinner animation during partial results.
-			// Use a slower rate (500ms) to avoid excessive redraws that cause flickering.
-			// Real progress updates come from onProgress callbacks which trigger updateResult.
-			if (options.isPartial && !state.interval) {
-				state.startedAt ??= Date.now();
-				state.interval = setInterval(() => context.invalidate(), 500);
-			}
-			if (!options.isPartial && state.interval) {
-				clearInterval(state.interval);
-				state.interval = undefined;
-			}
-
 			const lines: string[] = [];
 
 			if (options.isPartial) {
-				lines.push(...renderTaskProgress(state.progressMap, options.expanded));
+				const preview = formatTaskProgressPreview(state.progressMap);
+				if (preview) lines.push(theme.fg("dim", preview));
 			} else if (details) {
 				lines.push(theme.fg("dim", `  ⎿ ${formatTaskResultSummary(details)}`));
-				if (options.expanded) {
-					lines.push(...renderTaskProgress(state.progressMap, true));
-				}
 			}
 
 			return {

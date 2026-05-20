@@ -100,7 +100,13 @@ export default function lumenAskUserExtension(pi: ExtensionAPI): void {
 				};
 			}
 
-			ctx.ui.setStatus("ask_user", formatAskUserFooterStatus(question));
+			ctx.ui.setSpinnerState({
+				banner: {
+					kind: "input",
+					title: "等待你的输入",
+					detail: question,
+				},
+			});
 			try {
 				const answer =
 					mode === "text"
@@ -119,7 +125,7 @@ export default function lumenAskUserExtension(pi: ExtensionAPI): void {
 					details: { question, mode, options, answer, cancelled: false } as AskUserDetails,
 				};
 			} finally {
-				ctx.ui.setStatus("ask_user", undefined);
+				ctx.ui.setSpinnerState(undefined);
 			}
 		},
 

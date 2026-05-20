@@ -30,6 +30,8 @@ export type {
 	// App keybindings (for custom editors)
 	AppKeybinding,
 	AutocompleteProviderFactory,
+	AutoRetryEndEvent,
+	AutoRetryStartEvent,
 	// Events - Tool (ToolCallEvent types)
 	BashToolCallEvent,
 	BashToolResultEvent,
@@ -38,6 +40,9 @@ export type {
 	BeforeProviderRequestEvent,
 	BeforeProviderRequestEventResult,
 	BuildSystemPromptOptions,
+	CompactionEndEvent,
+	CompactionHooksEvent,
+	CompactionStartEvent,
 	// Context
 	CompactOptions,
 	// Events - Agent

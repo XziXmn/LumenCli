@@ -88,7 +88,7 @@ import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/cha
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { parseGitUrl } from "../../utils/git.js";
-import { getCwdRelativePath } from "../../utils/paths.js";
+import { formatPathRelativeToCwdOrAbsolute, getCwdRelativePath } from "../../utils/paths.js";
 import { getPiUserAgent } from "../../utils/pi-user-agent.js";
 import { killTrackedDetachedChildren } from "../../utils/shell.js";
 import { ensureTool } from "../../utils/tools-manager.js";
@@ -278,6 +278,9 @@ export class InteractiveMode {
 	private spinnerThinkingDurationMs: number | null = null;
 	private spinnerThoughtForVisibleUntil: number | null = null;
 	private spinnerSystemOverrideMessage: string | undefined = undefined;
+	private spinnerCurrentToolLabel: string | undefined = undefined;
+	private spinnerBanner: SpinnerUiState["banner"] | undefined = undefined;
+	private spinnerBannerTimeout: ReturnType<typeof setTimeout> | undefined = undefined;
 	private spinnerActiveToolCount = 0;
 
 	private lastSigintTime = 0;
@@ -1626,6 +1629,10 @@ export class InteractiveMode {
 		return this.session.getToolDefinition(toolName);
 	}
 
+	private shouldRenderToolAsExecutionComponent(toolName: string): boolean {
+		return toolName === "task" || toolName === "todo";
+	}
+
 	/**
 	 * Set up keyboard shortcuts registered by extensions.
 	 */
@@ -1734,6 +1741,7 @@ export class InteractiveMode {
 					: "requesting";
 
 		if (
+			this.spinnerBanner === undefined &&
 			this.spinnerSystemOverrideMessage === undefined &&
 			tip === undefined &&
 			budgetText === undefined &&
@@ -1747,6 +1755,7 @@ export class InteractiveMode {
 		}
 
 		return {
+			...(this.spinnerBanner ? { banner: this.spinnerBanner } : {}),
 			...(tip ? { tip } : {}),
 			...(budgetText ? { budgetText } : {}),
 			...(this.spinnerSystemOverrideMessage ? { overrideMessage: this.spinnerSystemOverrideMessage } : {}),
@@ -1754,6 +1763,7 @@ export class InteractiveMode {
 			...(outputTokens !== undefined ? { outputTokens } : {}),
 			...(isThinking ? { isThinking: true } : {}),
 			...(lastThinkingDurationMs !== undefined ? { lastThinkingDurationMs } : {}),
+			...(this.spinnerCurrentToolLabel ? { currentToolLabel: this.spinnerCurrentToolLabel } : {}),
 			mode,
 		};
 	}
@@ -1877,6 +1887,57 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	private clearSpinnerBannerTimeout(): void {
+		if (this.spinnerBannerTimeout) {
+			clearTimeout(this.spinnerBannerTimeout);
+			this.spinnerBannerTimeout = undefined;
+		}
+	}
+
+	private setSpinnerBanner(banner: SpinnerUiState["banner"] | undefined, options?: { expiresMs?: number }): void {
+		this.clearSpinnerBannerTimeout();
+		this.spinnerBanner = banner;
+		if (banner && options?.expiresMs && options.expiresMs > 0) {
+			this.spinnerBannerTimeout = setTimeout(() => {
+				this.spinnerBannerTimeout = undefined;
+				if (this.spinnerBanner === banner) {
+					this.spinnerBanner = undefined;
+					this.ui.requestRender();
+				}
+			}, options.expiresMs);
+		}
+		this.ui.requestRender();
+	}
+
+	private describeSpinnerToolLabel(toolName: string, args: Record<string, unknown>): string | undefined {
+		const path =
+			typeof args.path === "string" && args.path.length > 0
+				? formatPathRelativeToCwdOrAbsolute(args.path, this.sessionManager.getCwd())
+				: typeof args.file_path === "string" && args.file_path.length > 0
+					? formatPathRelativeToCwdOrAbsolute(args.file_path, this.sessionManager.getCwd())
+					: undefined;
+
+		switch (toolName) {
+			case "read":
+				return `Reading ${path ?? "file"}`;
+			case "grep":
+			case "find": {
+				const pattern = typeof args.pattern === "string" ? args.pattern : undefined;
+				return pattern ? `Searching ${pattern}` : `Searching ${path ?? "files"}`;
+			}
+			case "ls":
+				return `Listing ${path ?? "."}`;
+			case "edit":
+				return `Editing ${path ?? "file"}`;
+			case "write":
+				return `Writing ${path ?? "file"}`;
+			case "bash":
+				return "Running command";
+			default:
+				return undefined;
+		}
+	}
+
 	private setWorkingDetails(
 		content?: string[] | ((tui: TUI, theme: Theme) => Component & { dispose?(): void }),
 	): void {
@@ -1905,6 +1966,9 @@ export class InteractiveMode {
 		this.spinnerThinkingDurationMs = null;
 		this.spinnerThoughtForVisibleUntil = null;
 		this.spinnerSystemOverrideMessage = undefined;
+		this.spinnerCurrentToolLabel = undefined;
+		this.clearSpinnerBannerTimeout();
+		this.spinnerBanner = undefined;
 	}
 
 	/**
@@ -2872,6 +2936,7 @@ export class InteractiveMode {
 				this.spinnerThinkingMinimumVisibleUntil = null;
 				this.spinnerThinkingDurationMs = null;
 				this.spinnerThoughtForVisibleUntil = null;
+				this.spinnerCurrentToolLabel = undefined;
 				this.spinnerActiveToolCount = 0;
 				this.pendingTools.clear();
 				if (this.settingsManager.getShowTerminalProgress()) {
@@ -2985,7 +3050,9 @@ export class InteractiveMode {
 						break;
 					}
 
-					const shouldUseStreamingToolSummary = projectedTurn.toolCalls.length === 1;
+					const shouldUseStreamingToolSummary =
+						projectedTurn.toolCalls.length === 1 &&
+						!this.shouldRenderToolAsExecutionComponent(projectedTurn.toolCalls[0]?.name ?? "");
 
 					if (shouldUseStreamingToolSummary) {
 						const toolCall = projectedTurn.toolCalls[0];
@@ -3007,7 +3074,11 @@ export class InteractiveMode {
 					}
 
 					const shouldUseStreamingToolBatchSummary =
-						projectedTurn.toolCalls.length > 1 && !projectedTurn.hasRenderableAssistantContent;
+						projectedTurn.toolCalls.length > 1 &&
+						!projectedTurn.hasRenderableAssistantContent &&
+						projectedTurn.toolCalls.every(
+							(toolCall) => !this.shouldRenderToolAsExecutionComponent(toolCall.name),
+						);
 
 					if (shouldUseStreamingToolBatchSummary) {
 						if (!this.activeToolBatchSummary) {
@@ -3027,6 +3098,29 @@ export class InteractiveMode {
 					}
 
 					for (const toolCall of projectedTurn.toolCalls) {
+						if (this.shouldRenderToolAsExecutionComponent(toolCall.name)) {
+							let component = this.pendingTools.get(toolCall.id);
+							if (!component) {
+								component = new ToolExecutionComponent(
+									toolCall.name,
+									toolCall.id,
+									toolCall.arguments,
+									{
+										showImages: this.settingsManager.getShowImages(),
+										imageWidthCells: this.settingsManager.getImageWidthCells(),
+									},
+									this.getRegisteredToolDefinition(toolCall.name),
+									this.ui,
+									this.sessionManager.getCwd(),
+								);
+								component.setExpanded(this.toolOutputExpanded);
+								this.chatContainer.addChild(component);
+								this.pendingTools.set(toolCall.id, component);
+							}
+							component.updateArgs(toolCall.arguments);
+							continue;
+						}
+
 						if (
 							!this.pendingTools.has(toolCall.id) &&
 							!this.collapsedGroupByToolCallId.has(toolCall.id) &&
@@ -3116,6 +3210,10 @@ export class InteractiveMode {
 
 			case "tool_execution_start": {
 				this.spinnerActiveToolCount++;
+				this.spinnerCurrentToolLabel = this.describeSpinnerToolLabel(
+					event.toolName,
+					event.args as Record<string, unknown>,
+				);
 				if (this.collapsedGroupByToolCallId.has(event.toolCallId)) {
 					this.ui.requestRender();
 					break;
@@ -3174,6 +3272,9 @@ export class InteractiveMode {
 
 			case "tool_execution_end": {
 				this.spinnerActiveToolCount = Math.max(0, this.spinnerActiveToolCount - 1);
+				if (this.spinnerActiveToolCount === 0) {
+					this.spinnerCurrentToolLabel = undefined;
+				}
 				const collapsedGroup = this.collapsedGroupByToolCallId.get(event.toolCallId);
 				if (collapsedGroup) {
 					collapsedGroup.markCompleted(event.toolCallId);
@@ -3268,6 +3369,16 @@ export class InteractiveMode {
 						: event.reason === "overflow"
 							? "Auto-compacting after overflow"
 							: "Auto-compacting conversation";
+				this.setSpinnerBanner({
+					kind: "info",
+					title:
+						event.reason === "manual"
+							? "正在整理上下文"
+							: event.reason === "overflow"
+								? "上下文溢出，正在自动整理"
+								: "正在自动整理上下文",
+					detail: `${keyText("app.interrupt")} 可取消`,
+				});
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(true);
 				}
@@ -3276,25 +3387,13 @@ export class InteractiveMode {
 				this.defaultEditor.onEscape = () => {
 					this.session.abortCompaction();
 				};
-				this.statusContainer.clear();
-				const cancelHint = `(${keyText("app.interrupt")} to cancel)`;
-				const label =
-					event.reason === "manual"
-						? `Compacting context... ${cancelHint}`
-						: `${event.reason === "overflow" ? "Context overflow detected, " : ""}Auto-compacting... ${cancelHint}`;
-				this.autoCompactionLoader = new Loader(
-					this.ui,
-					(spinner) => theme.fg("accent", spinner),
-					(text) => theme.fg("muted", text),
-					label,
-				);
-				this.statusContainer.addChild(this.autoCompactionLoader);
 				this.ui.requestRender();
 				break;
 			}
 
 			case "compaction_end": {
 				this.spinnerSystemOverrideMessage = undefined;
+				this.setSpinnerBanner(undefined);
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
 				}
@@ -3339,33 +3438,31 @@ export class InteractiveMode {
 
 			case "auto_retry_start": {
 				this.spinnerSystemOverrideMessage = `Retrying request (${event.attempt}/${event.maxAttempts})`;
+				this.setSpinnerBanner({
+					kind: "warning",
+					title: "接口不稳定，正在自动重试",
+					detail: `第 ${event.attempt}/${event.maxAttempts} 次重试 · ${event.errorMessage || "request failed"}`,
+				});
 				// Set up escape to abort retry
 				this.retryEscapeHandler = this.defaultEditor.onEscape;
 				this.defaultEditor.onEscape = () => {
 					this.session.abortRetry();
 				};
-				// Show retry indicator
-				this.statusContainer.clear();
 				this.retryCountdown?.dispose();
-				const retryMessage = (seconds: number) =>
-					`Retrying (${event.attempt}/${event.maxAttempts}) in ${seconds}s... (${keyText("app.interrupt")} to cancel)`;
-				this.retryLoader = new Loader(
-					this.ui,
-					(spinner) => theme.fg("warning", spinner),
-					(text) => theme.fg("muted", text),
-					retryMessage(Math.ceil(event.delayMs / 1000)),
-				);
 				this.retryCountdown = new CountdownTimer(
 					event.delayMs,
 					this.ui,
 					(seconds) => {
-						this.retryLoader?.setMessage(retryMessage(seconds));
+						this.setSpinnerBanner({
+							kind: "warning",
+							title: "接口不稳定，正在自动重试",
+							detail: `第 ${event.attempt}/${event.maxAttempts} 次重试 · ${seconds}s 后继续`,
+						});
 					},
 					() => {
 						this.retryCountdown = undefined;
 					},
 				);
-				this.statusContainer.addChild(this.retryLoader);
 				this.ui.requestRender();
 				break;
 			}
@@ -3381,13 +3478,19 @@ export class InteractiveMode {
 					this.retryCountdown.dispose();
 					this.retryCountdown = undefined;
 				}
-				// Stop loader
-				if (this.retryLoader) {
-					this.retryLoader.stop();
-					this.retryLoader = undefined;
-					this.statusContainer.clear();
-				}
-				// Show error only on final failure (success shows normal response)
+				this.setSpinnerBanner(
+					event.success
+						? {
+								kind: "success",
+								title: "接口已恢复",
+							}
+						: {
+								kind: "error",
+								title: "接口请求失败",
+								detail: `已重试 ${event.attempt} 次`,
+							},
+					event.success ? { expiresMs: 1500 } : undefined,
+				);
 				if (!event.success) {
 					this.showError(`Retry failed after ${event.attempt} attempts: ${event.finalError || "Unknown error"}`);
 				}
@@ -3588,14 +3691,26 @@ export class InteractiveMode {
 				}
 
 				this.addMessageToChat(entry.message);
-				// Render tool call components
 				for (const toolCall of entry.toolCalls) {
-					const component = new AssistantToolSummaryComponent(
-						toolCall.name,
-						toolCall.arguments,
-						undefined,
-						this.sessionManager.getCwd(),
-					);
+					const component = this.shouldRenderToolAsExecutionComponent(toolCall.name)
+						? new ToolExecutionComponent(
+								toolCall.name,
+								toolCall.id,
+								toolCall.arguments,
+								{
+									showImages: this.settingsManager.getShowImages(),
+									imageWidthCells: this.settingsManager.getImageWidthCells(),
+								},
+								this.getRegisteredToolDefinition(toolCall.name),
+								this.ui,
+								this.sessionManager.getCwd(),
+							)
+						: new AssistantToolSummaryComponent(
+								toolCall.name,
+								toolCall.arguments,
+								undefined,
+								this.sessionManager.getCwd(),
+							);
 					component.setExpanded(this.toolOutputExpanded);
 					this.chatContainer.addChild(component);
 
@@ -3626,14 +3741,12 @@ export class InteractiveMode {
 				component.setExpanded(this.toolOutputExpanded);
 				this.chatContainer.addChild(component);
 			} else if (entry.message.role === "toolResult") {
-				// Match tool results to pending tool components
 				const component = renderedPendingTools.get(entry.message.toolCallId);
 				if (component) {
 					component.updateResult(entry.message);
 					renderedPendingTools.delete(entry.message.toolCallId);
 				}
 			} else {
-				// All other messages use standard rendering
 				this.addMessageToChat(entry.message, options);
 			}
 		}
@@ -3643,7 +3756,6 @@ export class InteractiveMode {
 		}
 		this.ui.requestRender();
 	}
-
 	renderInitialMessages(): void {
 		// Get aligned messages and entries from session context
 		const context = this.sessionManager.buildSessionContext();
@@ -4123,23 +4235,6 @@ export class InteractiveMode {
 		};
 	}
 
-	private formatQueuedMessagesFooterStatus(
-		steeringMessages: string[],
-		followUpMessages: string[],
-	): string | undefined {
-		const total = steeringMessages.length + followUpMessages.length;
-		if (total === 0) return undefined;
-
-		const parts: string[] = [];
-		if (steeringMessages.length > 0) {
-			parts.push(`${steeringMessages.length} steer`);
-		}
-		if (followUpMessages.length > 0) {
-			parts.push(`${followUpMessages.length} follow-up`);
-		}
-		return `queued ${total} · ${parts.join(" · ")}`;
-	}
-
 	private latestQueuedMessage(
 		steeringMessages: string[],
 		followUpMessages: string[],
@@ -4156,7 +4251,6 @@ export class InteractiveMode {
 	private updatePendingMessagesDisplay(): void {
 		this.pendingMessagesContainer.clear();
 		const { steering: steeringMessages, followUp: followUpMessages } = this.getAllQueuedMessages();
-		this.setExtensionStatus("queue", this.formatQueuedMessagesFooterStatus(steeringMessages, followUpMessages));
 		if (!this.pendingMessagesVisible) {
 			return;
 		}

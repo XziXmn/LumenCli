@@ -1,10 +1,12 @@
 /**
- * Unified Claude-style task / todo / queued UI.
+ * Unified taskbar plugin above the input area.
  *
- * Phase 2:
- * - task / queued / working UI is unified here instead of being scattered in core
- * - queued stays above the input area and never enters transcript
- * - working line uses current/next/tip structure inspired by Claude spinner region
+ * Layout:
+ * - Banner
+ * - Queue
+ * - Headline
+ * - Execution
+ * - Plan
  */
 
 import type {
@@ -39,169 +41,80 @@ type WorkingState = {
 	shimmerOffset: number;
 };
 
-type TaskGroup = {
-	name?: string;
-	tasks: TaskUiItem[];
+type TipState = {
+	shownIds: Set<string>;
+	lastTipId: string | undefined;
+	lastTipCycleStart: number;
 };
 
-function taskRank(task: TaskUiItem, currentId: string | undefined): number {
-	if (task.id === currentId) return 0;
-	if (task.status === "running" || task.status === "in_progress") return 1;
-	if (task.status === "pending") return 2;
-	if (task.status === "completed") return 3;
-	if (task.status === "failed" || task.status === "aborted") return 4;
-	return 5;
-}
-
-function groupTasksForDetails(snapshot: Snapshot): TaskGroup[] {
-	const currentId = snapshot.summary?.current?.id;
-	const sorted = [...snapshot.tasks].sort((a, b) => {
-		const rankDiff = taskRank(a, currentId) - taskRank(b, currentId);
-		if (rankDiff !== 0) return rankDiff;
-		const groupA = a.group ?? "";
-		const groupB = b.group ?? "";
-		if (groupA !== groupB) return groupA.localeCompare(groupB);
-		return a.id.localeCompare(b.id);
-	});
-
-	const groups: TaskGroup[] = [];
-	for (const task of sorted) {
-		const last = groups[groups.length - 1];
-		if (!last || last.name !== task.group) {
-			groups.push({ name: task.group, tasks: [task] });
-		} else {
-			last.tasks.push(task);
-		}
-	}
-	return groups;
-}
-
-function formatHiddenTaskSummary(tasks: TaskUiItem[]): string | undefined {
-	if (tasks.length === 0) return undefined;
-	const completed = tasks.filter((task) => task.status === "completed").length;
-	const inProgress = tasks.filter((task) => task.status === "running" || task.status === "in_progress").length;
-	const pending = tasks.filter((task) => task.status === "pending").length;
-	const failed = tasks.filter((task) => task.status === "failed" || task.status === "aborted").length;
-	const abandoned = tasks.filter((task) => task.status === "abandoned").length;
-	const parts: string[] = [];
-	if (inProgress > 0) parts.push(`${inProgress} in progress`);
-	if (pending > 0) parts.push(`${pending} pending`);
-	if (completed > 0) parts.push(`${completed} completed`);
-	if (failed > 0) parts.push(`${failed} failed`);
-	if (abandoned > 0) parts.push(`${abandoned} abandoned`);
-	return parts.length > 0 ? parts.join(" · ") : undefined;
-}
-
-class ClaudeTaskDetailsComponent extends Container {
-	constructor(snapshot: Snapshot, theme: ExtensionContext["ui"]["theme"]) {
-		super();
-		const currentId = snapshot.summary?.current?.id;
-		const groups = groupTasksForDetails(snapshot);
-		const visibleTasks = groups.flatMap((group) => group.tasks).slice(0, MAX_TASK_ITEMS_SOLO);
-		const visibleIds = new Set(visibleTasks.map((task) => task.id));
-		const visibleGroups: TaskGroup[] = [];
-		for (const group of groups) {
-			const tasks = group.tasks.filter((task) => visibleIds.has(task.id));
-			if (tasks.length > 0) {
-				visibleGroups.push({ name: group.name, tasks });
-			}
-		}
-
-		if (snapshot.summary) {
-			const open = snapshot.summary.total - snapshot.summary.completed;
-			const parts = [`${snapshot.summary.total} tasks`, `${snapshot.summary.completed} done`];
-			if (snapshot.summary.inProgress > 0) {
-				parts.push(`${snapshot.summary.inProgress} in progress`);
-			}
-			if (open - snapshot.summary.inProgress > 0) {
-				parts.push(`${open - snapshot.summary.inProgress} open`);
-			}
-			this.addChild(new Text(theme.fg("dim", parts.join(" · ")), 0, 0));
-		}
-
-		for (const group of visibleGroups) {
-			if (group.name) {
-				this.addChild(new Text(`${theme.fg("dim", "  ⎿ ")}${theme.fg("muted", group.name)}`, 0, 0));
-			}
-			for (const task of group.tasks) {
-			const isCompleted = task.status === "completed";
-			const isCurrent = task.id === currentId || task.status === "running" || task.status === "in_progress";
-			const isFailed = task.status === "failed" || task.status === "aborted";
-			const subject = task.subject ?? task.content;
-			const displaySubject = inlineText(subject, MAX_TASK_PREVIEW_CHARS);
-			const mark = isCompleted ? "☒" : isCurrent ? "☐" : isFailed ? "✕" : "☐";
-			const styledSubject = isCompleted
-				? theme.fg("dim", theme.strikethrough(displaySubject))
-				: isCurrent
-					? theme.bold(displaySubject)
-					: isFailed
-						? theme.fg("error", displaySubject)
-						: displaySubject;
-			this.addChild(new Text(`${theme.fg("dim", "  ⎿ ")}${mark} ${styledSubject}`, 0, 0));
-
-			const metaParts = [task.group, task.meta, isCurrent ? task.activeForm : undefined].filter(
-				(part): part is string => Boolean(part?.trim()),
-			);
-			if (metaParts.length > 0) {
-				this.addChild(
-					new Text(
-						`${theme.fg("dim", "    ")}${theme.fg("muted", inlineText(metaParts.join(" · "), MAX_TASK_PREVIEW_CHARS))}`,
-						0,
-						0,
-					),
-				);
-			}
-		}
-		}
-
-		if (snapshot.tasks.length > visibleTasks.length) {
-			const hidden = snapshot.tasks.filter((task) => !visibleIds.has(task.id));
-			const hiddenSummary = formatHiddenTaskSummary(hidden);
-			const suffix = hiddenSummary ? ` · ${hiddenSummary}` : "";
-			this.addChild(
-				new Text(theme.fg("dim", `  ⎿ +${snapshot.tasks.length - visibleTasks.length} more tasks${suffix}`), 0, 0),
-			);
-		}
-	}
-}
-
-class ClaudeQueuedWidgetComponent extends Container {
-	constructor(queued: QueuedUiState, theme: ExtensionContext["ui"]["theme"]) {
-		super();
-		const items = [...queued.steering, ...queued.followUp].filter((item) => !item.isMeta);
-		const total = items.length;
-		if (total === 0) return;
-		this.addChild(new Text(theme.fg("dim", total === 1 ? "1 queued command" : `${total} queued commands`), 0, 0));
-
-		for (const item of items.slice(0, MAX_QUEUED_ITEMS)) {
-			const label = item.kind === "steer" ? "Steer" : "Follow-up";
-			const baseText = item.preExpansionText && item.preExpansionText !== item.text ? item.preExpansionText : item.text;
-			this.addChild(
-				new Text(
-					`${theme.fg("dim", "  ⎿ ")}${theme.fg("muted", `${label}: `)}${inlineText(baseText, MAX_QUEUED_PREVIEW_CHARS)}`,
-					0,
-					0,
-				),
-			);
-		}
-
-		if (total > MAX_QUEUED_ITEMS) {
-			this.addChild(new Text(theme.fg("dim", `  ⎿ +${total - MAX_QUEUED_ITEMS} more queued commands`), 0, 0));
-		}
-	}
-}
+type TaskBucket = {
+	execution: TaskUiItem[];
+	plan: TaskUiItem[];
+};
 
 const SHOW_TIP_AFTER_MS = 30_000;
+const TIP_ROTATION_MS = 60_000;
 const MAX_QUEUED_PREVIEW_CHARS = 96;
 const MAX_TASK_PREVIEW_CHARS = 88;
 const MAX_WORKING_PREVIEW_CHARS = 96;
-const MAX_QUEUED_ITEMS = 4;
-const MAX_TASK_ITEMS_SOLO = 6;
+const MAX_QUEUED_ITEMS = 2;
+const MAX_EXECUTION_ITEMS = 3;
+const MAX_PLAN_ITEMS = 5;
 const SPINNER_REFRESH_MS = 250;
+const IDLE_CYCLES_THRESHOLD = 2;
+const STALL_CYCLES_THRESHOLD = 12;
+const TOKEN_ANIMATION_STEP = 0.3;
+
+interface TipCandidate {
+	id: string;
+	text: string;
+	priority: number;
+	condition: (elapsed: number, snapshot: Snapshot, tipState: TipState) => boolean;
+	once?: boolean;
+}
+
+const TIP_POOL: TipCandidate[] = [
+	{
+		id: "clear-context",
+		text: "切换话题时可以用 /clear 重开会话，释放上下文",
+		priority: 1,
+		condition: (elapsed) => elapsed >= 1_800_000,
+	},
+	{
+		id: "queue-hint",
+		text: "Enter 立即插入（工具间隙就发出），Alt+Enter 排队等本轮结束再发",
+		priority: 2,
+		condition: (elapsed, _snapshot, tipState) => elapsed >= 30_000 && !tipState.shownIds.has("queue-hint"),
+		once: true,
+	},
+	{
+		id: "tasks-hint",
+		text: "用 tasks-ui 命令可以展开/折叠任务栏视图",
+		priority: 3,
+		condition: (elapsed, snapshot, tipState) =>
+			elapsed >= 60_000 && snapshot.tasks.length > 0 && !tipState.shownIds.has("tasks-hint"),
+		once: true,
+	},
+];
+
 function inlineText(text: string, maxChars: number): string {
 	const normalized = text.replace(/\s+/g, " ").trim();
 	if (normalized.length <= maxChars) return normalized;
 	return `${normalized.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`;
+}
+
+function formatTokens(n: number): string {
+	if (n < 1000) return String(n);
+	if (n < 10_000) return `${(n / 1000).toFixed(1)}k`;
+	return `${Math.round(n / 1000)}k`;
+}
+
+function formatElapsed(ms: number): string {
+	const totalSec = Math.floor(ms / 1000);
+	if (totalSec < 60) return `${totalSec}s`;
+	const m = Math.floor(totalSec / 60);
+	const s = totalSec % 60;
+	return `${m}m ${s}s`;
 }
 
 function shimmerText(
@@ -267,98 +180,8 @@ function readSnapshot(ctx: ExtensionContext): Snapshot {
 	};
 }
 
-function formatTokens(n: number): string {
-	if (n < 1000) return String(n);
-	if (n < 10_000) return `${(n / 1000).toFixed(1)}k`;
-	return `${Math.round(n / 1000)}k`;
-}
-
-function formatElapsed(ms: number): string {
-	const totalSec = Math.floor(ms / 1000);
-	if (totalSec < 60) return `${totalSec}s`;
-	const m = Math.floor(totalSec / 60);
-	const s = totalSec % 60;
-	return `${m}m ${s}s`;
-}
-
-function formatFooterSummary(snapshot: Snapshot): string | undefined {
-	const summary = snapshot.summary;
-	if (!summary || summary.total === 0) return undefined;
-	const toggle = snapshot.expanded ? "hide tasks" : "show tasks";
-	return `${summary.completed}/${summary.total} tasks · ${toggle}`;
-}
-
-function createWorkingDetailsFactory(snapshot: Snapshot) {
-	if (!(snapshot.expanded && snapshot.tasks.length > 0)) return undefined;
-	return (_tui: TUI, theme: ExtensionContext["ui"]["theme"]) => {
-		return new ClaudeTaskDetailsComponent(snapshot, theme);
-	};
-}
-
-function createPromptWidgetFactory(snapshot: Snapshot) {
-	if (!snapshot.queued) return undefined;
-	const items = [...snapshot.queued.steering, ...snapshot.queued.followUp].filter((item) => !item.isMeta);
-	if (items.length === 0) return undefined;
-	return (_tui: TUI, theme: ExtensionContext["ui"]["theme"]) => new ClaudeQueuedWidgetComponent(snapshot.queued!, theme);
-}
-
-function formatCurrentHeadline(
-	current: TaskUiItem | undefined,
-	spinner: SpinnerUiState | undefined,
-	working: WorkingState,
-): string {
-	if (spinner?.overrideMessage) {
-		return inlineText(spinner.overrideMessage, MAX_WORKING_PREVIEW_CHARS);
-	}
-	if (current?.activeForm) {
-		return inlineText(current.activeForm, MAX_WORKING_PREVIEW_CHARS);
-	}
-	return working.randomVerb;
-}
-
-interface TipCandidate {
-	id: string;
-	text: string;
-	priority: number; // lower = higher priority
-	condition: (elapsed: number, snapshot: Snapshot, tipState: TipState) => boolean;
-	once?: boolean; // show only once per session
-}
-
-type TipState = {
-	shownIds: Set<string>;
-	lastTipId: string | undefined;
-	lastTipCycleStart: number;
-};
-
-const TIP_ROTATION_MS = 60_000;
-
-const TIP_POOL: TipCandidate[] = [
-	{
-		id: "clear-context",
-		text: "切换话题时可以用 /clear 重开会话，释放上下文",
-		priority: 1,
-		condition: (elapsed) => elapsed >= 1_800_000,
-	},
-	{
-		id: "queue-hint",
-		text: "Enter 立即插入（工具间隙就发出），Alt+Enter 排队等本轮结束再发",
-		priority: 2,
-		condition: (elapsed, _snapshot, tipState) => elapsed >= 30_000 && !tipState.shownIds.has("queue-hint"),
-		once: true,
-	},
-	{
-		id: "tasks-hint",
-		text: "用 tasks-ui 命令可以展开/折叠任务列表",
-		priority: 3,
-		condition: (elapsed, snapshot, tipState) =>
-			elapsed >= 60_000 && snapshot.tasks.length > 0 && !tipState.shownIds.has("tasks-hint"),
-		once: true,
-	},
-];
-
 function selectTip(elapsed: number, snapshot: Snapshot, tipState: TipState): string | undefined {
 	const now = Date.now();
-	// Rotate tip after TIP_ROTATION_MS
 	if (tipState.lastTipId && now - tipState.lastTipCycleStart < TIP_ROTATION_MS) {
 		const current = TIP_POOL.find((t) => t.id === tipState.lastTipId);
 		if (current && current.condition(elapsed, snapshot, tipState)) {
@@ -383,25 +206,50 @@ function selectTip(elapsed: number, snapshot: Snapshot, tipState: TipState): str
 	return selected.text;
 }
 
-const IDLE_CYCLES_THRESHOLD = 2;
-const STALL_CYCLES_THRESHOLD = 12; // 3 seconds at 250ms refresh
-const TOKEN_ANIMATION_STEP = 0.3; // lerp factor per cycle
+function splitTasks(snapshot: Snapshot): TaskBucket {
+	return {
+		execution: snapshot.tasks.filter((task) => task.id.startsWith("task:")),
+		plan: snapshot.tasks.filter((task) => task.id.startsWith("todo:")),
+	};
+}
 
-function formatWorkingMessage(
-	snapshot: Snapshot,
+function firstTask(
+	items: TaskUiItem[],
+	statuses: Array<TaskUiItem["status"]>,
+): TaskUiItem | undefined {
+	return items.find((item) => statuses.includes(item.status));
+}
+
+function buildHeadlineText(
+	current: TaskUiItem | undefined,
+	spinner: SpinnerUiState | undefined,
 	working: WorkingState,
-	theme: ExtensionContext["ui"]["theme"],
-): string | undefined {
-	const summary = snapshot.summary;
-	const current = summary?.current;
-	const next = summary?.next;
+): string {
+	if (spinner?.overrideMessage) {
+		return inlineText(spinner.overrideMessage, MAX_WORKING_PREVIEW_CHARS);
+	}
+	if (current?.activeForm) {
+		return inlineText(current.activeForm, MAX_WORKING_PREVIEW_CHARS);
+	}
+	if (current?.subject ?? current?.content) {
+		return inlineText(current?.subject ?? current?.content ?? working.randomVerb, MAX_WORKING_PREVIEW_CHARS);
+	}
+	if (spinner?.currentToolLabel) {
+		return inlineText(spinner.currentToolLabel, MAX_WORKING_PREVIEW_CHARS);
+	}
+	return working.randomVerb;
+}
+
+function updateWorkingMetrics(snapshot: Snapshot, working: WorkingState): {
+	elapsed: number;
+	parts: string[];
+	outputTokens: number;
+} {
 	const spinner = snapshot.spinner;
 	const elapsed = spinner?.elapsedMs ?? 0;
 	const outputTokens = spinner?.outputTokens ?? 0;
 	const parts: string[] = [];
-	const showExpandedTasksInSpinnerRegion = snapshot.expanded && snapshot.tasks.length > 0;
 
-	// Idle/stall detection: track cycles without token growth
 	if (outputTokens === working.lastOutputTokens) {
 		working.idleCycles++;
 	} else {
@@ -409,7 +257,6 @@ function formatWorkingMessage(
 		working.lastOutputTokens = outputTokens;
 	}
 
-	// Smooth token animation: lerp toward actual value
 	if (working.displayedTokens < outputTokens) {
 		const delta = outputTokens - working.displayedTokens;
 		const step = Math.max(1, Math.ceil(delta * TOKEN_ANIMATION_STEP));
@@ -417,27 +264,6 @@ function formatWorkingMessage(
 	} else {
 		working.displayedTokens = outputTokens;
 	}
-
-	const hasRunningTasks = snapshot.tasks.some(
-		(t) => t.status === "running" || t.status === "in_progress",
-	);
-	const leaderIsIdle =
-		hasRunningTasks && !spinner?.isThinking && working.idleCycles >= IDLE_CYCLES_THRESHOLD;
-
-	if (leaderIsIdle) {
-		working.isIdle = true;
-		working.isStalled = false;
-		const runningCount = snapshot.tasks.filter(
-			(t) => t.status === "running" || t.status === "in_progress",
-		).length;
-		const suffix = runningCount > 1 ? `${runningCount} tasks running` : "tasks running";
-		return theme.fg("dim", `✽ Idle · ${suffix}`);
-	}
-	working.isIdle = false;
-
-	// Stall detection: no token growth for 3s, not thinking, not idle
-	working.isStalled =
-		!spinner?.isThinking && working.idleCycles >= STALL_CYCLES_THRESHOLD && outputTokens > 0;
 
 	if (elapsed >= 3_000) {
 		parts.push(formatElapsed(elapsed));
@@ -449,101 +275,282 @@ function formatWorkingMessage(
 	if (spinner?.isThinking) {
 		parts.push("thinking");
 	} else if (spinner?.lastThinkingDurationMs !== undefined) {
-			const seconds = Math.max(1, Math.round(spinner.lastThinkingDurationMs / 1000));
-			parts.push(`thought for ${seconds}s`);
+		const seconds = Math.max(1, Math.round(spinner.lastThinkingDurationMs / 1000));
+		parts.push(`thought for ${seconds}s`);
 	}
 
-	const headline = formatCurrentHeadline(current, spinner, working);
-	const headlineColor = working.isStalled ? "error" : "accent";
-	const mode = spinner?.mode;
-	const shimmerStep = mode === "requesting" ? 3 : mode === "tool-use" ? 0 : 1;
-	working.shimmerOffset += shimmerStep;
-	const headlineText = `${headline}…`;
-	let coloredHeadline: string;
-	if (mode === "tool-use") {
-		const pulse = Math.sin((working.shimmerOffset * 0.15)) > 0;
-		working.shimmerOffset++;
-		coloredHeadline = pulse
-			? theme.bold(theme.fg(headlineColor, headlineText))
-			: theme.fg(headlineColor, headlineText);
-	} else if (shimmerStep > 0) {
-		coloredHeadline = shimmerText(headlineText, working.shimmerOffset, theme, headlineColor);
-	} else {
-		coloredHeadline = theme.bold(theme.fg(headlineColor, headlineText));
-	}
-	const coloredMeta = parts.length > 0 ? theme.fg("muted", ` (${parts.join(" · ")})`) : "";
-	const firstLine = `${coloredHeadline}${coloredMeta}`;
-	if (showExpandedTasksInSpinnerRegion) return firstLine;
-	const responseLines: string[] = [];
+	return { elapsed, parts, outputTokens };
+}
 
-	// Teammate tree: show running sub-agents with their current activity
-	const runningTasks = snapshot.tasks.filter(
-		(t) => t.status === "running" || t.status === "in_progress",
-	);
-	if (runningTasks.length > 0) {
-		for (let i = 0; i < runningTasks.length; i++) {
-			const t = runningTasks[i]!;
-			const prefix = i === runningTasks.length - 1 ? "└─" : "├─";
-			const agent = t.group ? `@${t.group}` : t.id;
-			const activity = t.meta ? inlineText(t.meta, 40) : t.activeForm ?? "working";
-			const stats: string[] = [];
-			if (t.toolCount) stats.push(`${t.toolCount} uses`);
-			if (t.tokens) stats.push(`${formatTokens(t.tokens)} tokens`);
-			const statsSuffix = stats.length > 0 ? ` · ${stats.join(" · ")}` : "";
-			responseLines.push(
-				theme.fg("dim", `  ${prefix} `) +
-					theme.fg("accent", agent) +
-					theme.fg("dim", `: ${activity}${statsSuffix}`),
-			);
+function renderBannerLines(snapshot: Snapshot, theme: ExtensionContext["ui"]["theme"]): string[] {
+	const banner = snapshot.spinner?.banner;
+	if (!banner) return [];
+
+	const style = (() => {
+		switch (banner.kind) {
+			case "success":
+				return { icon: "✓", color: "success" as const };
+			case "error":
+				return { icon: "!", color: "error" as const };
+			case "input":
+				return { icon: "?", color: "warning" as const };
+			case "approval":
+				return { icon: "!", color: "warning" as const };
+			case "warning":
+				return { icon: "~", color: "warning" as const };
+			default:
+				return { icon: "~", color: "accent" as const };
+		}
+	})();
+
+	const lines = [theme.bold(theme.fg(style.color, `${style.icon} ${banner.title}`))];
+	if (banner.detail) {
+		lines.push(`${theme.fg("dim", "└─ ")}${theme.fg("muted", inlineText(banner.detail, 120))}`);
+	}
+	return lines;
+}
+
+function renderQueueLines(snapshot: Snapshot, theme: ExtensionContext["ui"]["theme"]): string[] {
+	if (!snapshot.queued) return [];
+	const items = [...snapshot.queued.steering, ...snapshot.queued.followUp].filter((item) => !item.isMeta);
+	if (items.length === 0) return [];
+
+	const lines = [
+		theme.fg("dim", items.length === 1 ? "1 queued command" : `${items.length} queued commands`),
+	];
+
+	for (const item of items.slice(0, MAX_QUEUED_ITEMS)) {
+		const label = item.kind === "steer" ? "Steer" : "Follow-up";
+		const text =
+			item.preExpansionText && item.preExpansionText !== item.text ? item.preExpansionText : item.text;
+		lines.push(
+			`${theme.fg("dim", "  ⎿ ")}${theme.fg("muted", `${label}: `)}${inlineText(text, MAX_QUEUED_PREVIEW_CHARS)}`,
+		);
+	}
+
+	if (items.length > MAX_QUEUED_ITEMS) {
+		lines.push(theme.fg("dim", `  ⎿ +${items.length - MAX_QUEUED_ITEMS} more queued commands`));
+	}
+
+	return lines;
+}
+
+function renderExecutionLines(
+	items: TaskUiItem[],
+	expanded: boolean,
+	theme: ExtensionContext["ui"]["theme"],
+): string[] {
+	const visibleItems = items.filter((item) => item.status !== "completed");
+	if (visibleItems.length === 0) return [];
+
+	const lines: string[] = [];
+	const capped = expanded ? visibleItems : visibleItems.slice(0, MAX_EXECUTION_ITEMS);
+	for (const item of capped) {
+		const prefix = item.status === "running" || item.status === "in_progress" ? "├─" : "└─";
+		const agent = item.group ? `@${item.group}` : item.id;
+		const activity =
+			item.meta ??
+			item.activeForm ??
+			item.subject ??
+			item.content ??
+			(item.status === "pending" ? "pending" : "working");
+		const stats: string[] = [];
+		if (item.toolCount) stats.push(`${item.toolCount} uses`);
+		if (item.tokens) stats.push(`${formatTokens(item.tokens)} tokens`);
+		if (item.durationMs) stats.push(formatElapsed(item.durationMs));
+		if (item.status === "failed" || item.status === "aborted") stats.push("failed");
+		if (item.status === "pending") stats.push("pending");
+		const statsSuffix = stats.length > 0 ? ` · ${stats.join(" · ")}` : "";
+		lines.push(
+			`${theme.fg("dim", `  ${prefix} `)}${theme.fg("accent", agent)}${theme.fg("dim", `: ${inlineText(activity, 72)}${statsSuffix}`)}`,
+		);
+	}
+
+	if (!expanded && visibleItems.length > capped.length) {
+		lines.push(theme.fg("dim", `  ⎿ +${visibleItems.length - capped.length} more running tasks`));
+	}
+
+	return lines;
+}
+
+function renderPlanLines(
+	items: TaskUiItem[],
+	expanded: boolean,
+	theme: ExtensionContext["ui"]["theme"],
+): string[] {
+	if (items.length === 0) return [];
+
+	const completed = items.filter((item) => item.status === "completed").length;
+	const inProgress = items.filter((item) => item.status === "in_progress").length;
+	const open = items.length - completed;
+	const current = firstTask(items, ["in_progress"]);
+	const currentGroup = current?.group;
+	const focusItems = currentGroup ? items.filter((item) => item.group === currentGroup) : items;
+	const visible = expanded ? items : focusItems.slice(0, MAX_PLAN_ITEMS);
+
+	const lines: string[] = [
+		`${theme.fg("dim", "  ⎿ Plan")} ${theme.fg("muted", `${items.length} tasks · ${completed} done · ${inProgress} in progress · ${open} open`)}`,
+	];
+
+	let lastGroup: string | undefined;
+	for (const item of visible) {
+		if (expanded && item.group && item.group !== lastGroup) {
+			lines.push(`${theme.fg("dim", "    ")}${theme.fg("muted", item.group)}`);
+			lastGroup = item.group;
+		}
+		const mark =
+			item.status === "completed"
+				? "☒"
+				: item.status === "in_progress"
+					? "◐"
+					: item.status === "abandoned"
+						? "✕"
+						: "☐";
+		const text = inlineText(item.subject ?? item.content, MAX_TASK_PREVIEW_CHARS);
+		const styled =
+			item.status === "completed"
+				? theme.fg("dim", theme.strikethrough(text))
+				: item.status === "in_progress"
+					? theme.bold(theme.fg("accent", text))
+					: item.status === "abandoned"
+						? theme.fg("error", text)
+						: text;
+		lines.push(`${theme.fg("dim", "    ")}${mark} ${styled}`);
+	}
+
+	if (!expanded && items.length > visible.length) {
+		lines.push(theme.fg("dim", `    ⎿ +${items.length - visible.length} more tasks`));
+	}
+
+	return lines;
+}
+
+class ClaudeTaskbarComponent extends Container {
+	constructor(snapshot: Snapshot, theme: ExtensionContext["ui"]["theme"], working: WorkingState) {
+		super();
+		const { execution, plan } = splitTasks(snapshot);
+		const executionCurrent = firstTask(execution, ["running", "in_progress"]);
+		const executionNext = firstTask(execution, ["pending"]);
+		const planCurrent = firstTask(plan, ["in_progress"]);
+		const planNext = firstTask(plan, ["pending"]);
+		const current = executionCurrent ?? planCurrent ?? snapshot.summary?.current;
+		const next = executionCurrent ? planNext ?? executionNext : planNext ?? executionNext ?? snapshot.summary?.next;
+		const { elapsed, parts, outputTokens } = updateWorkingMetrics(snapshot, working);
+
+		const runningExecutionCount = execution.filter(
+			(item) => item.status === "running" || item.status === "in_progress",
+		).length;
+		working.isIdle =
+			runningExecutionCount > 0 &&
+			!snapshot.spinner?.isThinking &&
+			working.idleCycles >= IDLE_CYCLES_THRESHOLD;
+		working.isStalled =
+			!working.isIdle &&
+			!snapshot.spinner?.isThinking &&
+			working.idleCycles >= STALL_CYCLES_THRESHOLD &&
+			outputTokens > 0;
+
+		for (const line of renderBannerLines(snapshot, theme)) {
+			this.addChild(new Text(line, 0, 0));
+		}
+		if (snapshot.spinner?.banner && (snapshot.queued || current || next || execution.length > 0 || plan.length > 0)) {
+			this.addChild(new Text("", 0, 0));
+		}
+
+		for (const line of renderQueueLines(snapshot, theme)) {
+			this.addChild(new Text(line, 0, 0));
+		}
+		if (snapshot.queued && renderQueueLines(snapshot, theme).length > 0 && (current || execution.length > 0 || plan.length > 0)) {
+			this.addChild(new Text("", 0, 0));
+		}
+
+		if (current || snapshot.spinner) {
+			if (working.isIdle) {
+				const suffix =
+					runningExecutionCount === 1 ? "1 running task" : `${runningExecutionCount} running tasks`;
+				this.addChild(new Text(theme.fg("dim", `✽ Idle · ${suffix}`), 0, 0));
+			} else {
+				const headlineText = `${buildHeadlineText(current, snapshot.spinner, working)}...`;
+				const headlineColor = working.isStalled ? "error" : "accent";
+				const mode = snapshot.spinner?.mode;
+				const shimmerStep = mode === "requesting" ? 3 : mode === "tool-use" ? 0 : 1;
+				working.shimmerOffset += shimmerStep;
+				let coloredHeadline: string;
+				if (mode === "tool-use") {
+					const pulse = Math.sin(working.shimmerOffset * 0.15) > 0;
+					working.shimmerOffset++;
+					coloredHeadline = pulse
+						? theme.bold(theme.fg(headlineColor, headlineText))
+						: theme.fg(headlineColor, headlineText);
+				} else if (shimmerStep > 0) {
+					coloredHeadline = shimmerText(headlineText, working.shimmerOffset, theme, headlineColor);
+				} else {
+					coloredHeadline = theme.bold(theme.fg(headlineColor, headlineText));
+				}
+				const meta = parts.length > 0 ? theme.fg("muted", ` (${parts.join(" · ")})`) : "";
+				this.addChild(new Text(`${coloredHeadline}${meta}`, 0, 0));
+			}
+		}
+
+		for (const line of renderExecutionLines(execution, snapshot.expanded, theme)) {
+			this.addChild(new Text(line, 0, 0));
+		}
+
+		for (const line of renderPlanLines(plan, snapshot.expanded, theme)) {
+			this.addChild(new Text(line, 0, 0));
+		}
+
+		if (next) {
+			const nextText = inlineText(next.subject ?? next.content, MAX_WORKING_PREVIEW_CHARS);
+			this.addChild(new Text(theme.fg("dim", "  ⎿ ") + theme.fg("muted", `Next: ${nextText}`), 0, 0));
+		} else if (elapsed >= SHOW_TIP_AFTER_MS) {
+			const tip = selectTip(elapsed, snapshot, working.tipState) ?? snapshot.spinner?.tip;
+			if (tip) {
+				this.addChild(new Text(theme.fg("dim", "  ⎿ ") + theme.fg("muted", `Tip: ${tip}`), 0, 0));
+			}
 		}
 	}
+}
 
-	// budgetText 暂时隐藏；core producer 保留，未来按需重新启用
-	// const budgetText = spinner?.budgetText;
-	// if (budgetText) {
-	// 	responseLines.push(theme.fg("dim", `  ⎿ `) + theme.fg("muted", budgetText));
-	// }
-	if (next) {
-		const nextText = `Next: ${inlineText(next.subject ?? next.content, MAX_WORKING_PREVIEW_CHARS)}`;
-		responseLines.push(theme.fg("dim", "  ⎿ ") + nextText);
-	} else if (elapsed >= SHOW_TIP_AFTER_MS) {
-		const tip = selectTip(elapsed, snapshot, working.tipState) ?? spinner?.tip;
-		if (tip) {
-			responseLines.push(theme.fg("dim", "  ⎿ ") + theme.fg("muted", `Tip: ${tip}`));
-		}
-	}
+function createTaskbarFactory(snapshot: Snapshot, working: WorkingState) {
+	const { execution, plan } = splitTasks(snapshot);
+	const hasContent =
+		(snapshot.spinner?.banner !== undefined) ||
+		(snapshot.queued !== undefined &&
+			[...snapshot.queued.steering, ...snapshot.queued.followUp].some((item) => !item.isMeta)) ||
+		execution.length > 0 ||
+		plan.length > 0 ||
+		snapshot.spinner !== undefined;
 
-	return responseLines.length > 0 ? `${firstLine}\n${responseLines.join("\n")}` : firstLine;
+	if (!hasContent) return undefined;
+	return (_tui: TUI, theme: ExtensionContext["ui"]["theme"]) => new ClaudeTaskbarComponent(snapshot, theme, working);
 }
 
 function renderUi(ctx: ExtensionContext, working: WorkingState) {
 	const snapshot = readSnapshot(ctx);
-	const footerSummary = formatFooterSummary(snapshot);
 
-	if (footerSummary) {
-		ctx.ui.setStatus("task", undefined);
-		ctx.ui.setStatus("todo", undefined);
-		ctx.ui.setStatus("queue", undefined);
-	}
-	ctx.ui.setStatus("task-ui", footerSummary);
+	ctx.ui.setStatus("task", undefined);
+	ctx.ui.setStatus("todo", undefined);
+	ctx.ui.setStatus("queue", undefined);
+	ctx.ui.setStatus("task-ui", undefined);
+	ctx.ui.setStatus("ask_user", undefined);
 
 	ctx.ui.setQueuedVisible(false);
+	ctx.ui.setWorkingVisible(false);
+	ctx.ui.setWorkingIndicator(undefined);
+	ctx.ui.setWorkingMessage(undefined);
+	ctx.ui.setWorkingDetails(undefined);
 	ctx.ui.setWidget("claude-task-ui:queued", undefined);
 	ctx.ui.setWidget("claude-task-ui:tasks", undefined);
-	const promptWidgetFactory = createPromptWidgetFactory(snapshot);
-	if (promptWidgetFactory) {
-		ctx.ui.setWidget("claude-task-ui:prompt", promptWidgetFactory, {
+
+	const taskbarFactory = createTaskbarFactory(snapshot, working);
+	if (taskbarFactory) {
+		ctx.ui.setWidget("claude-task-ui:taskbar", taskbarFactory, {
 			placement: "aboveEditor",
 		});
 	} else {
-		ctx.ui.setWidget("claude-task-ui:prompt", undefined);
+		ctx.ui.setWidget("claude-task-ui:taskbar", undefined);
 	}
-
-	const workingMessage = formatWorkingMessage(snapshot, working, ctx.ui.theme);
-	ctx.ui.setWorkingIndicator(workingMessage && !working.isIdle ? createWorkingIndicator(ctx.ui.theme, working.isStalled, snapshot.spinner?.mode) : undefined);
-	ctx.ui.setWorkingMessage(workingMessage);
-	const workingDetailsFactory = createWorkingDetailsFactory(snapshot);
-	ctx.ui.setWorkingDetails(workingDetailsFactory);
 }
 
 export default function (pi: ExtensionAPI) {
@@ -624,8 +631,29 @@ export default function (pi: ExtensionAPI) {
 		rerender(ctx);
 	});
 
+	pi.on("compaction_start", async (_event, ctx) => {
+		rerender(ctx);
+	});
+
+	pi.on("compaction_end", async (_event, ctx) => {
+		rerender(ctx);
+	});
+
+	pi.on("session_compact", async (_event, ctx) => {
+		rerender(ctx);
+	});
+
+	pi.on("auto_retry_start", async (_event, ctx) => {
+		startRefreshLoop();
+		rerender(ctx);
+	});
+
+	pi.on("auto_retry_end", async (_event, ctx) => {
+		rerender(ctx);
+	});
+
 	pi.registerCommand("tasks-ui", {
-		description: "Toggle Claude-style task widget above the editor.",
+		description: "Toggle unified taskbar plan / execution view above the editor.",
 		handler: async (_args, ctx) => {
 			ctx.ui.toggleTasksExpanded();
 			rerender(ctx);

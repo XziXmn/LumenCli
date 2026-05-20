@@ -106,6 +106,8 @@ export function canUseSingleToolSummary(
 } {
 	return (
 		entry.toolCalls.length === 1 &&
+		entry.toolCalls[0]?.name !== "task" &&
+		entry.toolCalls[0]?.name !== "todo" &&
 		nextEntry?.kind === "message" &&
 		nextEntry.message.role === "toolResult" &&
 		nextEntry.message.toolCallId === entry.toolCalls[0]?.id
@@ -123,7 +125,10 @@ export function collectSequentialToolResults(
 			}
 	  >
 	| undefined {
-	if (entry.toolCalls.length < 2) {
+	if (
+		entry.toolCalls.length < 2 ||
+		entry.toolCalls.some((toolCall) => toolCall.name === "task" || toolCall.name === "todo")
+	) {
 		return undefined;
 	}
 

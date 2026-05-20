@@ -115,6 +115,12 @@ export interface WorkingIndicatorOptions {
 
 /** Semantic spinner state used by Claude-style prompt-side working UI. */
 export interface SpinnerUiState {
+	/** Optional high-priority banner shown above the taskbar headline. */
+	banner?: {
+		kind: "info" | "warning" | "error" | "success" | "input" | "approval";
+		title: string;
+		detail?: string;
+	};
 	/** Highest-priority working headline, equivalent to Claude's overrideMessage. */
 	overrideMessage?: string;
 	/** Optional prompt-side spinner tip. */
@@ -129,6 +135,8 @@ export interface SpinnerUiState {
 	isThinking?: boolean;
 	/** Most recently completed thinking duration in milliseconds. */
 	lastThinkingDurationMs?: number;
+	/** User-facing label for the tool currently executing, e.g. "Reading src/foo.ts". */
+	currentToolLabel?: string;
 	/**
 	 * Coarse-grained current activity mode for visual differentiation.
 	 * - "requesting": waiting for first response token (request sent, no tokens yet)
@@ -707,6 +715,46 @@ export interface QueueUpdateEvent {
 	followUp: readonly string[];
 }
 
+/** Fired when compaction hooks are running. */
+export interface CompactionHooksEvent {
+	type: "compaction_hooks_start" | "compaction_hooks_end";
+	phase: "pre" | "post";
+	reason: "manual" | "threshold" | "overflow";
+}
+
+/** Fired when a compaction cycle starts. */
+export interface CompactionStartEvent {
+	type: "compaction_start";
+	reason: "manual" | "threshold" | "overflow";
+}
+
+/** Fired when a compaction cycle ends. */
+export interface CompactionEndEvent {
+	type: "compaction_end";
+	reason: "manual" | "threshold" | "overflow";
+	result: CompactionResult | undefined;
+	aborted: boolean;
+	willRetry: boolean;
+	errorMessage?: string;
+}
+
+/** Fired when the session enters automatic retry. */
+export interface AutoRetryStartEvent {
+	type: "auto_retry_start";
+	attempt: number;
+	maxAttempts: number;
+	delayMs: number;
+	errorMessage: string;
+}
+
+/** Fired when automatic retry ends. */
+export interface AutoRetryEndEvent {
+	type: "auto_retry_end";
+	success: boolean;
+	attempt: number;
+	finalError?: string;
+}
+
 export type SessionEvent =
 	| SessionStartEvent
 	| SessionBeforeSwitchEvent
@@ -716,7 +764,12 @@ export type SessionEvent =
 	| SessionShutdownEvent
 	| SessionBeforeTreeEvent
 	| SessionTreeEvent
-	| QueueUpdateEvent;
+	| QueueUpdateEvent
+	| CompactionHooksEvent
+	| CompactionStartEvent
+	| CompactionEndEvent
+	| AutoRetryStartEvent
+	| AutoRetryEndEvent;
 
 // ============================================================================
 // Agent Events
@@ -1223,6 +1276,12 @@ export interface ExtensionAPI {
 	on(event: "session_before_tree", handler: ExtensionHandler<SessionBeforeTreeEvent, SessionBeforeTreeResult>): void;
 	on(event: "session_tree", handler: ExtensionHandler<SessionTreeEvent>): void;
 	on(event: "context", handler: ExtensionHandler<ContextEvent, ContextEventResult>): void;
+	on(event: "compaction_hooks_start", handler: ExtensionHandler<CompactionHooksEvent>): void;
+	on(event: "compaction_hooks_end", handler: ExtensionHandler<CompactionHooksEvent>): void;
+	on(event: "compaction_start", handler: ExtensionHandler<CompactionStartEvent>): void;
+	on(event: "compaction_end", handler: ExtensionHandler<CompactionEndEvent>): void;
+	on(event: "auto_retry_start", handler: ExtensionHandler<AutoRetryStartEvent>): void;
+	on(event: "auto_retry_end", handler: ExtensionHandler<AutoRetryEndEvent>): void;
 	on(
 		event: "before_provider_request",
 		handler: ExtensionHandler<BeforeProviderRequestEvent, BeforeProviderRequestEventResult>,
