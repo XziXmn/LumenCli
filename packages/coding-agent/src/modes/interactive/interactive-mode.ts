@@ -3362,6 +3362,7 @@ export class InteractiveMode {
 				this.toolSummaryByToolCallId.clear();
 				this.activeToolBatchSummary = undefined;
 				this.toolBatchSummaryByToolCallId.clear();
+				this.resetSpinnerRuntimeState();
 
 				await this.checkShutdownRequested();
 

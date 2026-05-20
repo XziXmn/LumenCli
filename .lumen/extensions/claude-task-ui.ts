@@ -66,6 +66,7 @@ const SPINNER_REFRESH_MS = 250;
 const IDLE_CYCLES_THRESHOLD = 2;
 const STALL_CYCLES_THRESHOLD = 12;
 const TOKEN_ANIMATION_STEP = 0.3;
+const BRAILLE_SPINNER_FRAMES = ["⣻", "⣽", "⣾", "⣷", "⣯", "⣟", "⢿", "⡿"] as const;
 
 interface TipCandidate {
 	id: string;
@@ -152,20 +153,24 @@ function createWorkingIndicator(
 	const color = stalled ? "error" : "accent";
 	const intervalMs = stalled ? 80 : mode === "requesting" ? 80 : mode === "tool-use" ? 160 : 120;
 	return {
-		frames: [
-			theme.fg(color, "⠋"),
-			theme.fg(color, "⠙"),
-			theme.fg(color, "⠹"),
-			theme.fg(color, "⠸"),
-			theme.fg(color, "⠼"),
-			theme.fg(color, "⠴"),
-			theme.fg(color, "⠦"),
-			theme.fg(color, "⠧"),
-			theme.fg(color, "⠇"),
-			theme.fg(color, "⠏"),
-		],
+		frames: BRAILLE_SPINNER_FRAMES.map((frame) => theme.fg(color, frame)),
 		intervalMs,
 	};
+}
+
+function formatHeadlinePrefix(
+	theme: ExtensionContext["ui"]["theme"],
+	working: WorkingState,
+	mode?: "requesting" | "responding" | "tool-use" | "thinking",
+	stalled = false,
+): string {
+	if (working.isIdle) {
+		return theme.fg("dim", "✽");
+	}
+	const color = stalled ? "error" : "accent";
+	const frames = createWorkingIndicator(theme, stalled, mode).frames ?? [theme.fg(color, "●")];
+	const frame = frames[Math.abs(working.shimmerOffset) % frames.length] ?? theme.fg(color, "●");
+	return frame;
 }
 
 function sample<T>(items: readonly T[], seed: number): T {
@@ -384,8 +389,11 @@ function renderPlanLines(
 
 	const completed = items.filter((item) => item.status === "completed").length;
 	const inProgress = items.filter((item) => item.status === "in_progress").length;
-	const open = items.length - completed;
+	const pending = items.filter((item) => item.status === "pending").length;
+	const open = pending + inProgress;
 	const current = firstTask(items, ["in_progress"]);
+	const next = firstTask(items, ["pending"]);
+	if (!expanded && !current && !next) return [];
 	const currentGroup = current?.group;
 	const focusItems = currentGroup ? items.filter((item) => item.group === currentGroup) : items;
 	const visible = expanded ? items : focusItems.slice(0, MAX_PLAN_ITEMS);
@@ -490,7 +498,8 @@ class ClaudeTaskbarComponent extends Container {
 					coloredHeadline = theme.bold(theme.fg(headlineColor, headlineText));
 				}
 				const meta = parts.length > 0 ? theme.fg("muted", ` (${parts.join(" · ")})`) : "";
-				this.addChild(new Text(`${coloredHeadline}${meta}`, 0, 0));
+				const prefix = formatHeadlinePrefix(theme, working, mode, working.isStalled);
+				this.addChild(new Text(`${prefix} ${coloredHeadline}${meta}`, 0, 0));
 			}
 		}
 
@@ -528,18 +537,23 @@ export function __renderTaskbarLinesForTest(
 		tipState: { shownIds: new Set(), lastTipId: undefined, lastTipCycleStart: 0 },
 		shimmerOffset: 0,
 	};
-	return new ClaudeTaskbarComponent(snapshot, theme, working).render(160);
+	const factory = createTaskbarFactory(snapshot, working);
+	if (!factory) return [];
+	return factory({} as TUI, theme).render(160);
 }
 
 function createTaskbarFactory(snapshot: Snapshot, working: WorkingState) {
 	const { execution, plan } = splitTasks(snapshot);
+	const executionHasLive = execution.some(
+		(item) => item.status === "running" || item.status === "in_progress" || item.status === "pending",
+	);
+	const planHasLive = plan.some((item) => item.status === "in_progress" || item.status === "pending");
 	const hasContent =
 		(snapshot.spinner?.banner !== undefined) ||
 		(snapshot.queued !== undefined &&
 			[...snapshot.queued.steering, ...snapshot.queued.followUp].some((item) => !item.isMeta)) ||
-		execution.length > 0 ||
-		plan.length > 0 ||
-		snapshot.spinner !== undefined;
+		executionHasLive ||
+		planHasLive;
 
 	if (!hasContent) return undefined;
 	return (_tui: TUI, theme: ExtensionContext["ui"]["theme"]) => new ClaudeTaskbarComponent(snapshot, theme, working);

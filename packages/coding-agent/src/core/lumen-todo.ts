@@ -22,6 +22,7 @@ import type {
 	ExtensionContext,
 	TaskUiItem,
 	TaskUiSummary,
+	ToolRenderContext,
 	ToolRenderResultOptions,
 } from "./extensions/types.js";
 
@@ -590,14 +591,25 @@ export default function lumenTodoExtension(pi: ExtensionAPI): void {
 			};
 		},
 
-		renderCall(args: { ops?: Array<{ op?: string; task?: string; phase?: string }> }, theme, _context) {
+		renderShell: "self" as const,
+
+		renderCall(
+			args: { ops?: Array<{ op?: string; task?: string; phase?: string }> },
+			theme,
+			context: ToolRenderContext,
+		) {
 			const ops = args?.ops?.map((entry) => {
 				const parts = [entry.op ?? "update"];
 				if (entry.task) parts.push(`"${entry.task}"`);
 				if (entry.phase) parts.push(`(${entry.phase})`);
 				return parts.join(" ");
 			}) ?? ["update"];
-			const text = theme.fg("toolTitle", theme.bold("todo ")) + theme.fg("muted", ops.join(", "));
+			const dot = context.isError
+				? theme.fg("error", "●")
+				: context.isPartial
+					? theme.fg("dim", "●")
+					: theme.fg("success", "●");
+			const text = `${dot} ${theme.fg("toolTitle", theme.bold("todo "))}${theme.fg("muted", ops.join(", "))}`;
 			return new Text(text, 0, 0);
 		},
 

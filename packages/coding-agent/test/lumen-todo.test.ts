@@ -26,6 +26,7 @@ describe("lumenTodoExtension", () => {
 		const extension = extensionsResult.extensions[0];
 		const todoTool = extension.tools.get("todo")?.definition;
 		expect(todoTool).toBeDefined();
+		expect(todoTool?.renderShell).toBe("self");
 
 		const ctx = {
 			ui: {},

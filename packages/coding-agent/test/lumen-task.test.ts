@@ -335,4 +335,34 @@ describe("lumen-task helpers", () => {
 				: (rendered as Text).render(120);
 		expect(stripAnsi(lines.join("\n")).trim()).toBe("");
 	});
+
+	it("renderCall uses a semantic dot prefix while tasks are running", async () => {
+		const extensionsResult = await createTestExtensionsResult([lumenTaskExtension]);
+		const extension = extensionsResult.extensions[0];
+		const taskTool = extension.tools.get("task")?.definition;
+		expect(taskTool).toBeDefined();
+
+		const rendered = taskTool!.renderCall!(
+			{ agent: "explore", tasks: [{ id: "a", description: "Scan repo", assignment: "go" }] },
+			(await import("../src/modes/interactive/theme/theme.js")).theme,
+			{
+				state: { progressMap: new Map() },
+				lastComponent: undefined,
+				args: {},
+				toolCallId: "call-1",
+				cwd: process.cwd(),
+				executionStarted: true,
+				argsComplete: false,
+				isPartial: true,
+				expanded: false,
+				showImages: true,
+				isError: false,
+				invalidate: () => {},
+			} as any,
+		) as Text;
+
+		const text = stripAnsi(rendered.render(120).join("\n"));
+		expect(text).toContain("● task explore · 1 task");
+		expect(text).not.toContain("⣻");
+	});
 });

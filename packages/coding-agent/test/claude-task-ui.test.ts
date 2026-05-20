@@ -49,7 +49,7 @@ describe("claude task ui taskbar", () => {
 			expanded: false,
 		});
 
-		expect(output).toContain("正在接入数据源...");
+		expect(output).toMatch(/[⣻⣽⣾⣷⣯⣟⢿⡿] 正在接入数据源\.\.\./);
 		expect(output).toContain("Plan");
 		expect(output).toContain("◐ 接入数据源");
 		expect(output).toContain("☐ 数据清洗");
@@ -212,5 +212,39 @@ describe("claude task ui taskbar", () => {
 
 		expect(output).toContain("网络连接不稳定，正在恢复会话流");
 		expect(output).toContain("SSE reconnect · 第 2/10 次");
+	});
+
+	it("hides taskbar when only completed or abandoned todo items remain", () => {
+		const output = render({
+			tasks: [
+				{
+					id: "todo:0:0:需求梳理",
+					content: "需求梳理",
+					subject: "需求梳理",
+					status: "completed",
+					group: "阶段一",
+				},
+				{
+					id: "todo:0:1:接口设计",
+					content: "接口设计",
+					subject: "接口设计",
+					status: "abandoned",
+					group: "阶段一",
+				},
+			],
+			summary: {
+				total: 2,
+				completed: 1,
+				inProgress: 0,
+				pending: 0,
+				failed: 0,
+				abandoned: 1,
+			},
+			queued: undefined,
+			spinner: undefined,
+			expanded: true,
+		});
+
+		expect(output.trim()).toBe("");
 	});
 });

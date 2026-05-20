@@ -22,7 +22,6 @@ import type { Model } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { CONFIG_DIR_NAME, getAgentDir, LEGACY_CONFIG_DIR_NAME } from "../config.js";
-import { renderStatusLine } from "../modes/interactive/components/lumen-status-line.js";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { createEventBus, type EventBus } from "./event-bus.js";
 import type {
@@ -265,6 +264,15 @@ export function getSessionTaskUiSummary(): TaskUiSummary | undefined {
 		current,
 		next,
 	};
+}
+
+function clearSessionTaskProgress(progressMap: Map<string, SubagentProgress>): void {
+	for (const [id, progress] of progressMap) {
+		const current = sessionTaskProgress.get(id);
+		if (current?.startedAt === progress.startedAt) {
+			sessionTaskProgress.delete(id);
+		}
+	}
 }
 
 // ============================================================================
@@ -548,6 +556,8 @@ export default function lumenTaskExtension(pi: ExtensionAPI): void {
 			onUpdate: ((result: AgentToolResult<TaskToolDetails>) => void) | undefined,
 			ctx: ExtensionContext,
 		) {
+			const startTime = Date.now();
+			const progressMap = new Map<string, SubagentProgress>();
 			try {
 				// Re-discover agents
 				agents = discoverAgents(cwd);
@@ -581,9 +591,6 @@ export default function lumenTaskExtension(pi: ExtensionAPI): void {
 
 				// Create tools for sub-agents (all built-in tools)
 				const allTools = Object.values(createAllTools(cwd));
-
-				const startTime = Date.now();
-				const progressMap = new Map<string, SubagentProgress>();
 
 				// Progress update callback
 				const emitUpdate = () => {
@@ -638,6 +645,7 @@ export default function lumenTaskExtension(pi: ExtensionAPI): void {
 					details: { results, totalDurationMs, progress: Array.from(progressMap.values()) } as TaskToolDetails,
 				};
 			} finally {
+				clearSessionTaskProgress(progressMap);
 			}
 		},
 
@@ -661,27 +669,15 @@ export default function lumenTaskExtension(pi: ExtensionAPI): void {
 				);
 			const hasError = Array.from(state.progressMap.values()).some((p) => p.status === "failed");
 
-			let icon: string;
-			if (context.isError || hasError) {
-				icon = "error";
-			} else if (allDone) {
-				icon = "success";
-			} else if (context.executionStarted) {
-				icon = "running";
-			} else {
-				icon = "pending";
-			}
-
-			// Claude Code style: Agent(description) format
-			const line = renderStatusLine(
-				{
-					icon: icon as any,
-					title: agentName,
-					titleColor: "toolTitle",
-					description: `${taskCount} ${noun}`,
-				},
-				theme,
-			);
+			const dot =
+				context.isError || hasError
+					? theme.fg("error", "●")
+					: allDone
+						? theme.fg("success", "●")
+						: theme.fg("dim", "●");
+			const title = theme.fg("toolTitle", theme.bold("task"));
+			const body = theme.fg("muted", ` ${agentName} · ${taskCount} ${noun}`);
+			const line = `${dot} ${title}${body}`;
 
 			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
 			text.setText(line);
