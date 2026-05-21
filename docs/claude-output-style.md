@@ -7,8 +7,8 @@
 它不是工程实现方案，而是视觉与语义上的“目标状态”说明。  
 工程分层、回基线范围、实施阶段见：
 
-- [output-flow-rebuild.md](D:/UGit/LumenAgent/docs/output-flow-rebuild.md)
-- [claude-tool-call-style.md](D:/UGit/LumenAgent/docs/claude-tool-call-style.md) — Claude 工具调用的精确缩进 / 折叠 / `⎿` 参数
+- [output-flow-rebuild.md](output-flow-rebuild.md)
+- [claude-tool-call-style.md](claude-tool-call-style.md) — Claude 工具调用的精确缩进 / 折叠 / `⎿` 参数
 
 ## 参考来源
 

@@ -7,8 +7,8 @@
 
 相关上游文档：
 
-- [status-region-vs-claude.md](D:/UGit/LumenAgent/docs/status-region-vs-claude.md) — 状态栏整体对比
-- [2026-05-19-claude-task-ui-handoff.md](D:/UGit/LumenAgent/docs/2026-05-19-claude-task-ui-handoff.md) — 当前进展与待办
+- [status-region-vs-claude.md](../../status-region-vs-claude.md) — 状态栏整体对比
+- [2026-05-19-claude-task-ui-handoff.md](../../2026-05-19-claude-task-ui-handoff.md) — 当前进展与待办
 
 ## 一、定位结果（已查证）
 
@@ -119,7 +119,7 @@ const effectiveVerb =
 
 ### 方案 D+ 未覆盖的部分
 
-参考 [status-region-vs-claude.md](D:/UGit/LumenAgent/docs/status-region-vs-claude.md) 第五节"Sub-agent 显示穿越多个区域"，Claude 把 sub-agent 信息撒在三处：
+参考 [status-region-vs-claude.md](../../status-region-vs-claude.md) 第五节"Sub-agent 显示穿越多个区域"，Claude 把 sub-agent 信息撒在三处：
 
 | 区域 | Claude | Lumen 现状 | 方案 D+ 是否解决 |
 |---|---|---|---|

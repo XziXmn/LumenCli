@@ -8,7 +8,7 @@
 
 目标样式规范见：
 
-- [claude-output-style.md](D:/UGit/LumenAgent/docs/claude-output-style.md)
+- [claude-output-style.md](claude-output-style.md)
 
 ## 当前结论
 

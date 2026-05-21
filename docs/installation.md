@@ -16,8 +16,8 @@ Optional but recommended:
 ## From Source (Development)
 
 ```bash
-git clone https://github.com/earendil-works/pi-mono.git lumen-agent
-cd lumen-agent
+git clone https://github.com/XziXmn/LumenCli.git
+cd LumenCli
 npm install
 ```
 

@@ -1,91 +1,77 @@
 # LumenCli Customization Manifest
 
-从 earendil-works/pi-mono fork 后的所有定制文件清单。
-合并上游时，AI 应参考此文件理解每个改动的意图。
+Lumen 基于 `earendil-works/pi-mono` fork。本文件记录当前仍应保留的定制方向，供后续同步 `upstream` 时快速判断哪些差异是有意的。
 
-## 修改的上游文件
+这是一份高层 merge-intent 清单，不是逐文件 changelog。遇到冲突时，先看当前代码，再看本文件和 [docs/README.md](docs/README.md)。
 
-| 文件 | 定制内容 |
-|------|----------|
-| `package.json` | monorepo name → lumen-monorepo |
-| `packages/coding-agent/package.json` | bin: lumen, lumenConfig, build:binary → dist/lumen |
-| `packages/coding-agent/src/config.ts` | APP_NAME=lumen, APP_TITLE=Lumen, CONFIG_DIR_NAME=.lumen, LEGACY_CONFIG_DIR_NAME=.pi fallback, LUMEN_* env vars |
-| `packages/coding-agent/src/cli.ts` | process.env.LUMEN_CODING_AGENT |
-| `packages/coding-agent/src/cli/args.ts` | 中文 CLI help, LUMEN_OFFLINE/TELEMETRY/SHARE_VIEWER_URL env vars |
-| `packages/coding-agent/src/main.ts` | LUMEN_OFFLINE + PI_OFFLINE dual check |
-| `packages/coding-agent/src/core/system-prompt.ts` | "Lumen" branding + 中文规则注入 |
-| `packages/coding-agent/src/core/slash-commands.ts` | 21 条命令中文描述 |
-| `packages/coding-agent/src/core/telemetry.ts` | LUMEN_TELEMETRY env var |
-| `packages/coding-agent/src/core/resource-loader.ts` | LEGACY_CONFIG_DIR_NAME fallback + lumen-novel/todo/askuser/config-discovery/repo/patch extensions |
-| `packages/coding-agent/src/core/settings-manager.ts` | .lumen/settings.json 优先 + .pi/ fallback |
-| `packages/coding-agent/src/core/extensions/loader.ts` | .lumen/extensions/ + .pi/extensions/ fallback |
-| `packages/coding-agent/src/utils/pi-user-agent.ts` | User-Agent: lumen/version |
-| `packages/coding-agent/src/utils/version-check.ts` | 禁用 pi.dev 版本检查 |
-| `packages/coding-agent/src/package-manager-cli.ts` | "lumen" self-reference, .lumen/ paths |
-| `packages/coding-agent/src/modes/interactive/interactive-mode.ts` | 中文欢迎语/onboarding |
-| `packages/coding-agent/src/modes/interactive/interactive-mode.ts` | Phase 4 Claude Code TUI 复刻：带边框欢迎卡片 + ✻ 随机动词 spinner + 每 turn 重置 |
-| `packages/tui/src/tui.ts` | .lumen/ debug/crash log paths |
-| `packages/coding-agent/src/core/tools/read.ts` | 添加 hashline 前缀（2字符hash锚点）提升编辑定位准确性 + 折叠时不显示行数提示 |
-| `packages/coding-agent/src/core/tools/write.ts` | 折叠时不显示 "+N more lines" 提示 |
-| `packages/coding-agent/src/core/tools/grep.ts` | 折叠时不显示 "+N more lines" 提示 |
-| `packages/coding-agent/src/core/tools/ls.ts` | 折叠时不显示 "+N more lines" 提示 |
-| `packages/coding-agent/src/core/tools/find.ts` | 折叠时不显示 "+N more lines" 提示 |
-| `packages/coding-agent/src/core/tools/bash.ts` | 折叠时不显示 "+N earlier lines" 提示；进行中预览扩到 5 行（Claude Code 风格）；进行中 footer 追加行数：`Elapsed 3.2s · 142 lines` |
-| `packages/coding-agent/src/core/tools/output-accumulator.ts` | 暴露 `getTotalLines()` 用于 live progress |
-| `packages/coding-agent/src/modes/interactive/components/thinking-selector.ts` | 增强 thinking level 选择器：彩色 tier dot + token 预估 + 描述 |
-| `packages/coding-agent/src/modes/interactive/components/assistant-message.ts` | 三态 thinking 显示：full/summary/hidden + 折叠摘要 + streaming 结束后移除 thinking 节点（Claude Code 风格） |
-| `packages/coding-agent/src/modes/interactive/components/tool-execution.ts` | TUI Phase 1：spinner 动画（80ms braille 帧）+ 状态图标（✓/✗/○）+ dispose 方法 |
-| `packages/coding-agent/src/modes/interactive/components/tool-execution.ts` | Phase 4：去掉 Spacer/Box 背景（Claude Code 紧凑风格）+ ✻ pending 图标 |
-| `packages/coding-agent/src/core/lumen-agents-bg.ts` | renderCall/renderResult 改用 renderStatusLine 格式化（icon + title + description + meta） |
-| `packages/coding-agent/src/modes/interactive/theme/theme.ts` | TUI Phase 1：添加 spinnerFrames、tree、boxSharp、sep、format、styledSymbol() 到 Theme 类 |
-| `packages/coding-agent/src/core/tools/bash.ts` | TUI Phase 1：renderCall 加 spinner/状态图标前缀 |
-| `packages/coding-agent/src/core/lumen-powershell.ts` | TUI Phase 1：renderCall 用 renderStatusLine；renderResult 展开态用 CachedOutputBlock 带边框渲染 |
-| `packages/coding-agent/src/modes/interactive/interactive-mode.ts` | Phase 3：工具分组逻辑 — 连续同类 tool 合并到 ToolGroupComponent |
-| `packages/coding-agent/src/modes/interactive/components/tool-group.ts` | Phase 4：Claude Code collapseReadSearch 全面复刻 — 所有连续 collapsible tool 折叠为一行摘要（Reading N files, searching M patterns…） |
-| `packages/coding-agent/src/modes/interactive/components/user-message.ts` | Phase 4：全宽深色背景 + ▶ 前缀（Claude Code 风格） |
-| `packages/coding-agent/src/core/lumen-task.ts` | Phase 4：Claude Code 风格子代理树形渲染 — agent(desc) + ⎿ 状态行 + currentTool 实时显示 |
-| `.gitignore` | .lumen/ patterns |
+## 使用原则
 
-## 新增文件（零冲突）
+1. 优先保留 Lumen 的品牌、配置目录和中文化体验
+2. 尽量把交互 UI 改动集中在 `packages/coding-agent/src/modes/interactive/` 主线
+3. 允许跟随上游演进；如果某个旧文档和当前代码冲突，以当前代码为准
+4. `upstream` 只用于拉取和合并；推送只发到 `origin`
 
-| 文件 | 用途 |
-|------|------|
-| `packages/coding-agent/src/core/lumen-writing.ts` | 已删除 — 见 docs/archive/deprecated-core/lumen-writing-deprecated.md |
-| `packages/coding-agent/src/core/lumen-memory.ts` | 已删除 — 见 docs/archive/deprecated-core/lumen-memory-deprecated.md |
-| `packages/coding-agent/src/core/lumen-novel.ts` | .novel 项目检测 + 系统提示词注入 |
-| `packages/coding-agent/src/core/lumen-todo.ts` | todo tool — 会话级结构化任务跟踪 + /todo-export /todo-import |
-| `packages/coding-agent/src/core/lumen-askuser.ts` | ask_user tool — 结构化提问（select/confirm/text） |
-| `packages/coding-agent/src/core/lumen-config-discovery.ts` | 外部 AI 工具配置发现（Claude/Cursor/Codex/MCP） |
-| `packages/coding-agent/src/core/lumen-repo.ts` | repo_clone + repo_overview tools |
-| `packages/coding-agent/src/core/lumen-hashline.ts` | hashline 核心算法（hash 计算、锚点解析、验证） |
-| `packages/coding-agent/src/core/lumen-lsp.ts` | lsp tool — 完整 LSP 3.17 协议实现（10 个 actions） |
-| `packages/coding-agent/src/core/lumen-lsp-client.ts` | LSP 客户端（JSON-RPC、didOpen/didChange、waitForDiagnostics） |
-| `packages/coding-agent/src/core/lumen-lsp-config.ts` | LSP 服务器配置和发现（.lumen/lsp.json 可扩展） |
-| `packages/coding-agent/src/core/lumen-lsp-types.ts` | LSP 协议类型定义 |
-| `packages/coding-agent/src/core/lumen-worktree.ts` | git worktree 隔离工具 |
-| `packages/coding-agent/src/core/lumen-snip.ts` | snip + brief tools（智能截断 / 摘要） |
-| `packages/coding-agent/src/core/lumen-codesearch.ts` | code_search tool（GitHub code search） |
-| `packages/coding-agent/src/core/lumen-powershell.ts` | powershell tool (Windows 原生 pwsh) — 版本检测、退出码捕获、CWD 追踪、版本感知 prompt |
-| `packages/coding-agent/src/core/lumen-task.ts` | task tool — 同进程子代理执行（替代旧 agent 方案）：并行执行、EventBus 实时进度、树形渲染、agent discovery |
-| `packages/coding-agent/src/core/lumen-process-utils.ts` | 跨平台进程树终止（Windows taskkill / Unix SIGKILL process group） |
-| `packages/coding-agent/src/modes/interactive/components/lumen-tui-utils.ts` | TUI 工具集：State 类型、Hasher（Bun/Node 兼容）、padToWidth、树形前缀、box drawing 常量、spinner 帧 |
-| `packages/coding-agent/src/modes/interactive/components/lumen-status-line.ts` | 状态行渲染：icon + title + description + badge + meta 格式 |
-| `packages/coding-agent/src/modes/interactive/components/lumen-output-block.ts` | 带边框输出容器：CachedOutputBlock + renderOutputBlock（状态色边框） |
-| `packages/coding-agent/src/modes/interactive/components/tool-group.ts` | Phase 3 工具分组：ToolGroupComponent — 连续同类工具合并显示（Read 4 files） |
-| `packages/coding-agent/src/core/lumen-task.ts` | task tool — 同进程子代理执行（替代 agent_spawn/status/wait 方案）：并行执行、EventBus 实时进度、树形渲染 |
-| `docs/subagent-redesign.md` | 子代理系统重设计文档 |
-| `.lumen/` | 项目配置目录（extensions, prompts, settings.json, SYSTEM.md, default-models.json） |
-| `lumen-test.sh` / `lumen-test.ps1` | 从源码运行脚本 |
-| `CUSTOMIZATION_MANIFEST.md` | 本文件 |
-| `README.md` | 完全重写为 LumenCli 说明 |
+## 定制面总览
 
-## 合并指导
+### 1. 品牌与配置兼容层
 
-合并上游时，AI 应遵循以下原则：
+这些改动属于 fork 身份和运行时兼容面的基础定制，合并上游时应默认保留：
 
-1. **保留品牌定制**：所有 "lumen"/"Lumen"/".lumen" 替换保持不变
-2. **保留中文化**：slash 命令描述、欢迎语、CLI help 保持中文
-3. **保留 fallback 逻辑**：.pi/ → .lumen/ 的 fallback 读取保持
-4. **接受上游新功能**：上游新增的 tools、commands、providers 正常合并
-5. **新增文件无冲突**：lumen-writing/novel/memory 是独立文件，不会和上游冲突
-6. **resource-loader.ts 特殊处理**：我们在 import 区和 extensionFactories 数组中添加了内容，合并时保留我们的添加
+| 范围 | 主要文件 | 意图 |
+|---|---|---|
+| 包名 / 可执行入口 | `package.json`, `packages/coding-agent/package.json` | `pi` → `lumen`，保留独立 bin 和包元数据 |
+| 配置目录 | `packages/coding-agent/src/config.ts`, `packages/coding-agent/src/core/settings-manager.ts`, `packages/coding-agent/src/core/extensions/loader.ts`, `packages/coding-agent/src/package-manager-cli.ts` | `.lumen/` 为主，`.pi/` fallback 兼容 |
+| CLI / 系统提示 / 中文化 | `packages/coding-agent/src/cli/args.ts`, `packages/coding-agent/src/core/system-prompt.ts`, `packages/coding-agent/src/core/slash-commands.ts`, `packages/coding-agent/src/modes/interactive/interactive-mode.ts` | CLI 帮助、默认人格、slash 描述、欢迎语中文化 |
+| 资源加载 | `packages/coding-agent/src/core/resource-loader.ts` | 保留 Lumen 自定义扩展、提示词、规则、agents 等发现逻辑 |
+| 运行时标识 | `packages/coding-agent/src/core/telemetry.ts`, `packages/coding-agent/src/utils/pi-user-agent.ts`, `packages/coding-agent/src/utils/version-check.ts`, `packages/coding-agent/src/main.ts` | Lumen 专属 env 前缀、UA、版本检查与离线兼容 |
+
+### 2. Lumen 自定义能力层
+
+这些文件代表 Lumen 相对上游新增或强化的核心能力，合并时不应被误删：
+
+| 类别 | 主要文件 | 说明 |
+|---|---|---|
+| 工作流工具 | `packages/coding-agent/src/core/lumen-todo.ts`, `lumen-askuser.ts`, `lumen-repo.ts`, `lumen-snip.ts`, `lumen-worktree.ts`, `lumen-config-discovery.ts`, `lumen-codesearch.ts` | Todo、结构化问答、仓库辅助、摘要、worktree、外部配置发现、代码搜索 |
+| 编辑 / 平台能力 | `packages/coding-agent/src/core/lumen-hashline.ts`, `lumen-powershell.ts`, `lumen-process-utils.ts` | Hashline、Windows PowerShell 工具、进程树处理 |
+| LSP 能力 | `packages/coding-agent/src/core/lumen-lsp.ts`, `lumen-lsp-client.ts`, `lumen-lsp-config.ts`, `lumen-lsp-types.ts` | 完整 LSP 3.17 tool 链路 |
+| 子代理执行 | `packages/coding-agent/src/core/lumen-task.ts` | 同进程 task 模型与子代理执行能力 |
+| 项目运行面 | `.lumen/`, `lumen-test.sh`, `lumen-test.ps1` | 项目级默认配置、扩展、测试脚本 |
+
+### 3. 交互模式与进度面定制
+
+这部分是当前最容易与上游冲突的区域，合并时要按“尽量集中在 core 主线”的原则处理：
+
+| 范围 | 主要文件 | 当前意图 |
+|---|---|---|
+| 进度面主所有权 | `packages/coding-agent/src/modes/interactive/interactive-mode.ts`, `packages/coding-agent/src/modes/interactive/components/progress-surface.ts` | 输入框上方任务栏由 core 统一渲染与控制生命周期 |
+| transcript / tool 样式 | `packages/coding-agent/src/modes/interactive/components/assistant-tool-summary.ts`, `assistant-tool-batch-summary.ts`, `collapsed-tool-group.ts`, `user-message.ts`, `tool-group.ts` | 更接近 Claude 的主行 / `⎿` 次行语义与压缩显示 |
+| thinking / footer / selector | `packages/coding-agent/src/modes/interactive/components/thinking-selector.ts`, `footer.ts`, `assistant-message.ts` | thinking 层级、footer 被动状态、assistant 展现细节 |
+| 工具输出体感 | `packages/coding-agent/src/core/tools/bash.ts`, `read.ts`, `write.ts`, `grep.ts`, `ls.ts`, `find.ts`, `packages/coding-agent/src/core/tools/output-accumulator.ts` | 折叠策略、运行中预览、输出统计 |
+| task / sub-agent 展示 | `packages/coding-agent/src/core/lumen-task.ts`, `packages/coding-agent/src/core/lumen-agents-bg.ts` | 子代理 transcript 与后台状态表现 |
+| TUI 底层辅助 | `packages/tui/src/tui.ts`, `packages/coding-agent/src/modes/interactive/theme/theme.ts` | crash/debug 路径、主题符号与底层 TUI 行为 |
+
+说明：
+
+- 旧的“扩展层拥有主任务栏布局与生命周期”的路线已经废弃
+- 相关旧方案文档已移入 `docs/archive/progress-surface/`
+- 当前主线实施计划见：
+  - [docs/superpowers/plans/2026-05-20-core-progress-surface-plan.md](docs/superpowers/plans/2026-05-20-core-progress-surface-plan.md)
+  - [docs/superpowers/plans/2026-05-20-claude-aligned-progress-workflow-plan.md](docs/superpowers/plans/2026-05-20-claude-aligned-progress-workflow-plan.md)
+
+### 4. 已删除但需保留历史语义的分支
+
+以下能力当前已经不在代码中，但保留了历史说明，避免后续合并时误判为“缺文件”：
+
+| 状态 | 对应文档 |
+|---|---|
+| 已删除：`packages/coding-agent/src/core/lumen-writing.ts` | `docs/archive/deprecated-core/lumen-writing-deprecated.md` |
+| 已删除：`packages/coding-agent/src/core/lumen-memory.ts` | `docs/archive/deprecated-core/lumen-memory-deprecated.md` |
+
+## 合并上游时的检查点
+
+1. 保留 `lumen` / `Lumen` / `.lumen` 品牌与路径约定
+2. 保留 `.pi/` fallback 兼容逻辑
+3. 保留中文化默认体验
+4. 新增上游功能优先正常吸收，不因旧文档描述而硬拦
+5. 遇到 `interactive-mode` 冲突时，优先维护 core-owned progress surface 结构
+6. 不要把历史插件化任务栏方案重新当成当前实现目标

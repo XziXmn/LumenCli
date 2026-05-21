@@ -1,3 +1,7 @@
+> 历史降级说明：
+> 本文档曾承担 Phase 3/4 的总任务清单职责，现在只保留为历史完成度与待办来源。
+> 当前主线请优先看 [../../ROADMAP.md](../../ROADMAP.md)，具体能力状态请看 [../../CAPABILITY_MATRIX.md](../../CAPABILITY_MATRIX.md)，当前施工图请看 `docs/superpowers/plans/`。
+
 # Implementation Tasks
 
 ## Phase 3A: 基础设施

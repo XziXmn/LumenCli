@@ -19,10 +19,10 @@
 
 相关文档：
 
-- [claude-output-style.md](D:/UGit/LumenAgent/docs/claude-output-style.md)
-- [claude-tool-call-style.md](D:/UGit/LumenAgent/docs/claude-tool-call-style.md)
-- [claude-ui-adjustment-summary.md](D:/UGit/LumenAgent/docs/claude-ui-adjustment-summary.md)
-- [output-flow-rebuild.md](D:/UGit/LumenAgent/docs/output-flow-rebuild.md)
+- [claude-output-style.md](../../claude-output-style.md)
+- [claude-tool-call-style.md](../../claude-tool-call-style.md)
+- [claude-ui-adjustment-summary.md](../../claude-ui-adjustment-summary.md)
+- [output-flow-rebuild.md](../../output-flow-rebuild.md)
 
 ---
 

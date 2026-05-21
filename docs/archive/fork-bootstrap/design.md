@@ -1,3 +1,7 @@
+> 历史降级说明：
+> 本文档服务于早期 Phase 3 规划阶段，保留了当时对 Agent、Hashline、TTSR、Memory、Preset 等能力的整体设计思路。
+> 它现在不再作为当前真源。当前总路线图请优先看 [../../ROADMAP.md](../../ROADMAP.md)，能力现状请看 [../../CAPABILITY_MATRIX.md](../../CAPABILITY_MATRIX.md)。
+
 # Technical Design Document
 
 ## Introduction

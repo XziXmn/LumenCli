@@ -1,3 +1,7 @@
+> 历史降级说明：
+> 本文档记录的是 `task` 工具仍在重构期时，对“同进程子代理模型”的早期设计。
+> 当前实现和当前主线已经不再严格按本文推进。它现在只保留为能力来源与设计背景，当前真源请优先看 [../../CAPABILITY_MATRIX.md](../../CAPABILITY_MATRIX.md) 与 [../../ROADMAP.md](../../ROADMAP.md)。
+
 # 子代理系统重设计：从进程隔离到同进程 task 模型
 
 ## 现状问题
@@ -224,4 +228,4 @@ tools: read, grep, find, ls, bash
 1. 新建 `lumen-task.ts`，与旧 `lumen-agents.ts` / `lumen-agents-bg.ts` 并存
 2. 在 system prompt 中引导 LLM 优先使用 `task` tool
 3. 验证稳定后，从 resource-loader 中移除旧 extension 注册
-4. 归档旧文件到 `.lumen-archive/`
+4. 归档旧文件到 `docs/archive/lumen-archive/`

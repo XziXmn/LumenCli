@@ -1,3 +1,7 @@
+> 历史降级说明：
+> 本文档记录的是旧阶段的能力需求清单，其中很多能力已经完成、部分改向、部分暂缓。
+> 它现在只作为历史需求来源使用，不再直接指导当前实现。当前总路线图请优先看 [../../ROADMAP.md](../../ROADMAP.md)，能力现状请看 [../../CAPABILITY_MATRIX.md](../../CAPABILITY_MATRIX.md)。
+
 # Requirements Document
 
 ## Introduction

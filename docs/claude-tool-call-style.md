@@ -10,7 +10,7 @@
 - `⎿` 的使用位置
 - grouped / collapsed 的句式规则
 
-它是 [claude-output-style.md](D:/UGit/LumenAgent/docs/claude-output-style.md) 的补充文档。前者定义目标风格，本文档记录可以直接落地到实现里的参数与规则。
+它是 [claude-output-style.md](claude-output-style.md) 的补充文档。前者定义目标风格，本文档记录可以直接落地到实现里的参数与规则。
 
 ## 参考来源
 

@@ -8,10 +8,10 @@
 
 相关文档：
 
-- [claude-output-style.md](D:/UGit/LumenAgent/docs/claude-output-style.md)
-- [claude-tool-call-style.md](D:/UGit/LumenAgent/docs/claude-tool-call-style.md)
-- [pluginized-task-ui-plan.md](D:/UGit/LumenAgent/docs/pluginized-task-ui-plan.md)
-- [output-flow-rebuild.md](D:/UGit/LumenAgent/docs/output-flow-rebuild.md)
+- [claude-output-style.md](claude-output-style.md)
+- [claude-tool-call-style.md](claude-tool-call-style.md)
+- [archive/progress-surface/pluginized-task-ui-plan.md](archive/progress-surface/pluginized-task-ui-plan.md)
+- [output-flow-rebuild.md](output-flow-rebuild.md)
 
 ---
 
@@ -34,7 +34,7 @@
 
 ### 2. Claude 的精确参数已经确认
 
-详见 [claude-tool-call-style.md](D:/UGit/LumenAgent/docs/claude-tool-call-style.md)。当前已确认的核心参数：
+详见 [claude-tool-call-style.md](claude-tool-call-style.md)。当前已确认的核心参数：
 
 - transcript 块前间距：**1 行**
 - tool 主行左状态列宽：**2 列**
