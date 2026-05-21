@@ -767,7 +767,7 @@ This only affects the normal streaming working indicator. Compaction and retry l
 
 ### Pattern 5: Widgets Above/Below Editor
 
-Show persistent content above or below the input editor. Good for todo lists, progress.
+Show persistent content above or below the input editor. Good for passive widgets, hints, and auxiliary state that should not take ownership of the core prompt-side progress surface.
 
 ```typescript
 // Simple string array (above editor by default)
@@ -797,7 +797,7 @@ ctx.ui.setWidget("my-widget", undefined);
 
 ### Pattern 6: Custom Footer
 
-Replace the footer. `footerData` exposes data not otherwise accessible to extensions.
+Replace the footer. `footerData` exposes data not otherwise accessible to extensions. The footer is for passive status; active progress continues to belong to the core prompt-side progress surface.
 
 ```typescript
 ctx.ui.setFooter((tui, theme, footerData) => ({

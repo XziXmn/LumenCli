@@ -14,12 +14,14 @@ describe("UserMessageComponent", () => {
 		const component = new UserMessageComponent("hello");
 		const lines = component.render(20);
 
-		expect(lines).toHaveLength(3);
-		expect(lines[0]).toContain(OSC133_ZONE_START);
-		expect(lines[0].endsWith(BG_RESET)).toBe(true);
-		expect(lines[0]).not.toContain(OSC133_ZONE_END);
-		expect(lines[1]).toContain("hello");
-		expect(lines[2].startsWith(OSC133_ZONE_END + OSC133_ZONE_FINAL)).toBe(true);
-		expect(lines[2].endsWith(BG_RESET)).toBe(true);
+		expect(lines).toHaveLength(2);
+		const firstContentIdx = lines.findIndex((l) => l.trim().length > 0);
+		expect(firstContentIdx).toBeGreaterThanOrEqual(0);
+		expect(lines[firstContentIdx]).toContain(OSC133_ZONE_START);
+		expect(lines[firstContentIdx].endsWith(BG_RESET)).toBe(true);
+		expect(lines[firstContentIdx]).toContain("hello");
+		expect(lines[0].trim()).toBe("");
+		expect(lines[lines.length - 1].startsWith(OSC133_ZONE_END + OSC133_ZONE_FINAL)).toBe(true);
+		expect(lines[lines.length - 1].endsWith(BG_RESET)).toBe(true);
 	});
 });

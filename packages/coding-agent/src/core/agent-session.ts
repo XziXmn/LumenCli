@@ -76,6 +76,15 @@ import {
 	wrapRegisteredTools,
 } from "./extensions/index.js";
 import { emitSessionShutdownEvent } from "./extensions/runner.js";
+import type {
+	QueuedUiMessage,
+	QueuedUiState,
+	SpinnerBudgetUsage,
+	TaskUiItem,
+	TaskUiSummary,
+} from "./extensions/types.js";
+import { getSessionTaskUiItems } from "./lumen-task.js";
+import { getSessionTodoUiItems } from "./lumen-todo.js";
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
@@ -125,6 +134,8 @@ export type AgentSessionEvent =
 			steering: readonly string[];
 			followUp: readonly string[];
 	  }
+	| { type: "compaction_hooks_start"; phase: "pre" | "post"; reason: "manual" | "threshold" | "overflow" }
+	| { type: "compaction_hooks_end"; phase: "pre" | "post"; reason: "manual" | "threshold" | "overflow" }
 	| { type: "compaction_start"; reason: "manual" | "threshold" | "overflow" }
 	| { type: "session_info_changed"; name: string | undefined }
 	| { type: "thinking_level_changed"; level: ThinkingLevel }
@@ -257,6 +268,8 @@ export class AgentSession {
 	private _steeringMessages: string[] = [];
 	/** Tracks pending follow-up messages for UI display. Removed when delivered. */
 	private _followUpMessages: string[] = [];
+	/** Rich queued prompt-side items used by Claude-style queued UI plugins. */
+	private _queuedUiMessages: QueuedUiMessage[] = [];
 	/** Messages queued to be included with the next user prompt as context ("asides"). */
 	private _pendingNextTurnMessages: CustomMessage[] = [];
 
@@ -309,6 +322,7 @@ export class AgentSession {
 	// Base system prompt (without extension appends) - used to apply fresh appends each turn
 	private _baseSystemPrompt = "";
 	private _baseSystemPromptOptions!: BuildSystemPromptOptions;
+	private _spinnerBudgetUsage: SpinnerBudgetUsage | undefined = undefined;
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
@@ -433,17 +447,93 @@ export class AgentSession {
 
 	/** Emit an event to all listeners */
 	private _emit(event: AgentSessionEvent): void {
+		switch (event.type) {
+			case "queue_update":
+			case "compaction_hooks_start":
+			case "compaction_hooks_end":
+			case "compaction_start":
+			case "compaction_end":
+			case "auto_retry_start":
+			case "auto_retry_end":
+				void this._extensionRunner.emit(event);
+				break;
+		}
 		for (const l of this._eventListeners) {
 			l(event);
 		}
 	}
 
 	private _emitQueueUpdate(): void {
-		this._emit({
-			type: "queue_update",
+		const event = {
+			type: "queue_update" as const,
 			steering: [...this._steeringMessages],
 			followUp: [...this._followUpMessages],
-		});
+		};
+		this._emit(event);
+	}
+
+	private _extractQueuedMessageText(
+		message: CustomMessage | { content: string | (TextContent | ImageContent)[] },
+	): string {
+		if (typeof message.content === "string") {
+			return message.content;
+		}
+		return message.content
+			.filter((part): part is TextContent => part.type === "text")
+			.map((part) => part.text)
+			.join("\n");
+	}
+
+	private _inferQueuedPriority(kind: "steer" | "followUp", mode: "prompt" | "custom"): "now" | "next" | "later" {
+		if (mode === "custom") {
+			return kind === "steer" ? "now" : "later";
+		}
+		return kind === "steer" ? "next" : "later";
+	}
+
+	private _removeQueuedUiMessage(
+		matcher: (message: QueuedUiMessage) => boolean,
+		preferredKind?: "steer" | "followUp",
+	): void {
+		const index = this._queuedUiMessages.findIndex(
+			(message) => (preferredKind ? message.kind === preferredKind : true) && matcher(message),
+		);
+		if (index !== -1) {
+			this._queuedUiMessages.splice(index, 1);
+		}
+	}
+
+	private _extractSpinnerBudgetUsage(payload: unknown): SpinnerBudgetUsage | undefined {
+		if (!payload || typeof payload !== "object") return undefined;
+		const record = payload as Record<string, unknown>;
+
+		const direct =
+			typeof record.max_output_tokens === "number"
+				? record.max_output_tokens
+				: typeof record.max_completion_tokens === "number"
+					? record.max_completion_tokens
+					: typeof record.max_tokens === "number"
+						? record.max_tokens
+						: typeof record.maxTokens === "number"
+							? record.maxTokens
+							: undefined;
+		if (direct !== undefined) {
+			return { requestMaxOutputTokens: direct };
+		}
+
+		const generationConfig =
+			typeof record.generationConfig === "object" && record.generationConfig !== null
+				? (record.generationConfig as Record<string, unknown>)
+				: undefined;
+		const nested =
+			generationConfig && typeof generationConfig.maxOutputTokens === "number"
+				? generationConfig.maxOutputTokens
+				: undefined;
+		if (nested !== undefined) {
+			return { requestMaxOutputTokens: nested };
+		}
+
+		return undefined;
 	}
 
 	// Track last assistant message for auto-compaction check
@@ -508,16 +598,34 @@ export class AgentSession {
 				const steeringIndex = this._steeringMessages.indexOf(messageText);
 				if (steeringIndex !== -1) {
 					this._steeringMessages.splice(steeringIndex, 1);
+					this._removeQueuedUiMessage(
+						(message) => message.mode === "prompt" && message.text === messageText,
+						"steer",
+					);
 					this._emitQueueUpdate();
 				} else {
 					// Check follow-up queue
 					const followUpIndex = this._followUpMessages.indexOf(messageText);
 					if (followUpIndex !== -1) {
 						this._followUpMessages.splice(followUpIndex, 1);
+						this._removeQueuedUiMessage(
+							(message) => message.mode === "prompt" && message.text === messageText,
+							"followUp",
+						);
 						this._emitQueueUpdate();
 					}
 				}
 			}
+		} else if (event.type === "message_start" && event.message.role === "custom") {
+			const customMessage = event.message as CustomMessage;
+			const customText = this._extractQueuedMessageText(customMessage);
+			this._removeQueuedUiMessage(
+				(message) =>
+					message.mode === "custom" &&
+					message.customType === customMessage.customType &&
+					message.text === customText,
+			);
+			this._emitQueueUpdate();
 		}
 
 		// Emit to extensions first
@@ -1014,10 +1122,19 @@ export class AgentSession {
 						"Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
 					);
 				}
+				const skipSlashCommands = !expandPromptTemplates && currentText.startsWith("/");
 				if (options.streamingBehavior === "followUp") {
-					await this._queueFollowUp(expandedText, currentImages);
+					await this._queueFollowUp(expandedText, currentImages, {
+						preExpansionText: currentText,
+						source: options?.source ?? "interactive",
+						skipSlashCommands,
+					});
 				} else {
-					await this._queueSteer(expandedText, currentImages);
+					await this._queueSteer(expandedText, currentImages, {
+						preExpansionText: currentText,
+						source: options?.source ?? "interactive",
+						skipSlashCommands,
+					});
 				}
 				preflightResult?.(true);
 				return;
@@ -1065,11 +1182,20 @@ export class AgentSession {
 
 			// Inject any pending "nextTurn" messages as context alongside the user message
 			for (const msg of this._pendingNextTurnMessages) {
+				const text = this._extractQueuedMessageText(msg);
+				this._removeQueuedUiMessage(
+					(message) => message.mode === "custom" && message.customType === msg.customType && message.text === text,
+					"followUp",
+				);
 				messages.push(msg);
 			}
-			this._pendingNextTurnMessages = [];
+			if (this._pendingNextTurnMessages.length > 0) {
+				this._pendingNextTurnMessages = [];
+				this._emitQueueUpdate();
+			}
 
 			// Emit before_agent_start extension event
+			this._spinnerBudgetUsage = undefined;
 			const result = await this._extensionRunner.emitBeforeAgentStart(
 				expandedText,
 				currentImages,
@@ -1179,6 +1305,10 @@ export class AgentSession {
 	 * @throws Error if text is an extension command
 	 */
 	async steer(text: string, images?: ImageContent[]): Promise<void> {
+		return this.steerWithSource(text, images, "interactive");
+	}
+
+	async steerWithSource(text: string, images?: ImageContent[], source: InputSource = "interactive"): Promise<void> {
 		// Check for extension commands (cannot be queued)
 		if (text.startsWith("/")) {
 			this._throwIfExtensionCommand(text);
@@ -1188,7 +1318,11 @@ export class AgentSession {
 		let expandedText = this._expandSkillCommand(text);
 		expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
 
-		await this._queueSteer(expandedText, images);
+		await this._queueSteer(expandedText, images, {
+			preExpansionText: text,
+			source,
+			skipSlashCommands: false,
+		});
 	}
 
 	/**
@@ -1199,6 +1333,10 @@ export class AgentSession {
 	 * @throws Error if text is an extension command
 	 */
 	async followUp(text: string, images?: ImageContent[]): Promise<void> {
+		return this.followUpWithSource(text, images, "interactive");
+	}
+
+	async followUpWithSource(text: string, images?: ImageContent[], source: InputSource = "interactive"): Promise<void> {
 		// Check for extension commands (cannot be queued)
 		if (text.startsWith("/")) {
 			this._throwIfExtensionCommand(text);
@@ -1208,14 +1346,33 @@ export class AgentSession {
 		let expandedText = this._expandSkillCommand(text);
 		expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
 
-		await this._queueFollowUp(expandedText, images);
+		await this._queueFollowUp(expandedText, images, {
+			preExpansionText: text,
+			source,
+			skipSlashCommands: false,
+		});
 	}
 
 	/**
 	 * Internal: Queue a steering message (already expanded, no extension command check).
 	 */
-	private async _queueSteer(text: string, images?: ImageContent[]): Promise<void> {
+	private async _queueSteer(
+		text: string,
+		images?: ImageContent[],
+		options?: { preExpansionText?: string; source?: InputSource; skipSlashCommands?: boolean },
+	): Promise<void> {
 		this._steeringMessages.push(text);
+		this._queuedUiMessages.push({
+			kind: "steer",
+			delivery: "steer",
+			mode: "prompt",
+			priority: this._inferQueuedPriority("steer", "prompt"),
+			text,
+			preExpansionText: options?.preExpansionText ?? text,
+			hasImages: (images?.length ?? 0) > 0,
+			source: options?.source ?? "interactive",
+			skipSlashCommands: options?.skipSlashCommands,
+		});
 		this._emitQueueUpdate();
 		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
 		if (images) {
@@ -1231,8 +1388,23 @@ export class AgentSession {
 	/**
 	 * Internal: Queue a follow-up message (already expanded, no extension command check).
 	 */
-	private async _queueFollowUp(text: string, images?: ImageContent[]): Promise<void> {
+	private async _queueFollowUp(
+		text: string,
+		images?: ImageContent[],
+		options?: { preExpansionText?: string; source?: InputSource; skipSlashCommands?: boolean },
+	): Promise<void> {
 		this._followUpMessages.push(text);
+		this._queuedUiMessages.push({
+			kind: "followUp",
+			delivery: "followUp",
+			mode: "prompt",
+			priority: this._inferQueuedPriority("followUp", "prompt"),
+			text,
+			preExpansionText: options?.preExpansionText ?? text,
+			hasImages: (images?.length ?? 0) > 0,
+			source: options?.source ?? "interactive",
+			skipSlashCommands: options?.skipSlashCommands,
+		});
 		this._emitQueueUpdate();
 		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
 		if (images) {
@@ -1281,12 +1453,45 @@ export class AgentSession {
 			customType: message.customType,
 			content: message.content,
 			display: message.display,
+			isMeta: false,
+			origin: "extension",
 			details: message.details,
 			timestamp: Date.now(),
 		} satisfies CustomMessage<T>;
 		if (options?.deliverAs === "nextTurn") {
 			this._pendingNextTurnMessages.push(appMessage);
+			this._queuedUiMessages.push({
+				kind: "followUp",
+				delivery: "nextTurn",
+				mode: "custom",
+				priority: "later",
+				text: this._extractQueuedMessageText(appMessage),
+				preExpansionText: this._extractQueuedMessageText(appMessage),
+				customType: appMessage.customType,
+				hasImages: Array.isArray(appMessage.content) && appMessage.content.some((part) => part.type === "image"),
+				display: appMessage.display,
+				isMeta: appMessage.isMeta,
+				origin: appMessage.origin,
+				source: "extension",
+			});
+			this._emitQueueUpdate();
 		} else if (this.isStreaming) {
+			const delivery = options?.deliverAs === "followUp" ? "followUp" : "steer";
+			this._queuedUiMessages.push({
+				kind: delivery === "followUp" ? "followUp" : "steer",
+				delivery,
+				mode: "custom",
+				priority: this._inferQueuedPriority(delivery === "followUp" ? "followUp" : "steer", "custom"),
+				text: this._extractQueuedMessageText(appMessage),
+				preExpansionText: this._extractQueuedMessageText(appMessage),
+				customType: appMessage.customType,
+				hasImages: Array.isArray(appMessage.content) && appMessage.content.some((part) => part.type === "image"),
+				display: appMessage.display,
+				isMeta: appMessage.isMeta,
+				origin: appMessage.origin,
+				source: "extension",
+			});
+			this._emitQueueUpdate();
 			if (options?.deliverAs === "followUp") {
 				this.agent.followUp(appMessage);
 			} else {
@@ -1357,6 +1562,7 @@ export class AgentSession {
 		const followUp = [...this._followUpMessages];
 		this._steeringMessages = [];
 		this._followUpMessages = [];
+		this._queuedUiMessages = [];
 		this.agent.clearAllQueues();
 		this._emitQueueUpdate();
 		return { steering, followUp };
@@ -1365,6 +1571,48 @@ export class AgentSession {
 	/** Number of pending messages (includes both steering and follow-up) */
 	get pendingMessageCount(): number {
 		return this._steeringMessages.length + this._followUpMessages.length;
+	}
+
+	getTaskUiItems(): TaskUiItem[] | undefined {
+		const taskItems = getSessionTaskUiItems() ?? [];
+		const todoItems = getSessionTodoUiItems() ?? [];
+		const combined = [...taskItems, ...todoItems];
+		return combined.length > 0 ? combined : undefined;
+	}
+
+	getTaskUiSummary(): TaskUiSummary | undefined {
+		const items = this.getTaskUiItems();
+		if (!items || items.length === 0) return undefined;
+		const completed = items.filter((item) => item.status === "completed").length;
+		const inProgressItems = items.filter((item) => item.status === "running" || item.status === "in_progress");
+		const pendingItems = items.filter((item) => item.status === "pending").length;
+		const failed = items.filter((item) => item.status === "failed" || item.status === "aborted").length;
+		const abandoned = items.filter((item) => item.status === "abandoned").length;
+		return {
+			total: items.length,
+			completed,
+			inProgress: inProgressItems.length,
+			pending: pendingItems,
+			failed,
+			abandoned,
+			current: inProgressItems[0],
+			next: items.find((item) => item.status === "pending"),
+		};
+	}
+
+	getQueuedUiState(): QueuedUiState | undefined {
+		const steering = this._queuedUiMessages.filter((message) => message.kind === "steer");
+		const followUp = this._queuedUiMessages.filter((message) => message.kind === "followUp");
+		if (steering.length === 0 && followUp.length === 0) return undefined;
+		return { steering, followUp };
+	}
+
+	getSpinnerBudgetUsage(): SpinnerBudgetUsage | undefined {
+		return this._spinnerBudgetUsage;
+	}
+
+	setSpinnerBudgetUsageFromPayload(payload: unknown): void {
+		this._spinnerBudgetUsage = this._extractSpinnerBudgetUsage(payload);
 	}
 
 	/** Get pending steering messages (read-only) */
@@ -1637,6 +1885,7 @@ export class AgentSession {
 			let fromExtension = false;
 
 			if (this._extensionRunner.hasHandlers("session_before_compact")) {
+				this._emit({ type: "compaction_hooks_start", phase: "pre", reason: "manual" });
 				const result = (await this._extensionRunner.emit({
 					type: "session_before_compact",
 					preparation,
@@ -1644,6 +1893,7 @@ export class AgentSession {
 					customInstructions,
 					signal: this._compactionAbortController.signal,
 				})) as SessionBeforeCompactResult | undefined;
+				this._emit({ type: "compaction_hooks_end", phase: "pre", reason: "manual" });
 
 				if (result?.cancel) {
 					throw new Error("Compaction cancelled");
@@ -1687,6 +1937,10 @@ export class AgentSession {
 				throw new Error("Compaction cancelled");
 			}
 
+			if (this._extensionRunner.hasHandlers("session_compact")) {
+				this._emit({ type: "compaction_hooks_start", phase: "post", reason: "manual" });
+			}
+
 			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
@@ -1703,6 +1957,10 @@ export class AgentSession {
 					compactionEntry: savedCompactionEntry,
 					fromExtension,
 				});
+			}
+
+			if (this._extensionRunner.hasHandlers("session_compact")) {
+				this._emit({ type: "compaction_hooks_end", phase: "post", reason: "manual" });
 			}
 
 			const compactionResult = {
@@ -1895,6 +2153,7 @@ export class AgentSession {
 			let fromExtension = false;
 
 			if (this._extensionRunner.hasHandlers("session_before_compact")) {
+				this._emit({ type: "compaction_hooks_start", phase: "pre", reason });
 				const extensionResult = (await this._extensionRunner.emit({
 					type: "session_before_compact",
 					preparation,
@@ -1902,6 +2161,7 @@ export class AgentSession {
 					customInstructions: undefined,
 					signal: this._autoCompactionAbortController.signal,
 				})) as SessionBeforeCompactResult | undefined;
+				this._emit({ type: "compaction_hooks_end", phase: "pre", reason });
 
 				if (extensionResult?.cancel) {
 					this._emit({
@@ -1959,6 +2219,10 @@ export class AgentSession {
 				return;
 			}
 
+			if (this._extensionRunner.hasHandlers("session_compact")) {
+				this._emit({ type: "compaction_hooks_start", phase: "post", reason });
+			}
+
 			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
@@ -1975,6 +2239,10 @@ export class AgentSession {
 					compactionEntry: savedCompactionEntry,
 					fromExtension,
 				});
+			}
+
+			if (this._extensionRunner.hasHandlers("session_compact")) {
+				this._emit({ type: "compaction_hooks_end", phase: "post", reason });
 			}
 
 			const result: CompactionResult = {
@@ -2209,6 +2477,7 @@ export class AgentSession {
 					this._extensionShutdownHandler?.();
 				},
 				getContextUsage: () => this.getContextUsage(),
+				getSpinnerBudgetUsage: () => this.getSpinnerBudgetUsage(),
 				compact: (options) => {
 					void (async () => {
 						try {

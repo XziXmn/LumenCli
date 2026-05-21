@@ -4,10 +4,6 @@ import { createAllToolDefinitions, type ToolName } from "../../../core/tools/ind
 import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.js";
 import { convertToPng } from "../../../utils/image-convert.js";
 import { theme } from "../theme/theme.js";
-import { SPINNER_FRAMES, STATUS_SYMBOLS } from "./lumen-tui-utils.js";
-
-/** Claude Code style: TEARDROP_ASTERISK for the spinner glyph */
-const TEARDROP_ASTERISK = "\u273B"; // ✻
 
 export interface ToolExecutionOptions {
 	showImages?: boolean;
@@ -43,8 +39,6 @@ export class ToolExecutionComponent extends Container {
 	};
 	private convertedImages: Map<number, { data: string; mimeType: string }> = new Map();
 	private hideComponent = false;
-	private spinnerFrame = 0;
-	private spinnerInterval: ReturnType<typeof setInterval> | undefined;
 
 	constructor(
 		toolName: string,
@@ -66,12 +60,13 @@ export class ToolExecutionComponent extends Container {
 		this.ui = ui;
 		this.cwd = cwd;
 
-		// Claude Code style: NO spacer before tool calls — compact layout.
-		// The selfRenderContainer is used when the tool renders its own framing.
-		// contentBox is used for default renderer-based composition (no padding in collapsed state).
-		// contentText is reserved for generic fallback rendering.
-		this.contentBox = new Box(0, 0);
-		this.contentText = new Text("", 0, 0);
+		this.addChild(new Spacer(1));
+
+		// Always create all shell variants. contentBox is used for default renderer-based composition.
+		// selfRenderContainer is used when the tool renders its own framing.
+		// contentText is reserved for generic fallback rendering when no tool definition exists.
+		this.contentBox = new Box(1, 1, (text: string) => theme.bg("toolPendingBg", text));
+		this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
 		this.selfRenderContainer = new Container();
 
 		if (this.hasRendererDefinition()) {
@@ -138,9 +133,7 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private createCallFallback(): Component {
-		const icon = this.getStatusIcon();
-		const title = theme.fg("toolTitle", theme.bold(this.toolName));
-		return new Text(`${icon} ${title}`, 0, 0);
+		return new Text(theme.fg("toolTitle", theme.bold(this.toolName)), 0, 0);
 	}
 
 	private createResultFallback(): Component | undefined {
@@ -151,45 +144,13 @@ export class ToolExecutionComponent extends Container {
 		return new Text(theme.fg("toolOutput", output), 0, 0);
 	}
 
-	private getStatusIcon(): string {
-		if (this.result && !this.isPartial) {
-			// Completed
-			if (this.result.isError) {
-				return theme.fg("error", STATUS_SYMBOLS.error);
-			}
-			return theme.fg("success", STATUS_SYMBOLS.success);
-		}
-		if (this.executionStarted) {
-			// Running — Claude Code style: teardrop asterisk with spinner animation
-			const frame = SPINNER_FRAMES[this.spinnerFrame % SPINNER_FRAMES.length];
-			return theme.fg("accent", frame);
-		}
-		// Pending (args still streaming) — use teardrop asterisk
-		return theme.fg("muted", TEARDROP_ASTERISK);
-	}
-
 	updateArgs(args: any): void {
 		this.args = args;
 		this.updateDisplay();
 	}
 
-	/** Get the tool call ID for this component. */
-	getToolCallId(): string {
-		return this.toolCallId;
-	}
-
-	/** Get the tool name for this component. */
-	getToolName(): string {
-		return this.toolName;
-	}
-
 	markExecutionStarted(): void {
 		this.executionStarted = true;
-		// Only start the built-in spinner for tools that don't manage their own animation.
-		// Tools with renderShell="self" typically have their own renderResult interval.
-		if (this.getRenderShell() !== "self") {
-			this.startSpinner();
-		}
 		this.updateDisplay();
 		this.ui.requestRender();
 	}
@@ -210,9 +171,6 @@ export class ToolExecutionComponent extends Container {
 	): void {
 		this.result = result;
 		this.isPartial = isPartial;
-		if (!isPartial) {
-			this.stopSpinner();
-		}
 		this.updateDisplay();
 		this.maybeConvertImagesForKitty();
 	}
@@ -267,37 +225,21 @@ export class ToolExecutionComponent extends Container {
 		return super.render(width);
 	}
 
-	private startSpinner(): void {
-		if (this.spinnerInterval) return;
-		this.spinnerInterval = setInterval(() => {
-			this.spinnerFrame = (this.spinnerFrame + 1) % SPINNER_FRAMES.length;
-			this.updateDisplay();
-			this.ui.requestRender();
-		}, 80);
-	}
-
-	private stopSpinner(): void {
-		if (this.spinnerInterval) {
-			clearInterval(this.spinnerInterval);
-			this.spinnerInterval = undefined;
+	private componentHasVisibleContent(component: Component | undefined): boolean {
+		if (!component) return false;
+		try {
+			return component.render(200).some((line) => line.trim().length > 0);
+		} catch {
+			return true;
 		}
 	}
 
-	/** Dispose of resources (call when component is removed from tree). */
-	dispose(): void {
-		this.stopSpinner();
-	}
-
 	private updateDisplay(): void {
-		// Claude Code style: no background color on tool calls in collapsed state.
-		// Only apply background when expanded and showing output content.
-		const bgFn = this.expanded
-			? this.isPartial
-				? (text: string) => theme.bg("toolPendingBg", text)
-				: this.result?.isError
-					? (text: string) => theme.bg("toolErrorBg", text)
-					: (text: string) => theme.bg("toolSuccessBg", text)
-			: undefined;
+		const bgFn = this.isPartial
+			? (text: string) => theme.bg("toolPendingBg", text)
+			: this.result?.isError
+				? (text: string) => theme.bg("toolErrorBg", text)
+				: (text: string) => theme.bg("toolSuccessBg", text);
 
 		let hasContent = false;
 		this.hideComponent = false;
@@ -316,8 +258,10 @@ export class ToolExecutionComponent extends Container {
 				try {
 					const component = callRenderer(this.args, theme, this.getRenderContext(this.callRendererComponent));
 					this.callRendererComponent = component;
-					renderContainer.addChild(component);
-					hasContent = true;
+					if (this.componentHasVisibleContent(component)) {
+						renderContainer.addChild(component);
+						hasContent = true;
+					}
 				} catch {
 					this.callRendererComponent = undefined;
 					renderContainer.addChild(this.createCallFallback());
@@ -342,8 +286,10 @@ export class ToolExecutionComponent extends Container {
 							this.getRenderContext(this.resultRendererComponent),
 						);
 						this.resultRendererComponent = component;
-						renderContainer.addChild(component);
-						hasContent = true;
+						if (this.componentHasVisibleContent(component)) {
+							renderContainer.addChild(component);
+							hasContent = true;
+						}
 					} catch {
 						this.resultRendererComponent = undefined;
 						const component = this.createResultFallback();
@@ -355,7 +301,7 @@ export class ToolExecutionComponent extends Container {
 				}
 			}
 		} else {
-			this.contentText.setCustomBgFn(this.expanded ? bgFn : undefined);
+			this.contentText.setCustomBgFn(bgFn);
 			this.contentText.setText(this.formatToolExecution());
 			hasContent = true;
 		}
@@ -405,8 +351,7 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private formatToolExecution(): string {
-		const icon = this.getStatusIcon();
-		let text = `${icon} ${theme.fg("toolTitle", theme.bold(this.toolName))}`;
+		let text = theme.fg("toolTitle", theme.bold(this.toolName));
 		const content = JSON.stringify(this.args, null, 2);
 		if (content) {
 			text += `\n\n${content}`;

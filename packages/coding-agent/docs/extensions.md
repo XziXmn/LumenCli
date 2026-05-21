@@ -15,6 +15,12 @@ Extensions are TypeScript modules that extend pi's behavior. They can subscribe 
 - **Session persistence** - Store state that survives restarts via `pi.appendEntry()`
 - **Custom rendering** - Control how tool calls/results and messages appear in TUI
 
+**Progress surface ownership:**
+- The main prompt-side progress surface is core-owned by `interactive-mode`
+- Extensions can contribute passive UI via `setWidget`, `setFooter`, `setHeader`
+- Extensions can influence the built-in working loader via `setWorkingMessage`, `setWorkingIndicator`, `setWorkingVisible`, and `setWorkingDetails`
+- Extensions do not own the primary queue / banner / execution / plan taskbar layout
+
 **Example use cases:**
 - Permission gates (confirm before `rm -rf`, `sudo`, etc.)
 - Git checkpointing (stash at each turn, restore on branch)
@@ -2277,6 +2283,8 @@ if (!result.success) {
 ctx.ui.setTheme(lightTheme!);  // Or switch by Theme object
 ctx.ui.theme.fg("accent", "styled text");  // Access current theme
 ```
+
+`setToolsExpanded()` only controls tool output expansion in transcript-style tool rows. It does not control the core prompt-side progress surface.
 
 Custom working-indicator frames are rendered verbatim. If you want colors, add them to the frame strings yourself, for example with `ctx.ui.theme.fg(...)`.
 

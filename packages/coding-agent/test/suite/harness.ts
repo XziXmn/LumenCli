@@ -135,12 +135,16 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 			tools: [],
 		},
 		convertToLlm,
+		streamFn: fauxProvider.stream,
 		onPayload: async (payload) => {
+			session?.setSpinnerBudgetUsageFromPayload(payload);
 			const runner = extensionRunnerRef.current;
 			if (!runner?.hasHandlers("before_provider_request")) {
 				return payload;
 			}
-			return runner.emitBeforeProviderRequest(payload);
+			const nextPayload = await runner.emitBeforeProviderRequest(payload);
+			session?.setSpinnerBudgetUsageFromPayload(nextPayload);
+			return nextPayload;
 		},
 		onResponse: async (response) => {
 			const runner = extensionRunnerRef.current;

@@ -199,13 +199,12 @@ function formatEditCall(
 	const edits = Array.isArray(args?.edits) ? args.edits : undefined;
 	const legacyOldString =
 		typeof args === "object" && args !== undefined ? (args as { old_string?: unknown }).old_string : undefined;
-	const allEditsCreate = edits !== undefined && edits.length > 0 && edits.every((edit) => edit.oldText.length === 0);
+	const createsFromEdits = edits !== undefined && edits.length > 0 && edits.every((edit) => edit.oldText.length === 0);
 	const isCreate =
 		(typeof args?.oldText === "string" && args.oldText.length === 0) ||
 		(typeof legacyOldString === "string" && legacyOldString.length === 0) ||
-		allEditsCreate;
-	const verb = isCreate ? "Create" : "Update";
-	return theme.fg("toolTitle", theme.bold(`${verb}(${pathDisplay})`));
+		createsFromEdits;
+	return theme.fg("toolTitle", theme.bold(`${isCreate ? "Create" : "Update"}(${pathDisplay})`));
 }
 
 function formatEditResult(

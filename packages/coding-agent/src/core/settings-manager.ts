@@ -56,6 +56,10 @@ export interface WarningSettings {
 	anthropicExtraUsage?: boolean; // default: true
 }
 
+export interface SpinnerSettings {
+	tipsEnabled?: boolean; // default: true
+}
+
 export type TransportSetting = Transport;
 
 /**
@@ -109,6 +113,7 @@ export interface Settings {
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
 	warnings?: WarningSettings;
+	spinner?: SpinnerSettings;
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
 }
 
@@ -1065,6 +1070,19 @@ export class SettingsManager {
 	setWarnings(warnings: WarningSettings): void {
 		this.globalSettings.warnings = { ...warnings };
 		this.markModified("warnings");
+		this.save();
+	}
+
+	getSpinnerTipsEnabled(): boolean {
+		return this.settings.spinner?.tipsEnabled ?? true;
+	}
+
+	setSpinnerTipsEnabled(enabled: boolean): void {
+		if (!this.globalSettings.spinner) {
+			this.globalSettings.spinner = {};
+		}
+		this.globalSettings.spinner.tipsEnabled = enabled;
+		this.markModified("spinner", "tipsEnabled");
 		this.save();
 	}
 }

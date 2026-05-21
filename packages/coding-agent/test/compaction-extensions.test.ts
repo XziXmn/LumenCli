@@ -155,6 +155,30 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 		expect(afterEvent.fromExtension).toBe(false);
 	}, 120000);
 
+	it("emits pre and post compaction hook lifecycle events around extension hooks", async () => {
+		const extension = createExtension();
+		createSession([extension]);
+
+		await session.prompt("What is 2+2? Reply with just the number.");
+		await session.agent.waitForIdle();
+
+		const emitted: Array<{ type: string; phase?: string; reason?: string }> = [];
+		session.subscribe((event) => {
+			if (event.type === "compaction_hooks_start" || event.type === "compaction_hooks_end") {
+				emitted.push(event);
+			}
+		});
+
+		await session.compact();
+
+		expect(emitted).toEqual([
+			{ type: "compaction_hooks_start", phase: "pre", reason: "manual" },
+			{ type: "compaction_hooks_end", phase: "pre", reason: "manual" },
+			{ type: "compaction_hooks_start", phase: "post", reason: "manual" },
+			{ type: "compaction_hooks_end", phase: "post", reason: "manual" },
+		]);
+	}, 120000);
+
 	it("should allow extensions to cancel compaction", async () => {
 		const extension = createExtension(() => ({ cancel: true }));
 		createSession([extension]);

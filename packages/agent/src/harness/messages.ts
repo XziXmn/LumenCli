@@ -33,6 +33,8 @@ export interface CustomMessage<T = unknown> {
 	customType: string;
 	content: string | (TextContent | ImageContent)[];
 	display: boolean;
+	isMeta?: boolean;
+	origin?: string;
 	details?: T;
 	timestamp: number;
 }

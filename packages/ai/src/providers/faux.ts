@@ -116,6 +116,7 @@ export interface RegisterFauxProviderOptions {
 export interface FauxProviderRegistration {
 	api: string;
 	models: [Model<string>, ...Model<string>[]];
+	stream: StreamFunction<string, StreamOptions>;
 	getModel(): Model<string>;
 	getModel(modelId: string): Model<string> | undefined;
 	state: { callCount: number };
@@ -435,6 +436,18 @@ export function registerFauxProvider(options: RegisterFauxProviderOptions = {}):
 
 		queueMicrotask(async () => {
 			try {
+				const payload = (await streamOptions?.onPayload?.(
+					{
+						messages: context.messages,
+						systemPrompt: context.systemPrompt,
+						maxTokens: streamOptions?.maxTokens ?? requestModel.maxTokens,
+					},
+					requestModel,
+				)) ?? {
+					messages: context.messages,
+					systemPrompt: context.systemPrompt,
+					maxTokens: streamOptions?.maxTokens ?? requestModel.maxTokens,
+				};
 				await streamOptions?.onResponse?.({ status: 200, headers: {} }, requestModel);
 				if (!step) {
 					let message = createErrorMessage(
@@ -453,6 +466,7 @@ export function registerFauxProvider(options: RegisterFauxProviderOptions = {}):
 					typeof step === "function" ? await step(context, streamOptions, state, requestModel) : step;
 				let message = cloneMessage(resolved, api, provider, requestModel.id);
 				message = withUsageEstimate(message, context, streamOptions, promptCache);
+				void payload;
 				await streamWithDeltas(outer, message, minTokenSize, maxTokenSize, tokensPerSecond, streamOptions?.signal);
 			} catch (error) {
 				const message = createErrorMessage(error, api, provider, requestModel.id);
@@ -481,6 +495,7 @@ export function registerFauxProvider(options: RegisterFauxProviderOptions = {}):
 	return {
 		api,
 		models,
+		stream,
 		getModel,
 		state,
 		setResponses(responses) {

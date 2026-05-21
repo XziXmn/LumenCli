@@ -17,7 +17,14 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import type { ExtensionAPI, ExtensionContext, ToolRenderResultOptions } from "./extensions/types.js";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+	TaskUiItem,
+	TaskUiSummary,
+	ToolRenderContext,
+	ToolRenderResultOptions,
+} from "./extensions/types.js";
 
 // ============================================================================
 // Types
@@ -27,6 +34,7 @@ export type TodoStatus = "pending" | "in_progress" | "completed" | "abandoned";
 
 export interface TodoItem {
 	content: string;
+	activeForm?: string;
 	status: TodoStatus;
 	notes?: string[];
 }
@@ -43,12 +51,14 @@ interface TodoToolDetails {
 
 type TodoOp = "init" | "start" | "done" | "rm" | "drop" | "append" | "note";
 
+type TodoTaskSpec = string | { content: string; activeForm?: string };
+
 interface TodoOpEntry {
 	op: TodoOp;
-	list?: Array<{ phase: string; items: string[] }>;
+	list?: Array<{ phase: string; items: TodoTaskSpec[] }>;
 	task?: string;
 	phase?: string;
-	items?: string[];
+	items?: TodoTaskSpec[];
 	text?: string;
 }
 
@@ -58,10 +68,26 @@ interface TodoOpEntry {
 
 const InitListEntry = Type.Object({
 	phase: Type.String({ description: "phase name (short noun phrase)" }),
-	items: Type.Array(Type.String({ description: "task content (5-10 words)" }), {
-		minItems: 1,
-		description: "tasks for this phase, in execution order",
-	}),
+	items: Type.Array(
+		Type.Union(
+			[
+				Type.String({ description: "task content (5-10 words)" }),
+				Type.Object({
+					content: Type.String({ description: "task content (5-10 words)" }),
+					activeForm: Type.Optional(
+						Type.String({
+							description: "present-continuous form for spinner headline (e.g. Running tests)",
+						}),
+					),
+				}),
+			],
+			{ description: "task item" },
+		),
+		{
+			minItems: 1,
+			description: "tasks for this phase, in execution order",
+		},
+	),
 });
 
 const TodoOpEntrySchema = Type.Object({
@@ -81,10 +107,26 @@ const TodoOpEntrySchema = Type.Object({
 	task: Type.Optional(Type.String({ description: "task content for start/done/rm/drop/note" })),
 	phase: Type.Optional(Type.String({ description: "phase name for done/rm/drop/append" })),
 	items: Type.Optional(
-		Type.Array(Type.String({ description: "task content (5-10 words)" }), {
-			minItems: 1,
-			description: "tasks to append to phase for op=append",
-		}),
+		Type.Array(
+			Type.Union(
+				[
+					Type.String({ description: "task content (5-10 words)" }),
+					Type.Object({
+						content: Type.String({ description: "task content (5-10 words)" }),
+						activeForm: Type.Optional(
+							Type.String({
+								description: "present-continuous form for spinner headline (e.g. Running tests)",
+							}),
+						),
+					}),
+				],
+				{ description: "task item" },
+			),
+			{
+				minItems: 1,
+				description: "tasks to append to phase for op=append",
+			},
+		),
 	),
 	text: Type.Optional(Type.String({ description: "note text for op=note" })),
 });
@@ -115,10 +157,22 @@ function clonePhases(phases: TodoPhase[]): TodoPhase[] {
 		name: phase.name,
 		tasks: phase.tasks.map((t) => ({
 			content: t.content,
+			...(t.activeForm ? { activeForm: t.activeForm } : {}),
 			status: t.status,
 			...(t.notes && t.notes.length > 0 ? { notes: [...t.notes] } : {}),
 		})),
 	}));
+}
+
+function createTodoItem(spec: TodoTaskSpec, status: TodoStatus): TodoItem {
+	if (typeof spec === "string") {
+		return { content: spec, status };
+	}
+	return {
+		content: spec.content,
+		...(spec.activeForm ? { activeForm: spec.activeForm } : {}),
+		status,
+	};
 }
 
 function findTaskByContent(phases: TodoPhase[], content: string): { task: TodoItem; phase: TodoPhase } | undefined {
@@ -160,7 +214,7 @@ function applyOp(phases: TodoPhase[], entry: TodoOpEntry, errors: string[]): Tod
 			}
 			return entry.list.map((item) => ({
 				name: item.phase,
-				tasks: item.items.map((content) => ({ content, status: "pending" as TodoStatus })),
+				tasks: item.items.map((task) => createTodoItem(task, "pending")),
 			}));
 		}
 
@@ -233,12 +287,13 @@ function applyOp(phases: TodoPhase[], entry: TodoOpEntry, errors: string[]): Tod
 				phase = { name: entry.phase, tasks: [] };
 				phases.push(phase);
 			}
-			for (const content of entry.items) {
+			for (const item of entry.items) {
+				const content = typeof item === "string" ? item : item.content;
 				if (findTaskByContent(phases, content)) {
 					errors.push(`Task "${content}" already exists`);
 					continue;
 				}
-				phase.tasks.push({ content, status: "pending" });
+				phase.tasks.push(createTodoItem(item, "pending"));
 			}
 			return phases;
 		}
@@ -309,7 +364,8 @@ function phasesToMarkdown(phases: TodoPhase[]): string {
 			const checked = task.status === "completed" ? "x" : " ";
 			const prefix = task.status === "abandoned" ? "~~" : task.status === "in_progress" ? "**" : "";
 			const suffix = task.status === "abandoned" ? "~~" : task.status === "in_progress" ? "** (in progress)" : "";
-			lines.push(`- [${checked}] ${prefix}${task.content}${suffix}`);
+			const activeFormComment = task.activeForm ? ` <!-- activeForm: ${task.activeForm} -->` : "";
+			lines.push(`- [${checked}] ${prefix}${task.content}${suffix}${activeFormComment}`);
 			if (task.notes && task.notes.length > 0) {
 				for (const note of task.notes) {
 					lines.push(`  - ${note}`);
@@ -340,7 +396,14 @@ function markdownToPhases(content: string): TodoPhase[] {
 		if (taskMatch) {
 			const isCompleted = taskMatch[1].toLowerCase() === "x";
 			let taskContent = taskMatch[2].trim();
+			let activeForm: string | undefined;
 			let status: TodoStatus = isCompleted ? "completed" : "pending";
+
+			const activeFormMatch = taskContent.match(/\s*<!--\s*activeForm:\s*([\s\S]*?)\s*-->\s*$/);
+			if (activeFormMatch) {
+				activeForm = activeFormMatch[1].trim() || undefined;
+				taskContent = taskContent.slice(0, activeFormMatch.index).trimEnd();
+			}
 
 			// Detect abandoned (strikethrough)
 			if (taskContent.startsWith("~~") && taskContent.endsWith("~~")) {
@@ -356,7 +419,7 @@ function markdownToPhases(content: string): TodoPhase[] {
 				if (!isCompleted) status = "in_progress";
 			}
 
-			currentPhase.tasks.push({ content: taskContent, status });
+			currentPhase.tasks.push({ content: taskContent, ...(activeForm ? { activeForm } : {}), status });
 			continue;
 		}
 
@@ -411,13 +474,71 @@ function formatSummary(phases: TodoPhase[], errors: string[]): string {
 	return lines.join("\n");
 }
 
+function formatCompactResult(phases: TodoPhase[], errors: string[]): string {
+	const allTasks = phases.flatMap((phase) => phase.tasks);
+	if (allTasks.length === 0) {
+		return errors.length > 0 ? `Errors: ${errors.join("; ")}` : "Todo list cleared.";
+	}
+	const remaining = allTasks.filter((task) => task.status === "pending" || task.status === "in_progress").length;
+	const completed = allTasks.filter((task) => task.status === "completed").length;
+	const inProgress = allTasks.find((task) => task.status === "in_progress");
+	let summary = `Todo ${completed}/${allTasks.length} completed · ${remaining} remaining`;
+	if (inProgress) summary += ` · Current ${inProgress.content}`;
+	if (errors.length > 0) summary += ` · Errors: ${errors.join("; ")}`;
+	return summary;
+}
+
+function isPureTodoProgressSummary(text: string | undefined): boolean {
+	if (!text) return false;
+	return /^Todo \d+\/\d+ completed · \d+ remaining(?: · Current .+)?$/.test(text.trim());
+}
+
+export function getSessionTodoUiItems(): TaskUiItem[] | undefined {
+	if (sessionPhases.length === 0) return undefined;
+	return sessionPhases.flatMap((phase, phaseIndex) =>
+		phase.tasks.map((task, taskIndex) => ({
+			id: `todo:${phaseIndex}:${taskIndex}:${task.content}`,
+			content: task.content,
+			subject: task.content,
+			activeForm: task.activeForm,
+			status: task.status,
+			group: phase.name,
+			meta:
+				task.notes && task.notes.length > 0
+					? `${task.notes.length} note${task.notes.length === 1 ? "" : "s"}`
+					: undefined,
+		})),
+	);
+}
+
+export function getSessionTodoUiSummary(): TaskUiSummary | undefined {
+	const items = getSessionTodoUiItems();
+	if (!items || items.length === 0) return undefined;
+	const completed = items.filter((item) => item.status === "completed").length;
+	const inProgressItems = items.filter((item) => item.status === "in_progress");
+	const pendingItems = items.filter((item) => item.status === "pending").length;
+	const abandoned = items.filter((item) => item.status === "abandoned").length;
+	const current = inProgressItems[0];
+	const next = items.find((item) => item.status === "pending");
+	return {
+		total: items.length,
+		completed,
+		inProgress: inProgressItems.length,
+		pending: pendingItems,
+		failed: 0,
+		abandoned,
+		current,
+		next,
+	};
+}
+
 // ============================================================================
 // Extension
 // ============================================================================
 
 export default function lumenTodoExtension(pi: ExtensionAPI): void {
 	// Reset state on session start
-	pi.on("session_start", () => {
+	pi.on("session_start", (_event, _ctx) => {
 		sessionPhases = [];
 	});
 
@@ -429,10 +550,12 @@ export default function lumenTodoExtension(pi: ExtensionAPI): void {
 			"Manage a structured, phased task list. Use to track progress on multi-step work. " +
 			"Operations: init (create phased list), start (mark task in_progress), done (mark completed), " +
 			"drop (mark abandoned), rm (remove task/phase), append (add tasks to phase), note (attach note to task). " +
+			"Task items may include both imperative content and present-continuous activeForm for spinner rendering. " +
 			"State is session-level only (cleared on exit). Use /todo-export to save.",
 		promptSnippet: "todo — structured task tracking with phases and progress",
 		promptGuidelines: [
 			"Use todo tool to track multi-step plans. Init with phases, start tasks as you work on them, mark done when complete.",
+			"When creating or appending tasks, prefer object items with both content and activeForm so spinner headlines can use present-continuous phrasing.",
 			"Only one task can be in_progress at a time. Starting a new task demotes the current one to pending.",
 			"Task content must be unique across all phases (used as identifier).",
 			"State is session-level. If you need to persist across sessions, tell the user to /todo-export.",
@@ -473,58 +596,52 @@ export default function lumenTodoExtension(pi: ExtensionAPI): void {
 			};
 		},
 
-		renderCall(args: { ops?: Array<{ op?: string; task?: string; phase?: string }> }, theme, _context) {
+		renderShell: "self" as const,
+
+		renderCall(
+			args: { ops?: Array<{ op?: string; task?: string; phase?: string }> },
+			theme,
+			context: ToolRenderContext,
+		) {
 			const ops = args?.ops?.map((entry) => {
 				const parts = [entry.op ?? "update"];
 				if (entry.task) parts.push(`"${entry.task}"`);
 				if (entry.phase) parts.push(`(${entry.phase})`);
 				return parts.join(" ");
 			}) ?? ["update"];
-			const text = theme.fg("toolTitle", theme.bold("todo ")) + theme.fg("muted", ops.join(", "));
+			const firstOp = args?.ops?.[0]?.op;
+			if (ops.length > 1 || firstOp === "init") {
+				return new Text("", 0, 0);
+			}
+			const dot = context.isError
+				? theme.fg("error", "●")
+				: context.isPartial
+					? theme.fg("dim", "●")
+					: theme.fg("dim", "●");
+			const text = `${dot} ${theme.fg("toolTitle", "todo ")}${theme.fg("muted", ops.join(", "))}`;
 			return new Text(text, 0, 0);
 		},
 
 		renderResult(
 			result: { content: Array<{ type: string; text?: string }>; details?: TodoToolDetails },
-			_options: ToolRenderResultOptions,
+			options: ToolRenderResultOptions,
 			theme,
 			_context,
 		) {
+			if (options.isPartial) {
+				return new Text("", 0, 0);
+			}
 			const details = result.details;
-			if (!details || details.phases.length === 0) {
+			if (!details) {
 				const fallback = result.content?.[0]?.text ?? "No todos";
 				return new Text(theme.fg("dim", fallback), 0, 0);
 			}
-
-			const allTasks = details.phases.flatMap((p) => p.tasks);
-			const completed = allTasks.filter((t) => t.status === "completed").length;
-			const header = theme.fg("success", `[${completed}/${allTasks.length}] `);
-
-			const lines: string[] = [];
-			for (const phase of details.phases) {
-				if (phase.tasks.length === 0) continue;
-				lines.push(theme.fg("accent", `  ${phase.name}:`));
-				for (const task of phase.tasks) {
-					const sym =
-						task.status === "completed"
-							? theme.fg("success", "x")
-							: task.status === "in_progress"
-								? theme.fg("accent", ">")
-								: task.status === "abandoned"
-									? theme.fg("error", "-")
-									: theme.fg("dim", " ");
-					const content =
-						task.status === "completed" || task.status === "abandoned"
-							? theme.fg("dim", task.content)
-							: task.status === "in_progress"
-								? theme.fg("accent", task.content)
-								: theme.fg("muted", task.content);
-					lines.push(`    [${sym}] ${content}`);
-				}
+			const summaryText = result.content?.[0]?.text;
+			if (details.errors.length === 0 && isPureTodoProgressSummary(summaryText)) {
+				return new Text("", 0, 0);
 			}
-
-			const text = `${header}${theme.fg("muted", "todo")}\n${lines.join("\n")}`;
-			return new Text(text, 0, 0);
+			const summary = formatCompactResult(details.phases, details.errors);
+			return new Text(details.errors.length > 0 ? theme.fg("error", summary) : theme.fg("dim", summary), 0, 0);
 		},
 	});
 

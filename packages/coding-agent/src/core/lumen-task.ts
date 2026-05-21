@@ -22,11 +22,16 @@ import type { Model } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { CONFIG_DIR_NAME, getAgentDir, LEGACY_CONFIG_DIR_NAME } from "../config.js";
-import { renderStatusLine } from "../modes/interactive/components/lumen-status-line.js";
-import { SPINNER_FRAMES, STATUS_SYMBOLS, TREE_SYMBOLS } from "../modes/interactive/components/lumen-tui-utils.js";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { createEventBus, type EventBus } from "./event-bus.js";
-import type { ExtensionAPI, ExtensionContext, ToolDefinition, ToolRenderResultOptions } from "./extensions/types.js";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+	TaskUiItem,
+	TaskUiSummary,
+	ToolDefinition,
+	ToolRenderResultOptions,
+} from "./extensions/types.js";
 import { createAllTools } from "./tools/index.js";
 
 // ============================================================================
@@ -123,6 +128,7 @@ export interface TaskItem {
 	id: string;
 	description: string;
 	assignment: string;
+	activeForm?: string;
 }
 
 export interface SubagentProgress {
@@ -131,6 +137,7 @@ export interface SubagentProgress {
 	agent: string;
 	status: "pending" | "running" | "completed" | "failed" | "aborted";
 	description: string;
+	activeForm?: string;
 	currentTool?: string;
 	currentToolArgs?: string;
 	toolCount: number;
@@ -150,10 +157,49 @@ export interface TaskResult {
 	error?: string;
 }
 
-interface TaskToolDetails {
+export interface TaskToolDetails {
 	results: TaskResult[];
 	totalDurationMs: number;
 	progress?: SubagentProgress[];
+}
+
+export function formatTaskFooterStatus(progress: Iterable<SubagentProgress>): string | undefined {
+	const entries = Array.from(progress);
+	if (entries.length === 0) return undefined;
+
+	const running = entries.filter((entry) => entry.status === "running").sort((a, b) => a.index - b.index);
+	if (running.length > 0) {
+		const current = running[0];
+		const suffix = current.currentTool ? ` · ${current.agent}: ${current.currentTool}` : ` · ${current.agent}`;
+		return `task running ${entries.length}${suffix}`;
+	}
+
+	const failed = entries.filter((entry) => entry.status === "failed" || entry.status === "aborted").length;
+	const completed = entries.filter((entry) => entry.status === "completed").length;
+	if (failed > 0) {
+		return `task done ${completed}/${entries.length} · ${failed} failed`;
+	}
+	return `task done ${completed}/${entries.length}`;
+}
+
+export function formatTaskResultSummary(details: TaskToolDetails): string {
+	const totalTasks = details.results.length;
+	const failedTasks = details.results.filter((result) => result.exitCode !== 0).length;
+	const totalTokens = details.results.reduce((sum, result) => sum + result.tokens, 0);
+	const totalToolUses = (details.progress ?? []).reduce((sum, progress) => sum + progress.toolCount, 0);
+	const parts = [`${totalToolUses} tool uses`];
+	if (totalTokens > 0) parts.push(`${totalTokens} tokens`);
+	parts.push(formatDuration(details.totalDurationMs));
+
+	if (failedTasks > 0) {
+		return `Failed (${totalTasks - failedTasks}/${totalTasks} done · ${parts.join(" · ")})`;
+	}
+	return `Done (${parts.join(" · ")})`;
+}
+
+function isPureTaskProgressSummary(text: string | undefined): boolean {
+	if (!text) return false;
+	return /^(Done|Failed) \(.+\)$/.test(text.trim());
 }
 
 // ============================================================================
@@ -162,6 +208,77 @@ interface TaskToolDetails {
 
 export const TASK_PROGRESS_CHANNEL = "task:progress";
 export const TASK_LIFECYCLE_CHANNEL = "task:lifecycle";
+
+const sessionTaskProgress = new Map<string, SubagentProgress>();
+
+if (process.env.VITEST) {
+	(
+		globalThis as typeof globalThis & {
+			__pi_test_setTaskProgress?: (progress: SubagentProgress) => void;
+			__pi_test_clearTaskProgress?: () => void;
+		}
+	).__pi_test_setTaskProgress = (progress: SubagentProgress) => {
+		sessionTaskProgress.set(progress.id, progress);
+	};
+	(
+		globalThis as typeof globalThis & {
+			__pi_test_setTaskProgress?: (progress: SubagentProgress) => void;
+			__pi_test_clearTaskProgress?: () => void;
+		}
+	).__pi_test_clearTaskProgress = () => {
+		sessionTaskProgress.clear();
+	};
+}
+
+export function getSessionTaskUiItems(): TaskUiItem[] | undefined {
+	if (sessionTaskProgress.size === 0) return undefined;
+	return Array.from(sessionTaskProgress.values())
+		.sort((a, b) => a.index - b.index)
+		.map((progress) => ({
+			id: `task:${progress.id}`,
+			content: progress.description,
+			subject: progress.description,
+			activeForm: progress.status === "running" ? progress.activeForm : undefined,
+			status: progress.status,
+			group: progress.agent,
+			meta: progress.currentTool
+				? `${progress.currentTool}${progress.currentToolArgs ? ` ${progress.currentToolArgs}` : ""}`
+				: undefined,
+			toolCount: progress.toolCount > 0 ? progress.toolCount : undefined,
+			tokens: progress.tokens > 0 ? progress.tokens : undefined,
+			durationMs: progress.durationMs > 0 ? progress.durationMs : undefined,
+		}));
+}
+
+export function getSessionTaskUiSummary(): TaskUiSummary | undefined {
+	const items = getSessionTaskUiItems();
+	if (!items || items.length === 0) return undefined;
+	const completed = items.filter((item) => item.status === "completed").length;
+	const inProgressItems = items.filter((item) => item.status === "running" || item.status === "in_progress");
+	const pendingItems = items.filter((item) => item.status === "pending").length;
+	const failed = items.filter((item) => item.status === "failed" || item.status === "aborted").length;
+	const current = inProgressItems[0];
+	const next = items.find((item) => item.status === "pending");
+	return {
+		total: items.length,
+		completed,
+		inProgress: inProgressItems.length,
+		pending: pendingItems,
+		failed,
+		abandoned: 0,
+		current,
+		next,
+	};
+}
+
+function clearSessionTaskProgress(progressMap: Map<string, SubagentProgress>): void {
+	for (const [id, progress] of progressMap) {
+		const current = sessionTaskProgress.get(id);
+		if (current?.startedAt === progress.startedAt) {
+			sessionTaskProgress.delete(id);
+		}
+	}
+}
 
 // ============================================================================
 // Sub-agent Executor
@@ -193,6 +310,7 @@ async function executeSubagent(options: ExecuteSubagentOptions): Promise<TaskRes
 		agent: agentConfig.name,
 		status: "running",
 		description: task.description,
+		activeForm: task.activeForm,
 		toolCount: 0,
 		tokens: 0,
 		durationMs: 0,
@@ -370,6 +488,15 @@ function formatDuration(ms: number): string {
 	return `${(ms / 1000).toFixed(1)}s`;
 }
 
+function summarizeTaskSuccess(details: TaskToolDetails): string | undefined {
+	if (details.results.length !== 1) return undefined;
+	const [result] = details.results;
+	if (result.exitCode !== 0 || !result.output.trim()) return undefined;
+	const normalized = result.output.replace(/\s+/g, " ").trim();
+	if (!normalized || normalized === "(no output)") return undefined;
+	return normalized.length > 120 ? `${normalized.slice(0, 117).trimEnd()}...` : normalized;
+}
+
 // ============================================================================
 // Tool Schema
 // ============================================================================
@@ -377,6 +504,11 @@ function formatDuration(ms: number): string {
 const TaskItemSchema = Type.Object({
 	id: Type.String({ description: "CamelCase identifier for this task (max 48 chars)" }),
 	description: Type.String({ description: "Short one-liner for UI display" }),
+	activeForm: Type.Optional(
+		Type.String({
+			description: "Present-continuous label for spinner headline when this task is active",
+		}),
+	),
 	assignment: Type.String({ description: "Full task instructions for the sub-agent" }),
 });
 
@@ -391,75 +523,8 @@ const TaskParams = Type.Object({
 // ============================================================================
 
 type TaskRenderState = {
-	startedAt?: number;
-	interval?: ReturnType<typeof setInterval>;
 	progressMap: Map<string, SubagentProgress>;
 };
-
-function renderTaskProgress(progressMap: Map<string, SubagentProgress>, _expanded: boolean): string[] {
-	const entries = Array.from(progressMap.values()).sort((a, b) => a.index - b.index);
-	const lines: string[] = [];
-
-	for (let i = 0; i < entries.length; i++) {
-		const p = entries[i];
-		const isLast = i === entries.length - 1;
-		const branch = isLast ? TREE_SYMBOLS.last : TREE_SYMBOLS.branch;
-		const branchStr = theme.fg("dim", branch);
-
-		// Status icon
-		let icon: string;
-		if (p.status === "completed") {
-			icon = theme.fg("success", STATUS_SYMBOLS.success);
-		} else if (p.status === "failed" || p.status === "aborted") {
-			icon = theme.fg("error", STATUS_SYMBOLS.error);
-		} else if (p.status === "running") {
-			const elapsed = Date.now() - p.startedAt;
-			const frameIdx = Math.floor(elapsed / 500) % SPINNER_FRAMES.length;
-			icon = theme.fg("accent", SPINNER_FRAMES[frameIdx]);
-		} else {
-			icon = theme.fg("muted", STATUS_SYMBOLS.pending);
-		}
-
-		// Main line: Claude Code style — agent(description)
-		const agentLabel = theme.bold(p.agent);
-		const line = ` ${branchStr} ${icon} ${agentLabel}(${theme.fg("accent", p.description)})`;
-
-		// Sub-line with status details (Claude Code style)
-		const continuation = isLast ? "    " : `${theme.fg("dim", TREE_SYMBOLS.vertical)}   `;
-		const subLinePrefix = `${continuation} `;
-
-		const meta: string[] = [];
-		if (p.status === "running") {
-			if (p.currentTool) {
-				// Show current tool activity like Claude Code
-				meta.push(p.currentTool + (p.currentToolArgs ? ` ${p.currentToolArgs}` : ""));
-			} else {
-				meta.push("In progress\u2026");
-			}
-			if (p.toolCount > 0) {
-				meta.push(`${p.toolCount} tool ${p.toolCount === 1 ? "use" : "uses"}`);
-			}
-			if (p.tokens > 0) {
-				meta.push(`${p.tokens} tokens`);
-			}
-		} else if (p.status === "completed") {
-			meta.push("Done");
-			meta.push(`${p.toolCount} tool ${p.toolCount === 1 ? "use" : "uses"}`);
-			if (p.tokens > 0) meta.push(`${p.tokens} tokens`);
-			meta.push(formatDuration(p.durationMs));
-		} else if (p.status === "failed") {
-			meta.push("Failed");
-			meta.push(formatDuration(p.durationMs));
-		}
-
-		lines.push(line);
-		if (meta.length > 0) {
-			lines.push(`${subLinePrefix}${theme.fg("dim", meta.join(" \u00B7 "))}`);
-		}
-	}
-
-	return lines;
-}
 
 // ============================================================================
 // Extension Registration
@@ -473,10 +538,12 @@ export default function lumenTaskExtension(pi: ExtensionAPI): void {
 	pi.on("session_start", (_event, ctx) => {
 		cwd = ctx.cwd;
 		agents = discoverAgents(cwd);
+		sessionTaskProgress.clear();
 	});
 
 	pi.on("session_shutdown", () => {
 		taskEventBus.clear();
+		sessionTaskProgress.clear();
 	});
 
 	pi.registerTool({
@@ -503,94 +570,97 @@ export default function lumenTaskExtension(pi: ExtensionAPI): void {
 			onUpdate: ((result: AgentToolResult<TaskToolDetails>) => void) | undefined,
 			ctx: ExtensionContext,
 		) {
-			// Re-discover agents
-			agents = discoverAgents(cwd);
-
-			const agentConfig = agents.find((a) => a.name === params.agent);
-			if (!agentConfig) {
-				const available = agents.map((a) => `"${a.name}"`).join(", ") || "none";
-				return {
-					content: [{ type: "text" as const, text: `Unknown agent: "${params.agent}". Available: ${available}` }],
-					details: { results: [], totalDurationMs: 0 } as TaskToolDetails,
-				};
-			}
-
-			if (params.tasks.length === 0) {
-				return {
-					content: [{ type: "text" as const, text: "No tasks provided." }],
-					details: { results: [], totalDurationMs: 0 } as TaskToolDetails,
-				};
-			}
-
-			// Get model and tools from parent context
-			const model = ctx.model;
-			if (!model) {
-				return {
-					content: [{ type: "text" as const, text: "No model available." }],
-					details: { results: [], totalDurationMs: 0 } as TaskToolDetails,
-				};
-			}
-
-			// Create tools for sub-agents (all built-in tools)
-			const allTools = Object.values(createAllTools(cwd));
-
 			const startTime = Date.now();
 			const progressMap = new Map<string, SubagentProgress>();
+			try {
+				// Re-discover agents
+				agents = discoverAgents(cwd);
 
-			// Progress update callback
-			const emitUpdate = () => {
-				if (!onUpdate) return;
-				const results: TaskResult[] = [];
-				onUpdate({
-					content: [{ type: "text" as const, text: "Running..." }],
-					details: {
-						results,
-						totalDurationMs: Date.now() - startTime,
-						progress: Array.from(progressMap.values()),
-					},
-				});
-			};
-
-			// Execute tasks in parallel
-			const promises = params.tasks.map((task, index) =>
-				executeSubagent({
-					agentConfig,
-					task,
-					index,
-					cwd,
-					model,
-					getApiKey: (provider: string) => ctx.modelRegistry.getApiKeyForProvider(provider),
-					tools: allTools,
-					context: params.context,
-					signal,
-					eventBus: taskEventBus,
-					onProgress: (p) => {
-						progressMap.set(p.id, p);
-						emitUpdate();
-					},
-				}),
-			);
-
-			const results = await Promise.all(promises);
-			const totalDurationMs = Date.now() - startTime;
-
-			// Format output
-			const outputParts: string[] = [];
-			for (const result of results) {
-				if (result.error) {
-					outputParts.push(`[${result.id}] FAILED: ${result.error}`);
-				} else {
-					outputParts.push(`[${result.id}] ${result.output}`);
+				const agentConfig = agents.find((a) => a.name === params.agent);
+				if (!agentConfig) {
+					const available = agents.map((a) => `"${a.name}"`).join(", ") || "none";
+					return {
+						content: [
+							{ type: "text" as const, text: `Unknown agent: "${params.agent}". Available: ${available}` },
+						],
+						details: { results: [], totalDurationMs: 0 } as TaskToolDetails,
+					};
 				}
+
+				if (params.tasks.length === 0) {
+					return {
+						content: [{ type: "text" as const, text: "No tasks provided." }],
+						details: { results: [], totalDurationMs: 0 } as TaskToolDetails,
+					};
+				}
+
+				// Get model and tools from parent context
+				const model = ctx.model;
+				if (!model) {
+					return {
+						content: [{ type: "text" as const, text: "No model available." }],
+						details: { results: [], totalDurationMs: 0 } as TaskToolDetails,
+					};
+				}
+
+				// Create tools for sub-agents (all built-in tools)
+				const allTools = Object.values(createAllTools(cwd));
+
+				// Progress update callback
+				const emitUpdate = () => {
+					if (!onUpdate) return;
+					const results: TaskResult[] = [];
+					onUpdate({
+						content: [{ type: "text" as const, text: "Running..." }],
+						details: {
+							results,
+							totalDurationMs: Date.now() - startTime,
+							progress: Array.from(progressMap.values()),
+						},
+					});
+				};
+
+				// Execute tasks in parallel
+				const promises = params.tasks.map((task, index) =>
+					executeSubagent({
+						agentConfig,
+						task,
+						index,
+						cwd,
+						model,
+						getApiKey: (provider: string) => ctx.modelRegistry.getApiKeyForProvider(provider),
+						tools: allTools,
+						context: params.context,
+						signal,
+						eventBus: taskEventBus,
+						onProgress: (p) => {
+							progressMap.set(p.id, p);
+							sessionTaskProgress.set(p.id, { ...p });
+							emitUpdate();
+						},
+					}),
+				);
+
+				const results = await Promise.all(promises);
+				const totalDurationMs = Date.now() - startTime;
+
+				// Format output
+				const outputParts: string[] = [];
+				for (const result of results) {
+					if (result.error) {
+						outputParts.push(`[${result.id}] FAILED: ${result.error}`);
+					} else {
+						outputParts.push(`[${result.id}] ${result.output}`);
+					}
+				}
+
+				return {
+					content: [{ type: "text" as const, text: outputParts.join("\n\n---\n\n") }],
+					details: { results, totalDurationMs, progress: Array.from(progressMap.values()) } as TaskToolDetails,
+				};
+			} finally {
+				clearSessionTaskProgress(progressMap);
 			}
-
-			const hasErrors = results.some((r) => r.exitCode !== 0);
-
-			return {
-				content: [{ type: "text" as const, text: outputParts.join("\n\n---\n\n") }],
-				details: { results, totalDurationMs, progress: Array.from(progressMap.values()) } as TaskToolDetails,
-				...(hasErrors ? {} : {}),
-			};
 		},
 
 		renderShell: "self" as const,
@@ -613,27 +683,15 @@ export default function lumenTaskExtension(pi: ExtensionAPI): void {
 				);
 			const hasError = Array.from(state.progressMap.values()).some((p) => p.status === "failed");
 
-			let icon: string;
-			if (context.isError || hasError) {
-				icon = "error";
-			} else if (allDone) {
-				icon = "success";
-			} else if (context.executionStarted) {
-				icon = "running";
-			} else {
-				icon = "pending";
-			}
-
-			// Claude Code style: Agent(description) format
-			const line = renderStatusLine(
-				{
-					icon: icon as any,
-					title: agentName,
-					titleColor: "toolTitle",
-					description: `${taskCount} ${noun}`,
-				},
-				theme,
-			);
+			const dot =
+				context.isError || hasError
+					? theme.fg("error", "●")
+					: allDone
+						? theme.fg("success", "●")
+						: theme.fg("dim", "●");
+			const title = theme.fg("toolTitle", theme.bold("task"));
+			const body = theme.fg("muted", ` ${agentName} · ${taskCount} ${noun}`);
+			const line = `${dot} ${title}${body}`;
 
 			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
 			text.setText(line);
@@ -655,27 +713,17 @@ export default function lumenTaskExtension(pi: ExtensionAPI): void {
 				}
 			}
 
-			// Start interval for spinner animation during partial results.
-			// Use a slower rate (500ms) to avoid excessive redraws that cause flickering.
-			// Real progress updates come from onProgress callbacks which trigger updateResult.
-			if (options.isPartial && !state.interval) {
-				state.startedAt ??= Date.now();
-				state.interval = setInterval(() => context.invalidate(), 500);
-			}
-			if (!options.isPartial && state.interval) {
-				clearInterval(state.interval);
-				state.interval = undefined;
-			}
+			const lines: string[] = [];
 
-			// Render tree progress
-			const lines = renderTaskProgress(state.progressMap, options.expanded);
+			const hasFailure = details?.results.some((entry) => entry.exitCode !== 0) ?? false;
 
-			if (!options.isPartial && details) {
-				const totalDuration = formatDuration(details.totalDurationMs);
-				const totalTokens = details.results.reduce((sum, r) => sum + r.tokens, 0);
-				const meta = [totalDuration];
-				if (totalTokens > 0) meta.push(`${totalTokens} tokens`);
-				lines.push(theme.fg("dim", `  ${meta.join(" \u00B7 ")}`));
+			if (!options.isPartial && hasFailure && details) {
+				lines.push(theme.fg("error", `  ⎿ ${formatTaskResultSummary(details)}`));
+			} else if (!options.isPartial && details) {
+				const summaryText = summarizeTaskSuccess(details);
+				if (summaryText && !isPureTaskProgressSummary(summaryText)) {
+					lines.push(theme.fg("dim", `  ⎿ ${summaryText}`));
+				}
 			}
 
 			return {

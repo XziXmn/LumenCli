@@ -69,6 +69,7 @@ import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
+	SpinnerUiState,
 } from "../../core/extensions/index.js";
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.js";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.js";
@@ -87,16 +88,19 @@ import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/cha
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { parseGitUrl } from "../../utils/git.js";
-import { getCwdRelativePath } from "../../utils/paths.js";
+import { formatPathRelativeToCwdOrAbsolute, getCwdRelativePath } from "../../utils/paths.js";
 import { getPiUserAgent } from "../../utils/pi-user-agent.js";
 import { killTrackedDetachedChildren } from "../../utils/shell.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { checkForNewPiVersion } from "../../utils/version-check.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
+import { AssistantToolBatchSummaryComponent } from "./components/assistant-tool-batch-summary.js";
+import { AssistantToolSummaryComponent } from "./components/assistant-tool-summary.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
 import { BorderedLoader } from "./components/bordered-loader.js";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.js";
+import { CollapsedToolGroupComponent } from "./components/collapsed-tool-group.js";
 import { CompactionSummaryMessageComponent } from "./components/compaction-summary-message.js";
 import { CountdownTimer } from "./components/countdown-timer.js";
 import { CustomEditor } from "./components/custom-editor.js";
@@ -107,20 +111,32 @@ import { EarendilAnnouncementComponent } from "./components/earendil-announcemen
 import { ExtensionEditorComponent } from "./components/extension-editor.js";
 import { ExtensionInputComponent } from "./components/extension-input.js";
 import { ExtensionSelectorComponent } from "./components/extension-selector.js";
-import { FooterComponent, notifyToolEnd, notifyToolStart } from "./components/footer.js";
+import { FooterComponent } from "./components/footer.js";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
 import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.js";
+import {
+	createProgressSurfaceWorkingState,
+	ProgressSurfaceComponent,
+	type ProgressSurfaceSnapshot,
+	shouldRenderProgressSurface,
+} from "./components/progress-surface.js";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
-import { isGroupableTool, ToolGroupComponent } from "./components/tool-group.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
+import { collapseReadSearchGroups, isCollapsibleToolName } from "./output-flow/collapse.js";
+import {
+	canUseSingleToolSummary,
+	collectSequentialToolResults,
+	projectAssistantTurn,
+	projectTranscript,
+} from "./output-flow/projector.js";
 import {
 	getAvailableThemes,
 	getAvailableThemesWithPaths,
@@ -251,11 +267,28 @@ export class InteractiveMode {
 	private onInputCallback?: (text: string) => void;
 	private loadingAnimation: Loader | undefined = undefined;
 	private workingMessage: string | undefined = undefined;
+	private workingDetailsLines: string[] | undefined = undefined;
+	private workingDetailsComponent: (Component & { dispose?(): void }) | undefined = undefined;
 	private workingVisible = true;
 	private workingIndicatorOptions: LoaderIndicatorOptions | undefined = undefined;
 	private readonly defaultWorkingMessage = "Working...";
 	private readonly defaultHiddenThinkingLabel = "Thinking...";
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
+	private spinnerStartedAt = 0;
+	private spinnerResponseChars = 0;
+	private spinnerReportedOutputTokens = 0;
+	private spinnerThinkingStartedAt: number | null = null;
+	private spinnerThinkingMinimumVisibleUntil: number | null = null;
+	private spinnerThinkingDurationMs: number | null = null;
+	private spinnerThoughtForVisibleUntil: number | null = null;
+	private spinnerSystemOverrideMessage: string | undefined = undefined;
+	private spinnerCurrentToolLabel: string | undefined = undefined;
+	private spinnerBanner: SpinnerUiState["banner"] | undefined = undefined;
+	private spinnerBannerTimeout: ReturnType<typeof setTimeout> | undefined = undefined;
+	private spinnerActiveToolCount = 0;
+	private progressSurfaceRefreshTimer: ReturnType<typeof setInterval> | undefined = undefined;
+	private progressSurfaceWorkingState = createProgressSurfaceWorkingState();
+	private progressSurfaceComponent!: ProgressSurfaceComponent;
 
 	private lastSigintTime = 0;
 	private lastEscapeTime = 0;
@@ -273,10 +306,12 @@ export class InteractiveMode {
 
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
-
-	// Tool grouping: tracks the last group component for consecutive collapsible tools
-	private lastToolGroup: ToolGroupComponent | undefined;
-	private toolCallToGroup = new Map<string, ToolGroupComponent>();
+	private activeCollapsedToolGroup: CollapsedToolGroupComponent | undefined = undefined;
+	private collapsedGroupByToolCallId = new Map<string, CollapsedToolGroupComponent>();
+	private activeToolSummary: AssistantToolSummaryComponent | undefined = undefined;
+	private toolSummaryByToolCallId = new Map<string, AssistantToolSummaryComponent>();
+	private activeToolBatchSummary: AssistantToolBatchSummaryComponent | undefined = undefined;
+	private toolBatchSummaryByToolCallId = new Map<string, AssistantToolBatchSummaryComponent>();
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
@@ -373,6 +408,11 @@ export class InteractiveMode {
 		this.statusContainer = new Container();
 		this.widgetContainerAbove = new Container();
 		this.widgetContainerBelow = new Container();
+		this.progressSurfaceComponent = new ProgressSurfaceComponent(
+			() => this.getProgressSurfaceSnapshot(),
+			theme,
+			this.progressSurfaceWorkingState,
+		);
 		this.keybindings = KeybindingsManager.create();
 		setKeybindings(this.keybindings);
 		const editorPaddingX = this.settingsManager.getEditorPaddingX();
@@ -582,83 +622,50 @@ export class InteractiveMode {
 
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
-			const lumenVersion = "0.1.0"; // Lumen 自己的版本号
+			const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
 
 			// Build startup instructions using keybinding hint helpers
 			const hint = (keybinding: AppKeybinding, description: string) => keyHint(keybinding, description);
 
-			// Claude Code style: bordered welcome card
-			// ╭─ Lumen ──────────────────────────────╮
-			// │                                       │
-			// │  model · API Billing                  │
-			// │  D:\UGit\LumenAgent                   │
-			// │                                       │
-			// ╰───────────────────────────────────────╯
-			const modelName = this.session.state.model?.name || this.session.state.model?.id || "未选择模型";
-			let cwdDisplay = this.sessionManager.getCwd();
-			const home = process.env.HOME || process.env.USERPROFILE;
-			if (home && cwdDisplay.startsWith(home)) {
-				cwdDisplay = `~${cwdDisplay.slice(home.length)}`;
-			}
-
 			const expandedInstructions = [
-				theme.fg("muted", "─── 快捷键 ───"),
-				hint("app.interrupt", "中断生成"),
-				hint("app.clear", "清屏"),
-				rawKeyHint(`${keyText("app.clear")} 连按两次`, "退出"),
-				hint("app.exit", "退出（输入为空时）"),
-				"",
-				theme.fg("muted", "─── 模型 ───"),
-				hint("app.thinking.cycle", "切换思考等级"),
-				rawKeyHint(`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`, "切换模型"),
-				hint("app.model.select", "选择模型"),
-				hint("app.thinking.toggle", "展开/折叠思考内容"),
-				"",
-				theme.fg("muted", "─── 编辑 ───"),
-				hint("app.editor.external", "外部编辑器"),
-				hint("app.clipboard.pasteImage", "粘贴图片"),
-				rawKeyHint("拖拽文件", "附加文件"),
-				hint("app.message.followUp", "排队后续消息"),
-				"",
-				theme.fg("muted", "─── 工具 ───"),
-				rawKeyHint("/", "命令列表"),
-				rawKeyHint("!", "执行 shell 命令"),
-				rawKeyHint("!!", "执行 shell（不进入上下文）"),
-				hint("app.tools.expand", "展开工具输出"),
+				hint("app.interrupt", "to interrupt"),
+				hint("app.clear", "to clear"),
+				rawKeyHint(`${keyText("app.clear")} twice`, "to exit"),
+				hint("app.exit", "to exit (empty)"),
+				hint("app.suspend", "to suspend"),
+				keyHint("tui.editor.deleteToLineEnd", "to delete to end"),
+				hint("app.thinking.cycle", "to cycle thinking level"),
+				rawKeyHint(`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`, "to cycle models"),
+				hint("app.model.select", "to select model"),
+				hint("app.tools.expand", "to expand tools"),
+				hint("app.thinking.toggle", "to expand thinking"),
+				hint("app.editor.external", "for external editor"),
+				rawKeyHint("/", "for commands"),
+				rawKeyHint("!", "to run bash"),
+				rawKeyHint("!!", "to run bash (no context)"),
+				hint("app.message.followUp", "to queue follow-up"),
+				hint("app.message.dequeue", "to edit all queued messages"),
+				hint("app.clipboard.pasteImage", "to paste image"),
+				rawKeyHint("drop files", "to attach"),
 			].join("\n");
-
-			// Claude Code style: bordered welcome card with dynamic width
-			const topTitle = ` ${APP_TITLE} v${lumenVersion} `;
-			const topTitleWidth = visibleWidth(topTitle);
-			// Compute content widths to determine box width
-			const contentLines = [modelName, cwdDisplay];
-			const maxContentWidth = Math.max(...contentLines.map((l) => visibleWidth(l)), topTitleWidth);
-			const boxInnerWidth = maxContentWidth + 2; // 2 for padding inside │
-			const topBorderFill = boxInnerWidth - topTitleWidth;
-			const topBorderLeft = "\u2500"; // ─
-			const topBorderRight = "\u2500".repeat(Math.max(0, topBorderFill - 1));
-			const bottomBorder = "\u2500".repeat(boxInnerWidth);
-
-			const buildCard = (footer: string) => {
-				return [
-					theme.fg("accent", `\u256D${topBorderLeft}${topTitle}${topBorderRight}\u256E`),
-					`${theme.fg("accent", "\u2502")}  ${theme.fg("muted", modelName)}`,
-					`${theme.fg("accent", "\u2502")}  ${theme.fg("dim", cwdDisplay)}`,
-					theme.fg("accent", `\u2570${bottomBorder}\u256F`),
-					"",
-					footer,
-				].join("\n");
-			};
-
-			const compactCard = buildCard(
-				theme.fg("dim", `  ${keyText("app.tools.expand")} 显示快捷键 \u00B7 / 命令 \u00B7 ! shell`),
+			const compactInstructions = [
+				hint("app.interrupt", "interrupt"),
+				rawKeyHint(`${keyText("app.clear")}/${keyText("app.exit")}`, "clear/exit"),
+				rawKeyHint("/", "commands"),
+				rawKeyHint("!", "bash"),
+				hint("app.tools.expand", "more"),
+			].join(theme.fg("muted", " · "));
+			const compactOnboarding = theme.fg(
+				"dim",
+				`Press ${keyText("app.tools.expand")} to show full startup help and loaded resources.`,
 			);
-
-			const expandedCard = buildCard(expandedInstructions);
-
+			const onboarding = theme.fg(
+				"dim",
+				`Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.`,
+			);
 			this.builtInHeader = new ExpandableText(
-				() => compactCard,
-				() => expandedCard,
+				() => `${logo}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
+				() => `${logo}\n${expandedInstructions}\n\n${onboarding}`,
 				this.getStartupExpansionState(),
 				1,
 				0,
@@ -675,10 +682,10 @@ export class InteractiveMode {
 		}
 
 		this.ui.addChild(this.chatContainer);
-		this.ui.addChild(this.pendingMessagesContainer);
 		this.ui.addChild(this.statusContainer);
 		this.renderWidgets(); // Initialize with default spacer
 		this.ui.addChild(this.widgetContainerAbove);
+		this.ui.addChild(this.pendingMessagesContainer);
 		this.ui.addChild(this.editorContainer);
 		this.ui.addChild(this.widgetContainerBelow);
 		this.ui.addChild(this.footer);
@@ -1301,9 +1308,7 @@ export class InteractiveMode {
 		force?: boolean;
 		showDiagnosticsWhenQuiet?: boolean;
 	}): void {
-		// [Lumen] Only show resource listing when explicitly forced (e.g., /reload).
-		// Normal startup skips the [Context]/[Extensions]/[Prompts] sections — too noisy.
-		const showListing = options?.force === true;
+		const showListing = options?.force || this.options.verbose || !this.settingsManager.getQuietStartup();
 		const showDiagnostics = showListing || options?.showDiagnosticsWhenQuiet === true;
 		if (!showListing && !showDiagnostics) {
 			return;
@@ -1635,6 +1640,10 @@ export class InteractiveMode {
 		return this.session.getToolDefinition(toolName);
 	}
 
+	private shouldRenderToolAsExecutionComponent(toolName: string): boolean {
+		return toolName === "task" || toolName === "todo";
+	}
+
 	/**
 	 * Set up keyboard shortcuts registered by extensions.
 	 */
@@ -1658,6 +1667,7 @@ export class InteractiveMode {
 				this.shutdownRequested = true;
 			},
 			getContextUsage: () => this.session.getContextUsage(),
+			getSpinnerBudgetUsage: () => this.session.getSpinnerBudgetUsage(),
 			compact: (options) => {
 				void (async () => {
 					try {
@@ -1696,55 +1706,164 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private getWorkingLoaderMessage(): string {
-		return this.workingMessage ?? this.getRandomSpinnerVerb();
-	}
+	private buildDefaultSpinnerState(): SpinnerUiState | undefined {
+		const summary = this.session.getTaskUiSummary();
+		const usage = this.session.getContextUsage();
+		const now = Date.now();
+		const hasLiveExecution =
+			this.session.isStreaming ||
+			this.session.isCompacting ||
+			this.session.isRetrying ||
+			this.spinnerActiveToolCount > 0;
+		const elapsedMs =
+			hasLiveExecution && this.spinnerStartedAt > 0 ? Math.max(0, now - this.spinnerStartedAt) : undefined;
 
-	/** Claude Code style: random verb for the spinner message */
-	private spinnerVerb: string | undefined;
-	private getRandomSpinnerVerb(): string {
-		if (!this.spinnerVerb) {
-			const SPINNER_VERBS = [
-				"Working",
-				"Thinking",
-				"Processing",
-				"Computing",
-				"Crafting",
-				"Analyzing",
-				"Generating",
-				"Composing",
-				"Orchestrating",
-				"Synthesizing",
-				"Brewing",
-				"Cooking",
-				"Pondering",
-				"Mulling",
-				"Deliberating",
-				"Moonwalking",
-				"Percolating",
-				"Channeling",
-				"Hatching",
-				"Forging",
-			];
-			this.spinnerVerb = SPINNER_VERBS[Math.floor(Math.random() * SPINNER_VERBS.length)];
+		let tip: string | undefined;
+		if (this.settingsManager.getSpinnerTipsEnabled() && !summary?.next && elapsedMs !== undefined) {
+			if (elapsedMs > 1_800_000) {
+				tip = "切换话题时可以用 /clear 重开会话，释放上下文";
+			} else if (elapsedMs > 30_000) {
+				tip = "Enter 立即插入（工具间隙就发出），Alt+Enter 排队等本轮结束再发";
+			} else if (usage?.percent !== null && usage?.percent !== undefined && usage.percent >= 90) {
+				tip = "上下文快满了，切换话题前可以用 /clear 或等待自动 compaction";
+			}
 		}
-		return `${this.spinnerVerb}\u2026`; // verb…
+
+		const outputTokens =
+			hasLiveExecution && this.spinnerReportedOutputTokens > 0
+				? this.spinnerReportedOutputTokens
+				: hasLiveExecution && this.spinnerResponseChars > 0
+					? Math.round(this.spinnerResponseChars / 4)
+					: undefined;
+		const isThinking =
+			this.spinnerThinkingStartedAt !== null ||
+			(this.spinnerThinkingMinimumVisibleUntil !== null && now < this.spinnerThinkingMinimumVisibleUntil);
+		const lastThinkingDurationMs =
+			this.spinnerThinkingDurationMs !== null &&
+			this.spinnerThoughtForVisibleUntil !== null &&
+			now < this.spinnerThoughtForVisibleUntil
+				? this.spinnerThinkingDurationMs
+				: undefined;
+		const budgetText = this.buildDefaultBudgetText(outputTokens, elapsedMs);
+
+		const mode: SpinnerUiState["mode"] | undefined =
+			!hasLiveExecution && !isThinking
+				? undefined
+				: isThinking
+					? "thinking"
+					: this.spinnerActiveToolCount > 0
+						? "tool-use"
+						: this.spinnerResponseChars > 0
+							? "responding"
+							: "requesting";
+
+		if (
+			this.spinnerBanner === undefined &&
+			this.spinnerSystemOverrideMessage === undefined &&
+			tip === undefined &&
+			budgetText === undefined &&
+			elapsedMs === undefined &&
+			outputTokens === undefined &&
+			!isThinking &&
+			lastThinkingDurationMs === undefined &&
+			mode === undefined
+		) {
+			return undefined;
+		}
+
+		const spinner: SpinnerUiState = {
+			...(this.spinnerBanner ? { banner: this.spinnerBanner } : {}),
+			...(tip ? { tip } : {}),
+			...(budgetText ? { budgetText } : {}),
+			...(this.spinnerSystemOverrideMessage ? { overrideMessage: this.spinnerSystemOverrideMessage } : {}),
+			...(elapsedMs !== undefined ? { elapsedMs } : {}),
+			...(outputTokens !== undefined ? { outputTokens } : {}),
+			...(isThinking ? { isThinking: true } : {}),
+			...(lastThinkingDurationMs !== undefined ? { lastThinkingDurationMs } : {}),
+			...(this.spinnerCurrentToolLabel ? { currentToolLabel: this.spinnerCurrentToolLabel } : {}),
+		};
+		if (mode !== undefined) {
+			spinner.mode = mode;
+		}
+		return spinner;
 	}
 
-	/** Reset the spinner verb for the next turn */
-	private resetSpinnerVerb(): void {
-		this.spinnerVerb = undefined;
+	private buildDefaultBudgetText(outputTokens?: number, elapsedMs?: number): string | undefined {
+		const requestBudget = this.session.getSpinnerBudgetUsage()?.requestMaxOutputTokens;
+		if (!requestBudget || requestBudget <= 0) return undefined;
+
+		const used = outputTokens ?? 0;
+		if (used <= 0) return undefined;
+		if (used >= requestBudget) {
+			return `Target: ${used.toLocaleString()} used (${requestBudget.toLocaleString()} min)`;
+		}
+
+		const pct = Math.max(0, Math.min(100, Math.round((used / requestBudget) * 100)));
+		let etaSuffix = "";
+		if (elapsedMs !== undefined && elapsedMs >= 5_000 && used >= 2_000) {
+			const rate = used / elapsedMs;
+			const remaining = requestBudget - used;
+			if (rate > 0 && remaining > 0) {
+				etaSuffix = ` · ~${this.formatDurationForBudget(Math.round(remaining / rate))}`;
+			}
+		}
+		return `Target: ${used.toLocaleString()} / ${requestBudget.toLocaleString()} (${pct}% used${etaSuffix})`;
+	}
+
+	private formatDurationForBudget(ms: number): string {
+		const totalSec = Math.max(1, Math.floor(ms / 1000));
+		if (totalSec < 60) return `${totalSec}s`;
+		const minutes = Math.floor(totalSec / 60);
+		const seconds = totalSec % 60;
+		if (minutes < 60) return `${minutes}m ${seconds}s`;
+		const hours = Math.floor(minutes / 60);
+		const remainingMinutes = minutes % 60;
+		return `${hours}h ${remainingMinutes}m`;
+	}
+
+	private getWorkingLoaderMessage(): string {
+		return this.workingMessage ?? this.defaultWorkingMessage;
 	}
 
 	private createWorkingLoader(): Loader {
-		// Claude Code style: ✻ Moonwalking… (Ns · ↓ Nk tokens)
 		return new Loader(
 			this.ui,
-			(_spinner) => theme.fg("accent", "\u273B"), // ✻ teardrop asterisk
+			(spinner) => theme.fg("accent", spinner),
 			(text) => theme.fg("muted", text),
 			this.getWorkingLoaderMessage(),
 			this.workingIndicatorOptions,
 		);
+	}
+
+	private renderWorkingArea(): void {
+		this.statusContainer.clear();
+		const snapshot = this.getProgressSurfaceSnapshot();
+		const shouldRenderSurface = shouldRenderProgressSurface(snapshot);
+		const shouldRenderLoader = this.workingVisible && this.session.isStreaming && !shouldRenderSurface;
+		const hasWorkingDetails =
+			this.workingDetailsComponent !== undefined ||
+			(this.workingDetailsLines !== undefined && this.workingDetailsLines.length > 0);
+		if (!shouldRenderSurface && !shouldRenderLoader && !hasWorkingDetails) {
+			return;
+		}
+
+		this.statusContainer.addChild(new Spacer(1));
+		if (shouldRenderSurface) {
+			this.statusContainer.addChild(this.progressSurfaceComponent);
+		}
+		if (shouldRenderLoader) {
+			if (!this.loadingAnimation) {
+				this.loadingAnimation = this.createWorkingLoader();
+			}
+			this.statusContainer.addChild(this.loadingAnimation);
+		}
+		if (this.workingDetailsComponent) {
+			this.statusContainer.addChild(this.workingDetailsComponent);
+		} else if (this.workingDetailsLines && this.workingDetailsLines.length > 0) {
+			for (const line of this.workingDetailsLines) {
+				this.statusContainer.addChild(new Text(line, 0, 0));
+			}
+		}
 	}
 
 	private stopWorkingLoader(): void {
@@ -1752,7 +1871,34 @@ export class InteractiveMode {
 			this.loadingAnimation.stop();
 			this.loadingAnimation = undefined;
 		}
-		this.statusContainer.clear();
+		this.renderWorkingArea();
+	}
+
+	private getProgressSurfaceSnapshot(): ProgressSurfaceSnapshot {
+		return {
+			tasks: this.session.getTaskUiItems() ?? [],
+			queued: undefined,
+			spinner: this.buildDefaultSpinnerState(),
+			expanded: false,
+		};
+	}
+
+	private syncProgressSurfaceRefreshLoop(): void {
+		const snapshot = this.getProgressSurfaceSnapshot();
+		const needsRefresh = snapshot.spinner !== undefined && shouldRenderProgressSurface(snapshot);
+		if (needsRefresh) {
+			if (this.progressSurfaceRefreshTimer) {
+				return;
+			}
+			this.progressSurfaceRefreshTimer = setInterval(() => {
+				this.ui.requestRender();
+			}, 250);
+			return;
+		}
+		if (this.progressSurfaceRefreshTimer) {
+			clearInterval(this.progressSurfaceRefreshTimer);
+			this.progressSurfaceRefreshTimer = undefined;
+		}
 	}
 
 	private setWorkingVisible(visible: boolean): void {
@@ -1763,16 +1909,16 @@ export class InteractiveMode {
 			return;
 		}
 		if (this.session.isStreaming && !this.loadingAnimation) {
-			this.statusContainer.clear();
 			this.loadingAnimation = this.createWorkingLoader();
-			this.statusContainer.addChild(this.loadingAnimation);
 		}
+		this.renderWorkingArea();
 		this.ui.requestRender();
 	}
 
 	private setWorkingIndicator(options?: LoaderIndicatorOptions): void {
 		this.workingIndicatorOptions = options;
 		this.loadingAnimation?.setIndicator(options);
+		this.renderWorkingArea();
 		this.ui.requestRender();
 	}
 
@@ -1787,6 +1933,92 @@ export class InteractiveMode {
 			this.streamingComponent.setHiddenThinkingLabel(this.hiddenThinkingLabel);
 		}
 		this.ui.requestRender();
+	}
+
+	private clearSpinnerBannerTimeout(): void {
+		if (this.spinnerBannerTimeout) {
+			clearTimeout(this.spinnerBannerTimeout);
+			this.spinnerBannerTimeout = undefined;
+		}
+	}
+
+	private setSpinnerBanner(banner: SpinnerUiState["banner"] | undefined, options?: { expiresMs?: number }): void {
+		this.clearSpinnerBannerTimeout();
+		this.spinnerBanner = banner;
+		if (banner && options?.expiresMs && options.expiresMs > 0) {
+			this.spinnerBannerTimeout = setTimeout(() => {
+				this.spinnerBannerTimeout = undefined;
+				if (this.spinnerBanner === banner) {
+					this.spinnerBanner = undefined;
+					this.ui.requestRender();
+				}
+			}, options.expiresMs);
+		}
+		this.syncProgressSurfaceRefreshLoop();
+		this.ui.requestRender();
+	}
+
+	private describeSpinnerToolLabel(toolName: string, args: Record<string, unknown>): string | undefined {
+		const path =
+			typeof args.path === "string" && args.path.length > 0
+				? formatPathRelativeToCwdOrAbsolute(args.path, this.sessionManager.getCwd())
+				: typeof args.file_path === "string" && args.file_path.length > 0
+					? formatPathRelativeToCwdOrAbsolute(args.file_path, this.sessionManager.getCwd())
+					: undefined;
+
+		switch (toolName) {
+			case "read":
+				return `Reading ${path ?? "file"}`;
+			case "grep":
+			case "find": {
+				const pattern = typeof args.pattern === "string" ? args.pattern : undefined;
+				return pattern ? `Searching ${pattern}` : `Searching ${path ?? "files"}`;
+			}
+			case "ls":
+				return `Listing ${path ?? "."}`;
+			case "edit":
+				return `Editing ${path ?? "file"}`;
+			case "write":
+				return `Writing ${path ?? "file"}`;
+			case "bash":
+				return "Running command";
+			default:
+				return undefined;
+		}
+	}
+
+	private setWorkingDetails(
+		content?: string[] | ((tui: TUI, theme: Theme) => Component & { dispose?(): void }),
+	): void {
+		if (this.workingDetailsComponent?.dispose) {
+			this.workingDetailsComponent.dispose();
+		}
+		this.workingDetailsComponent = undefined;
+		this.workingDetailsLines = undefined;
+
+		if (Array.isArray(content)) {
+			this.workingDetailsLines = content.length > 0 ? [...content] : undefined;
+		} else if (content) {
+			this.workingDetailsComponent = content(this.ui, theme);
+		}
+
+		this.renderWorkingArea();
+		this.ui.requestRender();
+	}
+
+	private resetSpinnerRuntimeState(): void {
+		this.spinnerStartedAt = 0;
+		this.spinnerResponseChars = 0;
+		this.spinnerReportedOutputTokens = 0;
+		this.spinnerThinkingStartedAt = null;
+		this.spinnerThinkingMinimumVisibleUntil = null;
+		this.spinnerThinkingDurationMs = null;
+		this.spinnerThoughtForVisibleUntil = null;
+		this.spinnerSystemOverrideMessage = undefined;
+		this.spinnerCurrentToolLabel = undefined;
+		this.clearSpinnerBannerTimeout();
+		this.spinnerBanner = undefined;
+		this.syncProgressSurfaceRefreshLoop();
 	}
 
 	/**
@@ -1869,8 +2101,13 @@ export class InteractiveMode {
 		this.defaultEditor.onExtensionShortcut = undefined;
 		this.updateTerminalTitle();
 		this.workingMessage = undefined;
+		this.workingDetailsLines = undefined;
+		if (this.workingDetailsComponent?.dispose) {
+			this.workingDetailsComponent.dispose();
+		}
+		this.workingDetailsComponent = undefined;
 		this.workingVisible = true;
-		this.resetSpinnerVerb();
+		this.resetSpinnerRuntimeState();
 		this.setWorkingIndicator();
 		if (this.loadingAnimation) {
 			this.loadingAnimation.setMessage(`${this.defaultWorkingMessage} (${keyText("app.interrupt")} to interrupt)`);
@@ -2025,6 +2262,10 @@ export class InteractiveMode {
 				if (this.loadingAnimation) {
 					this.loadingAnimation.setMessage(message ?? this.defaultWorkingMessage);
 				}
+				this.renderWorkingArea();
+			},
+			setWorkingDetails: (lines) => {
+				this.setWorkingDetails(lines);
 			},
 			setWorkingVisible: (visible) => this.setWorkingVisible(visible),
 			setWorkingIndicator: (options) => this.setWorkingIndicator(options),
@@ -2076,12 +2317,20 @@ export class InteractiveMode {
 		title: string,
 		options: string[],
 		opts?: ExtensionUIDialogOptions,
+		bannerKind: NonNullable<SpinnerUiState["banner"]>["kind"] = "input",
 	): Promise<string | undefined> {
 		return new Promise((resolve) => {
 			if (opts?.signal?.aborted) {
 				resolve(undefined);
 				return;
 			}
+
+			this.setExtensionStatus("ui", `waiting · ${title.split("\n")[0]}`);
+			this.setSpinnerBanner({
+				kind: bannerKind,
+				title: bannerKind === "approval" ? "等待审批确认" : "等待你的选择",
+				detail: title.split("\n")[0],
+			});
 
 			const onAbort = () => {
 				this.hideExtensionSelector();
@@ -2120,6 +2369,8 @@ export class InteractiveMode {
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
 		this.extensionSelector = undefined;
+		this.setExtensionStatus("ui", undefined);
+		this.setSpinnerBanner(undefined);
 		this.ui.setFocus(this.editor);
 		this.ui.requestRender();
 	}
@@ -2132,7 +2383,7 @@ export class InteractiveMode {
 		message: string,
 		opts?: ExtensionUIDialogOptions,
 	): Promise<boolean> {
-		const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"], opts);
+		const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"], opts, "approval");
 		return result === "Yes";
 	}
 
@@ -2157,6 +2408,13 @@ export class InteractiveMode {
 				resolve(undefined);
 				return;
 			}
+
+			this.setExtensionStatus("ui", `waiting · ${title}`);
+			this.setSpinnerBanner({
+				kind: "input",
+				title: "等待你的输入",
+				detail: title,
+			});
 
 			const onAbort = () => {
 				this.hideExtensionInput();
@@ -2195,6 +2453,8 @@ export class InteractiveMode {
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
 		this.extensionInput = undefined;
+		this.setExtensionStatus("ui", undefined);
+		this.setSpinnerBanner(undefined);
 		this.ui.setFocus(this.editor);
 		this.ui.requestRender();
 	}
@@ -2204,6 +2464,12 @@ export class InteractiveMode {
 	 */
 	private showExtensionEditor(title: string, prefill?: string): Promise<string | undefined> {
 		return new Promise((resolve) => {
+			this.setExtensionStatus("ui", `waiting · ${title}`);
+			this.setSpinnerBanner({
+				kind: "input",
+				title: "等待你的输入",
+				detail: title,
+			});
 			this.extensionEditor = new ExtensionEditorComponent(
 				this.ui,
 				this.keybindings,
@@ -2233,6 +2499,8 @@ export class InteractiveMode {
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
 		this.extensionEditor = undefined;
+		this.setExtensionStatus("ui", undefined);
+		this.setSpinnerBanner(undefined);
 		this.ui.setFocus(this.editor);
 		this.ui.requestRender();
 	}
@@ -2497,19 +2765,18 @@ export class InteractiveMode {
 				return;
 			}
 
-			// Write to temp file and insert path.
-			// Pi's read tool will detect it as an image and convert to ImageContent.
-			// If the model supports vision, the image goes directly to the API.
+			// Write to temp file
 			const tmpDir = os.tmpdir();
 			const ext = extensionForImageMimeType(image.mimeType) ?? "png";
 			const fileName = `pi-clipboard-${crypto.randomUUID()}.${ext}`;
 			const filePath = path.join(tmpDir, fileName);
 			fs.writeFileSync(filePath, Buffer.from(image.bytes));
 
+			// Insert file path directly
 			this.editor.insertTextAtCursor?.(filePath);
 			this.ui.requestRender();
 		} catch {
-			// Silently ignore clipboard errors
+			// Silently ignore clipboard errors (may not have permission, etc.)
 		}
 	}
 
@@ -2700,6 +2967,21 @@ export class InteractiveMode {
 		});
 	}
 
+	private updateSpinnerRuntimeFromAssistantMessage(message: AssistantMessage): void {
+		let responseChars = 0;
+		for (const block of message.content) {
+			if (block.type === "text") {
+				responseChars += block.text.length;
+			} else if (block.type === "thinking") {
+				responseChars += block.thinking.length;
+			}
+		}
+		this.spinnerResponseChars = Math.max(this.spinnerResponseChars, responseChars);
+		if (message.usage.output > this.spinnerReportedOutputTokens) {
+			this.spinnerReportedOutputTokens = message.usage.output;
+		}
+	}
+
 	private async handleEvent(event: AgentSessionEvent): Promise<void> {
 		if (!this.isInitialized) {
 			await this.init();
@@ -2707,417 +2989,587 @@ export class InteractiveMode {
 
 		this.footer.invalidate();
 
-		switch (event.type) {
-			case "agent_start":
-				this.pendingTools.clear();
-				this.resetSpinnerVerb(); // New random verb for each turn
-				if (this.settingsManager.getShowTerminalProgress()) {
-					this.ui.terminal.setProgress(true);
-				}
-				// Restore main escape handler if retry handler is still active
-				// (retry success event fires later, but we need main handler now)
-				if (this.retryEscapeHandler) {
-					this.defaultEditor.onEscape = this.retryEscapeHandler;
-					this.retryEscapeHandler = undefined;
-				}
-				if (this.retryCountdown) {
-					this.retryCountdown.dispose();
-					this.retryCountdown = undefined;
-				}
-				if (this.retryLoader) {
-					this.retryLoader.stop();
-					this.retryLoader = undefined;
-				}
-				this.stopWorkingLoader();
-				if (this.workingVisible) {
-					this.loadingAnimation = this.createWorkingLoader();
-					this.statusContainer.addChild(this.loadingAnimation);
-				}
-				this.ui.requestRender();
-				break;
-
-			case "queue_update":
-				this.updatePendingMessagesDisplay();
-				this.ui.requestRender();
-				break;
-
-			case "session_info_changed":
-				this.updateTerminalTitle();
-				this.footer.invalidate();
-				this.ui.requestRender();
-				break;
-
-			case "thinking_level_changed":
-				this.footer.invalidate();
-				this.updateEditorBorderColor();
-				break;
-
-			case "message_start":
-				if (event.message.role === "custom") {
-					this.addMessageToChat(event.message);
+		try {
+			switch (event.type) {
+				case "agent_start":
+					this.spinnerStartedAt = Date.now();
+					this.spinnerResponseChars = 0;
+					this.spinnerReportedOutputTokens = 0;
+					this.spinnerThinkingStartedAt = null;
+					this.spinnerThinkingMinimumVisibleUntil = null;
+					this.spinnerThinkingDurationMs = null;
+					this.spinnerThoughtForVisibleUntil = null;
+					this.spinnerCurrentToolLabel = undefined;
+					this.spinnerActiveToolCount = 0;
+					this.pendingTools.clear();
+					if (this.settingsManager.getShowTerminalProgress()) {
+						this.ui.terminal.setProgress(true);
+					}
+					// Restore main escape handler if retry handler is still active
+					// (retry success event fires later, but we need main handler now)
+					if (this.retryEscapeHandler) {
+						this.defaultEditor.onEscape = this.retryEscapeHandler;
+						this.retryEscapeHandler = undefined;
+					}
+					if (this.retryCountdown) {
+						this.retryCountdown.dispose();
+						this.retryCountdown = undefined;
+					}
+					if (this.retryLoader) {
+						this.retryLoader.stop();
+						this.retryLoader = undefined;
+					}
+					this.stopWorkingLoader();
+					if (this.workingVisible) {
+						this.loadingAnimation = this.createWorkingLoader();
+					}
+					this.renderWorkingArea();
 					this.ui.requestRender();
-				} else if (event.message.role === "user") {
-					this.addMessageToChat(event.message);
+					break;
+
+				case "queue_update":
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
-				} else if (event.message.role === "assistant") {
-					// Claude Code style: DON'T reset tool grouping on new assistant message.
-					// Consecutive collapsible tools across multiple assistant messages should
-					// still be collapsed into one group. Only reset on non-collapsible content
-					// or agent_end.
+					break;
 
-					this.streamingComponent = new AssistantMessageComponent(
-						undefined,
-						this.hideThinkingBlock,
-						this.getMarkdownThemeWithSettings(),
-						this.hiddenThinkingLabel,
-					);
-					this.streamingMessage = event.message;
-					this.chatContainer.addChild(this.streamingComponent);
-					this.streamingComponent.updateContent(this.streamingMessage);
+				case "session_info_changed":
+					this.updateTerminalTitle();
+					this.footer.invalidate();
 					this.ui.requestRender();
-				}
-				break;
+					break;
 
-			case "message_update":
-				if (this.streamingComponent && event.message.role === "assistant") {
-					this.streamingMessage = event.message;
-					this.streamingComponent.updateContent(this.streamingMessage);
+				case "thinking_level_changed":
+					this.footer.invalidate();
+					this.updateEditorBorderColor();
+					break;
 
-					// Claude Code style: break the collapse group if assistant emits text content
-					const hasTextContent = this.streamingMessage.content.some(
-						(c) => c.type === "text" && c.text.trim().length > 0,
-					);
-					if (hasTextContent && this.lastToolGroup) {
-						this.lastToolGroup = undefined;
+				case "message_start":
+					if (event.message.role === "custom") {
+						this.addMessageToChat(event.message);
+						this.ui.requestRender();
+					} else if (event.message.role === "user") {
+						this.addMessageToChat(event.message);
+						this.updatePendingMessagesDisplay();
+						this.ui.requestRender();
+					} else if (event.message.role === "assistant") {
+						this.activeCollapsedToolGroup = undefined;
+						this.activeToolSummary = undefined;
+						this.streamingComponent = new AssistantMessageComponent(
+							undefined,
+							this.hideThinkingBlock,
+							this.getMarkdownThemeWithSettings(),
+							this.hiddenThinkingLabel,
+						);
+						this.streamingMessage = event.message;
+						this.chatContainer.addChild(this.streamingComponent);
+						this.streamingComponent.updateContent(this.streamingMessage);
+						this.ui.requestRender();
 					}
+					break;
 
-					for (const content of this.streamingMessage.content) {
-						if (content.type === "toolCall") {
-							if (!this.pendingTools.has(content.id)) {
-								const component = new ToolExecutionComponent(
-									content.name,
-									content.id,
-									content.arguments,
-									{
-										showImages: this.settingsManager.getShowImages(),
-										imageWidthCells: this.settingsManager.getImageWidthCells(),
-									},
-									this.getRegisteredToolDefinition(content.name),
-									this.ui,
-									this.sessionManager.getCwd(),
-								);
-								component.setExpanded(this.toolOutputExpanded);
-
-								// Claude Code style: collapse ALL consecutive collapsible tools into one group
-								if (isGroupableTool(content.name)) {
-									if (this.lastToolGroup) {
-										// Already have a collapse group — add to it regardless of tool type
-										this.lastToolGroup.addMember(component, content.arguments ?? {});
-										this.toolCallToGroup.set(content.id, this.lastToolGroup);
-									} else {
-										// First collapsible tool — immediately create a group (even for 1 item)
-										// This ensures even a single read shows as collapsed format
-										const group = new ToolGroupComponent(content.name, this.ui);
-										group.addMember(component, content.arguments ?? {});
-										this.toolCallToGroup.set(content.id, group);
-										group.setExpanded(this.toolOutputExpanded);
-										this.chatContainer.addChild(group);
-										this.lastToolGroup = group;
-									}
-								} else {
-									// Non-collapsible tool — add directly, reset group state
-									this.chatContainer.addChild(component);
-									this.lastToolGroup = undefined;
-								}
-
-								this.pendingTools.set(content.id, component);
-							} else {
-								const component = this.pendingTools.get(content.id);
-								if (component) {
-									component.updateArgs(content.arguments);
-								}
+				case "message_update":
+					if (this.streamingComponent && event.message.role === "assistant") {
+						this.streamingMessage = event.message;
+						this.updateSpinnerRuntimeFromAssistantMessage(event.message);
+						const assistantMessageEvent = event.assistantMessageEvent;
+						if (assistantMessageEvent.type === "thinking_start") {
+							if (this.spinnerThinkingStartedAt === null) {
+								this.spinnerThinkingStartedAt = Date.now();
+								this.spinnerThinkingMinimumVisibleUntil = null;
+								this.spinnerThinkingDurationMs = null;
+								this.spinnerThoughtForVisibleUntil = null;
+							}
+						} else if (assistantMessageEvent.type === "thinking_end") {
+							if (this.spinnerThinkingStartedAt !== null) {
+								const endedAt = Date.now();
+								this.spinnerThinkingDurationMs = endedAt - this.spinnerThinkingStartedAt;
+								const minimumVisibleUntil = this.spinnerThinkingStartedAt + 2000;
+								this.spinnerThinkingMinimumVisibleUntil =
+									endedAt < minimumVisibleUntil ? minimumVisibleUntil : null;
+								this.spinnerThoughtForVisibleUntil =
+									(endedAt < minimumVisibleUntil ? minimumVisibleUntil : endedAt) + 2000;
+								this.spinnerThinkingStartedAt = null;
 							}
 						}
-					}
-					this.ui.requestRender();
-				}
-				break;
+						const projectedTurn = projectAssistantTurn(this.streamingMessage);
+						this.streamingComponent.updateContent(this.streamingMessage);
 
-			case "message_end":
-				if (event.message.role === "user") break;
-				if (this.streamingComponent && event.message.role === "assistant") {
-					this.streamingMessage = event.message;
-					let errorMessage: string | undefined;
-					if (this.streamingMessage.stopReason === "aborted") {
-						const retryAttempt = this.session.retryAttempt;
-						errorMessage =
-							retryAttempt > 0
-								? `Aborted after ${retryAttempt} retry attempt${retryAttempt > 1 ? "s" : ""}`
-								: "Operation aborted";
-						this.streamingMessage.errorMessage = errorMessage;
-					}
-					this.streamingComponent.updateContent(this.streamingMessage);
+						const shouldCollapseStreamingTools =
+							projectedTurn.toolCalls.length > 1 &&
+							!projectedTurn.hasRenderableAssistantContent &&
+							projectedTurn.toolCalls.every((toolCall) => isCollapsibleToolName(toolCall.name));
 
-					if (this.streamingMessage.stopReason === "aborted" || this.streamingMessage.stopReason === "error") {
-						if (!errorMessage) {
-							errorMessage = this.streamingMessage.errorMessage || "Error";
+						if (shouldCollapseStreamingTools) {
+							if (!this.activeCollapsedToolGroup) {
+								this.activeCollapsedToolGroup = new CollapsedToolGroupComponent(this.sessionManager.getCwd());
+								this.activeCollapsedToolGroup.setExpanded(this.toolOutputExpanded);
+								this.chatContainer.addChild(this.activeCollapsedToolGroup);
+							}
+							for (const toolCall of projectedTurn.toolCalls) {
+								this.activeCollapsedToolGroup.addOrUpdateToolCall(
+									toolCall.id,
+									toolCall.name,
+									toolCall.arguments,
+								);
+								this.collapsedGroupByToolCallId.set(toolCall.id, this.activeCollapsedToolGroup);
+							}
+							this.ui.requestRender();
+							break;
 						}
-						for (const [, component] of this.pendingTools.entries()) {
-							component.updateResult({
-								content: [{ type: "text", text: errorMessage }],
-								isError: true,
-							});
+
+						const shouldUseStreamingToolSummary =
+							projectedTurn.toolCalls.length === 1 &&
+							!this.shouldRenderToolAsExecutionComponent(projectedTurn.toolCalls[0]?.name ?? "");
+
+						if (shouldUseStreamingToolSummary) {
+							const toolCall = projectedTurn.toolCalls[0];
+							if (!this.activeToolSummary) {
+								this.activeToolSummary = new AssistantToolSummaryComponent(
+									toolCall.name,
+									toolCall.arguments,
+									undefined,
+									this.sessionManager.getCwd(),
+								);
+								this.activeToolSummary.setExpanded(this.toolOutputExpanded);
+								this.chatContainer.addChild(this.activeToolSummary);
+							} else {
+								this.activeToolSummary.updateArgs(toolCall.arguments);
+							}
+							this.toolSummaryByToolCallId.set(toolCall.id, this.activeToolSummary);
+							this.ui.requestRender();
+							break;
 						}
-						this.pendingTools.clear();
-					} else {
-						// Args are now complete - trigger diff computation for edit tools
-						for (const [, component] of this.pendingTools.entries()) {
-							component.setArgsComplete();
+
+						const shouldUseStreamingToolBatchSummary =
+							projectedTurn.toolCalls.length > 1 &&
+							!projectedTurn.hasRenderableAssistantContent &&
+							projectedTurn.toolCalls.every(
+								(toolCall) => !this.shouldRenderToolAsExecutionComponent(toolCall.name),
+							);
+
+						if (shouldUseStreamingToolBatchSummary) {
+							if (!this.activeToolBatchSummary) {
+								this.activeToolBatchSummary = new AssistantToolBatchSummaryComponent(
+									[],
+									this.sessionManager.getCwd(),
+								);
+								this.activeToolBatchSummary.setExpanded(this.toolOutputExpanded);
+								this.chatContainer.addChild(this.activeToolBatchSummary);
+							}
+							for (const toolCall of projectedTurn.toolCalls) {
+								this.activeToolBatchSummary.addOrUpdateToolCall(toolCall.name, toolCall.arguments, toolCall.id);
+								this.toolBatchSummaryByToolCallId.set(toolCall.id, this.activeToolBatchSummary);
+							}
+							this.ui.requestRender();
+							break;
 						}
+
+						for (const toolCall of projectedTurn.toolCalls) {
+							if (this.shouldRenderToolAsExecutionComponent(toolCall.name)) {
+								let component = this.pendingTools.get(toolCall.id);
+								if (!component) {
+									component = new ToolExecutionComponent(
+										toolCall.name,
+										toolCall.id,
+										toolCall.arguments,
+										{
+											showImages: this.settingsManager.getShowImages(),
+											imageWidthCells: this.settingsManager.getImageWidthCells(),
+										},
+										this.getRegisteredToolDefinition(toolCall.name),
+										this.ui,
+										this.sessionManager.getCwd(),
+									);
+									component.setExpanded(this.toolOutputExpanded);
+									this.chatContainer.addChild(component);
+									this.pendingTools.set(toolCall.id, component);
+								}
+								component.updateArgs(toolCall.arguments);
+								continue;
+							}
+
+							if (
+								!this.pendingTools.has(toolCall.id) &&
+								!this.collapsedGroupByToolCallId.has(toolCall.id) &&
+								!this.toolSummaryByToolCallId.has(toolCall.id) &&
+								!this.toolBatchSummaryByToolCallId.has(toolCall.id)
+							) {
+								const summaryComponent = new AssistantToolSummaryComponent(
+									toolCall.name,
+									toolCall.arguments,
+									undefined,
+									this.sessionManager.getCwd(),
+								);
+								summaryComponent.setExpanded(this.toolOutputExpanded);
+								this.chatContainer.addChild(summaryComponent);
+								this.toolSummaryByToolCallId.set(toolCall.id, summaryComponent);
+								this.activeToolSummary = summaryComponent;
+								continue;
+							}
+
+							const summaryComponent = this.toolSummaryByToolCallId.get(toolCall.id);
+							if (summaryComponent) {
+								summaryComponent.updateArgs(toolCall.arguments);
+								continue;
+							}
+
+							const component = this.pendingTools.get(toolCall.id);
+							if (component) {
+								component.updateArgs(toolCall.arguments);
+							}
+						}
+						this.ui.requestRender();
 					}
+					break;
 
-					// Remove the streaming component only if it has no visible content at all
-					const hasVisibleText = this.streamingMessage.content.some((c) => c.type === "text" && c.text.trim());
-					if (
-						!hasVisibleText &&
-						this.streamingMessage.stopReason !== "aborted" &&
-						this.streamingMessage.stopReason !== "error"
-					) {
-						this.chatContainer.removeChild(this.streamingComponent);
-					}
+				case "message_end":
+					if (event.message.role === "user") break;
+					if (this.streamingComponent && event.message.role === "assistant") {
+						this.streamingMessage = event.message;
+						this.updateSpinnerRuntimeFromAssistantMessage(event.message);
+						const projectedTurn = projectAssistantTurn(this.streamingMessage);
+						let errorMessage: string | undefined;
+						if (this.streamingMessage.stopReason === "aborted") {
+							const retryAttempt = this.session.retryAttempt;
+							errorMessage =
+								retryAttempt > 0
+									? `Aborted after ${retryAttempt} retry attempt${retryAttempt > 1 ? "s" : ""}`
+									: "Operation aborted";
+							this.streamingMessage.errorMessage = errorMessage;
+						}
+						this.streamingComponent.updateContent(this.streamingMessage);
 
-					this.streamingComponent = undefined;
-					this.streamingMessage = undefined;
-					this.footer.invalidate();
-				}
-				this.ui.requestRender();
-				break;
-
-			case "tool_execution_start": {
-				// Notify footer HUD of tool activity
-				const toolTarget =
-					(event.args as { path?: string; file?: string; command?: string })?.path ??
-					(event.args as { file?: string })?.file ??
-					(event.args as { command?: string })?.command?.slice(0, 40) ??
-					undefined;
-				notifyToolStart(event.toolName, toolTarget);
-
-				let component = this.pendingTools.get(event.toolCallId);
-				if (!component) {
-					component = new ToolExecutionComponent(
-						event.toolName,
-						event.toolCallId,
-						event.args,
-						{
-							showImages: this.settingsManager.getShowImages(),
-							imageWidthCells: this.settingsManager.getImageWidthCells(),
-						},
-						this.getRegisteredToolDefinition(event.toolName),
-						this.ui,
-						this.sessionManager.getCwd(),
-					);
-					component.setExpanded(this.toolOutputExpanded);
-
-					// Claude Code style: collapse ALL consecutive collapsible tools
-					if (isGroupableTool(event.toolName)) {
-						if (this.lastToolGroup) {
-							this.lastToolGroup.addMember(component, event.args ?? {});
-							this.toolCallToGroup.set(event.toolCallId, this.lastToolGroup);
+						if (this.streamingMessage.stopReason === "aborted" || this.streamingMessage.stopReason === "error") {
+							if (!errorMessage) {
+								errorMessage = this.streamingMessage.errorMessage || "Error";
+							}
+							for (const [, component] of this.pendingTools.entries()) {
+								component.updateResult({
+									content: [{ type: "text", text: errorMessage }],
+									isError: true,
+								});
+							}
+							this.pendingTools.clear();
+							if (this.activeCollapsedToolGroup) {
+								this.activeCollapsedToolGroup.markAllCompleted();
+								this.activeCollapsedToolGroup = undefined;
+							}
+							this.collapsedGroupByToolCallId.clear();
+							this.activeToolSummary = undefined;
+							this.toolSummaryByToolCallId.clear();
+							this.activeToolBatchSummary = undefined;
+							this.toolBatchSummaryByToolCallId.clear();
 						} else {
-							// Immediately create a group (even for 1 item)
-							const group = new ToolGroupComponent(event.toolName, this.ui);
-							group.addMember(component, event.args ?? {});
-							this.toolCallToGroup.set(event.toolCallId, group);
-							group.setExpanded(this.toolOutputExpanded);
-							this.chatContainer.addChild(group);
-							this.lastToolGroup = group;
+							// Args are now complete - trigger diff computation for edit tools
+							for (const [, component] of this.pendingTools.entries()) {
+								component.setArgsComplete();
+							}
 						}
-					} else {
-						this.chatContainer.addChild(component);
-						this.lastToolGroup = undefined;
+						if (!projectedTurn.hasRenderableAssistantContent) {
+							this.chatContainer.removeChild(this.streamingComponent);
+						}
+						this.streamingComponent = undefined;
+						this.streamingMessage = undefined;
+						this.footer.invalidate();
 					}
-
-					this.pendingTools.set(event.toolCallId, component);
-				}
-				component.markExecutionStarted();
-				this.ui.requestRender();
-				break;
-			}
-
-			case "tool_execution_update": {
-				const component = this.pendingTools.get(event.toolCallId);
-				if (component) {
-					component.updateResult({ ...event.partialResult, isError: false }, true);
 					this.ui.requestRender();
-				}
-				break;
-			}
+					break;
 
-			case "tool_execution_end": {
-				notifyToolEnd(event.toolName);
-				const component = this.pendingTools.get(event.toolCallId);
-				if (component) {
-					component.updateResult({ ...event.result, isError: event.isError });
-					// Notify the group this tool belongs to
-					const group = this.toolCallToGroup.get(event.toolCallId);
-					if (group) {
-						group.markMemberCompleted(event.toolCallId, event.isError);
-						this.toolCallToGroup.delete(event.toolCallId);
-					}
-					this.pendingTools.delete(event.toolCallId);
-					this.ui.requestRender();
-				}
-				break;
-			}
-
-			case "agent_end":
-				if (this.settingsManager.getShowTerminalProgress()) {
-					this.ui.terminal.setProgress(false);
-				}
-				if (this.loadingAnimation) {
-					this.loadingAnimation.stop();
-					this.loadingAnimation = undefined;
-					this.statusContainer.clear();
-				}
-				if (this.streamingComponent) {
-					this.chatContainer.removeChild(this.streamingComponent);
-					this.streamingComponent = undefined;
-					this.streamingMessage = undefined;
-				}
-				this.pendingTools.clear();
-				this.lastToolGroup = undefined;
-				this.toolCallToGroup.clear();
-
-				await this.checkShutdownRequested();
-
-				this.ui.requestRender();
-				break;
-
-			case "compaction_start": {
-				if (this.settingsManager.getShowTerminalProgress()) {
-					this.ui.terminal.setProgress(true);
-				}
-				// Keep editor active; submissions are queued during compaction.
-				this.autoCompactionEscapeHandler = this.defaultEditor.onEscape;
-				this.defaultEditor.onEscape = () => {
-					this.session.abortCompaction();
-				};
-				this.statusContainer.clear();
-				const cancelHint = `(${keyText("app.interrupt")} to cancel)`;
-				const label =
-					event.reason === "manual"
-						? `Compacting context... ${cancelHint}`
-						: `${event.reason === "overflow" ? "Context overflow detected, " : ""}Auto-compacting... ${cancelHint}`;
-				this.autoCompactionLoader = new Loader(
-					this.ui,
-					(spinner) => theme.fg("accent", spinner),
-					(text) => theme.fg("muted", text),
-					label,
-				);
-				this.statusContainer.addChild(this.autoCompactionLoader);
-				this.ui.requestRender();
-				break;
-			}
-
-			case "compaction_end": {
-				if (this.settingsManager.getShowTerminalProgress()) {
-					this.ui.terminal.setProgress(false);
-				}
-				if (this.autoCompactionEscapeHandler) {
-					this.defaultEditor.onEscape = this.autoCompactionEscapeHandler;
-					this.autoCompactionEscapeHandler = undefined;
-				}
-				if (this.autoCompactionLoader) {
-					this.autoCompactionLoader.stop();
-					this.autoCompactionLoader = undefined;
-					this.statusContainer.clear();
-				}
-				if (event.aborted) {
-					if (event.reason === "manual") {
-						this.showError("Compaction cancelled");
-					} else {
-						this.showStatus("Auto-compaction cancelled");
-					}
-				} else if (event.result) {
-					this.chatContainer.clear();
-					this.rebuildChatFromMessages();
-					this.addMessageToChat(
-						createCompactionSummaryMessage(
-							event.result.summary,
-							event.result.tokensBefore,
-							new Date().toISOString(),
-						),
+				case "tool_execution_start": {
+					this.spinnerActiveToolCount++;
+					this.spinnerCurrentToolLabel = this.describeSpinnerToolLabel(
+						event.toolName,
+						event.args as Record<string, unknown>,
 					);
-					this.footer.invalidate();
-				} else if (event.errorMessage) {
-					if (event.reason === "manual") {
-						this.showError(event.errorMessage);
-					} else {
-						this.chatContainer.addChild(new Spacer(1));
-						this.chatContainer.addChild(new Text(theme.fg("error", event.errorMessage), 1, 0));
+					if (this.collapsedGroupByToolCallId.has(event.toolCallId)) {
+						this.ui.requestRender();
+						break;
 					}
+					if (this.toolSummaryByToolCallId.has(event.toolCallId)) {
+						this.ui.requestRender();
+						break;
+					}
+					if (this.toolBatchSummaryByToolCallId.has(event.toolCallId)) {
+						this.ui.requestRender();
+						break;
+					}
+					let component = this.pendingTools.get(event.toolCallId);
+					if (!component) {
+						component = new ToolExecutionComponent(
+							event.toolName,
+							event.toolCallId,
+							event.args,
+							{
+								showImages: this.settingsManager.getShowImages(),
+								imageWidthCells: this.settingsManager.getImageWidthCells(),
+							},
+							this.getRegisteredToolDefinition(event.toolName),
+							this.ui,
+							this.sessionManager.getCwd(),
+						);
+						component.setExpanded(this.toolOutputExpanded);
+						this.chatContainer.addChild(component);
+						this.pendingTools.set(event.toolCallId, component);
+					}
+					component.markExecutionStarted();
+					this.ui.requestRender();
+					break;
 				}
-				void this.flushCompactionQueue({ willRetry: event.willRetry });
-				this.ui.requestRender();
-				break;
-			}
 
-			case "auto_retry_start": {
-				// Set up escape to abort retry
-				this.retryEscapeHandler = this.defaultEditor.onEscape;
-				this.defaultEditor.onEscape = () => {
-					this.session.abortRetry();
-				};
-				// Show retry indicator
-				this.statusContainer.clear();
-				this.retryCountdown?.dispose();
-				const retryMessage = (seconds: number) =>
-					`Retrying (${event.attempt}/${event.maxAttempts}) in ${seconds}s... (${keyText("app.interrupt")} to cancel)`;
-				this.retryLoader = new Loader(
-					this.ui,
-					(spinner) => theme.fg("warning", spinner),
-					(text) => theme.fg("muted", text),
-					retryMessage(Math.ceil(event.delayMs / 1000)),
-				);
-				this.retryCountdown = new CountdownTimer(
-					event.delayMs,
-					this.ui,
-					(seconds) => {
-						this.retryLoader?.setMessage(retryMessage(seconds));
-					},
-					() => {
+				case "tool_execution_update": {
+					if (this.collapsedGroupByToolCallId.has(event.toolCallId)) {
+						this.ui.requestRender();
+						break;
+					}
+					if (this.toolSummaryByToolCallId.has(event.toolCallId)) {
+						this.ui.requestRender();
+						break;
+					}
+					if (this.toolBatchSummaryByToolCallId.has(event.toolCallId)) {
+						this.ui.requestRender();
+						break;
+					}
+					const component = this.pendingTools.get(event.toolCallId);
+					if (component) {
+						component.updateResult({ ...event.partialResult, isError: false }, true);
+						this.ui.requestRender();
+					}
+					break;
+				}
+
+				case "tool_execution_end": {
+					this.spinnerActiveToolCount = Math.max(0, this.spinnerActiveToolCount - 1);
+					if (this.spinnerActiveToolCount === 0) {
+						this.spinnerCurrentToolLabel = undefined;
+					}
+					const collapsedGroup = this.collapsedGroupByToolCallId.get(event.toolCallId);
+					if (collapsedGroup) {
+						collapsedGroup.markCompleted(event.toolCallId);
+						this.collapsedGroupByToolCallId.delete(event.toolCallId);
+						if (this.activeCollapsedToolGroup === collapsedGroup && collapsedGroup.isComplete()) {
+							this.activeCollapsedToolGroup = undefined;
+						}
+						this.ui.requestRender();
+						break;
+					}
+					const summary = this.toolSummaryByToolCallId.get(event.toolCallId);
+					if (summary) {
+						summary.updateResult(event.result as any);
+						this.toolSummaryByToolCallId.delete(event.toolCallId);
+						if (this.activeToolSummary === summary) {
+							this.activeToolSummary = undefined;
+						}
+						this.ui.requestRender();
+						break;
+					}
+					const batchSummary = this.toolBatchSummaryByToolCallId.get(event.toolCallId);
+					if (batchSummary) {
+						batchSummary.updateResult(event.toolCallId, event.result as any, event.toolName);
+						this.toolBatchSummaryByToolCallId.delete(event.toolCallId);
+						if (this.activeToolBatchSummary === batchSummary) {
+							const stillActive = [...this.toolBatchSummaryByToolCallId.values()].some(
+								(value) => value === batchSummary,
+							);
+							if (!stillActive) {
+								this.activeToolBatchSummary = undefined;
+							}
+						}
+						this.ui.requestRender();
+						break;
+					}
+					const component = this.pendingTools.get(event.toolCallId);
+					if (component) {
+						component.updateResult({ ...event.result, isError: event.isError });
+						this.pendingTools.delete(event.toolCallId);
+						this.ui.requestRender();
+					}
+					break;
+				}
+
+				case "agent_end":
+					if (this.settingsManager.getShowTerminalProgress()) {
+						this.ui.terminal.setProgress(false);
+					}
+					if (this.spinnerThinkingStartedAt === null) {
+						this.spinnerThinkingMinimumVisibleUntil = null;
+					}
+					if (this.loadingAnimation) {
+						this.loadingAnimation.stop();
+						this.loadingAnimation = undefined;
+					}
+					this.renderWorkingArea();
+					if (this.streamingComponent) {
+						this.chatContainer.removeChild(this.streamingComponent);
+						this.streamingComponent = undefined;
+						this.streamingMessage = undefined;
+					}
+					this.pendingTools.clear();
+					this.activeCollapsedToolGroup = undefined;
+					this.collapsedGroupByToolCallId.clear();
+					this.activeToolSummary = undefined;
+					this.toolSummaryByToolCallId.clear();
+					this.activeToolBatchSummary = undefined;
+					this.toolBatchSummaryByToolCallId.clear();
+					this.resetSpinnerRuntimeState();
+
+					await this.checkShutdownRequested();
+
+					this.ui.requestRender();
+					break;
+
+				case "compaction_hooks_start": {
+					this.spinnerSystemOverrideMessage =
+						event.phase === "pre" ? "Running PreCompact hooks…" : "Running PostCompact hooks…";
+					this.ui.requestRender();
+					break;
+				}
+
+				case "compaction_hooks_end": {
+					this.spinnerSystemOverrideMessage = undefined;
+					this.ui.requestRender();
+					break;
+				}
+
+				case "compaction_start": {
+					this.spinnerSystemOverrideMessage =
+						event.reason === "manual"
+							? "Compacting conversation"
+							: event.reason === "overflow"
+								? "Auto-compacting after overflow"
+								: "Auto-compacting conversation";
+					this.setSpinnerBanner({
+						kind: "info",
+						title:
+							event.reason === "manual"
+								? "正在整理上下文"
+								: event.reason === "overflow"
+									? "上下文溢出，正在自动整理"
+									: "正在自动整理上下文",
+						detail: `${keyText("app.interrupt")} 可取消`,
+					});
+					if (this.settingsManager.getShowTerminalProgress()) {
+						this.ui.terminal.setProgress(true);
+					}
+					// Keep editor active; submissions are queued during compaction.
+					this.autoCompactionEscapeHandler = this.defaultEditor.onEscape;
+					this.defaultEditor.onEscape = () => {
+						this.session.abortCompaction();
+					};
+					this.ui.requestRender();
+					break;
+				}
+
+				case "compaction_end": {
+					this.spinnerSystemOverrideMessage = undefined;
+					this.setSpinnerBanner(undefined);
+					if (this.settingsManager.getShowTerminalProgress()) {
+						this.ui.terminal.setProgress(false);
+					}
+					if (this.autoCompactionEscapeHandler) {
+						this.defaultEditor.onEscape = this.autoCompactionEscapeHandler;
+						this.autoCompactionEscapeHandler = undefined;
+					}
+					if (this.autoCompactionLoader) {
+						this.autoCompactionLoader.stop();
+						this.autoCompactionLoader = undefined;
+						this.statusContainer.clear();
+					}
+					if (event.aborted) {
+						if (event.reason === "manual") {
+							this.showError("Compaction cancelled");
+						} else {
+							this.showStatus("Auto-compaction cancelled");
+						}
+					} else if (event.result) {
+						this.chatContainer.clear();
+						this.rebuildChatFromMessages();
+						this.addMessageToChat(
+							createCompactionSummaryMessage(
+								event.result.summary,
+								event.result.tokensBefore,
+								new Date().toISOString(),
+							),
+						);
+						this.footer.invalidate();
+					} else if (event.errorMessage) {
+						if (event.reason === "manual") {
+							this.showError(event.errorMessage);
+						} else {
+							this.chatContainer.addChild(new Spacer(1));
+							this.chatContainer.addChild(new Text(theme.fg("error", event.errorMessage), 1, 0));
+						}
+					}
+					void this.flushCompactionQueue({ willRetry: event.willRetry });
+					this.ui.requestRender();
+					break;
+				}
+
+				case "auto_retry_start": {
+					this.spinnerSystemOverrideMessage = `Retrying request (${event.attempt}/${event.maxAttempts})`;
+					this.setSpinnerBanner({
+						kind: "warning",
+						title: "接口不稳定，正在自动重试",
+						detail: `第 ${event.attempt}/${event.maxAttempts} 次重试 · ${event.errorMessage || "request failed"}`,
+					});
+					// Set up escape to abort retry
+					this.retryEscapeHandler = this.defaultEditor.onEscape;
+					this.defaultEditor.onEscape = () => {
+						this.session.abortRetry();
+					};
+					this.retryCountdown?.dispose();
+					this.retryCountdown = new CountdownTimer(
+						event.delayMs,
+						this.ui,
+						(seconds) => {
+							this.setSpinnerBanner({
+								kind: "warning",
+								title: "接口不稳定，正在自动重试",
+								detail: `第 ${event.attempt}/${event.maxAttempts} 次重试 · ${seconds}s 后继续`,
+							});
+						},
+						() => {
+							this.retryCountdown = undefined;
+						},
+					);
+					this.ui.requestRender();
+					break;
+				}
+
+				case "auto_retry_end": {
+					this.spinnerSystemOverrideMessage = undefined;
+					// Restore escape handler
+					if (this.retryEscapeHandler) {
+						this.defaultEditor.onEscape = this.retryEscapeHandler;
+						this.retryEscapeHandler = undefined;
+					}
+					if (this.retryCountdown) {
+						this.retryCountdown.dispose();
 						this.retryCountdown = undefined;
-					},
-				);
-				this.statusContainer.addChild(this.retryLoader);
-				this.ui.requestRender();
-				break;
+					}
+					this.setSpinnerBanner(
+						event.success
+							? {
+									kind: "success",
+									title: "接口已恢复",
+								}
+							: {
+									kind: "error",
+									title: "接口请求失败",
+									detail: `已重试 ${event.attempt} 次`,
+								},
+						event.success ? { expiresMs: 1500 } : undefined,
+					);
+					if (!event.success) {
+						this.showError(
+							`Retry failed after ${event.attempt} attempts: ${event.finalError || "Unknown error"}`,
+						);
+					}
+					this.ui.requestRender();
+					break;
+				}
 			}
-
-			case "auto_retry_end": {
-				// Restore escape handler
-				if (this.retryEscapeHandler) {
-					this.defaultEditor.onEscape = this.retryEscapeHandler;
-					this.retryEscapeHandler = undefined;
-				}
-				if (this.retryCountdown) {
-					this.retryCountdown.dispose();
-					this.retryCountdown = undefined;
-				}
-				// Stop loader
-				if (this.retryLoader) {
-					this.retryLoader.stop();
-					this.retryLoader = undefined;
-					this.statusContainer.clear();
-				}
-				// Show error only on final failure (success shows normal response)
-				if (!event.success) {
-					this.showError(`Retry failed after ${event.attempt} attempts: ${event.finalError || "Unknown error"}`);
-				}
-				this.ui.requestRender();
-				break;
-			}
+		} finally {
+			this.syncProgressSurfaceRefreshLoop();
 		}
 	}
 
@@ -3199,12 +3651,6 @@ export class InteractiveMode {
 			case "user": {
 				const textContent = this.getUserMessageText(message);
 				if (textContent) {
-					// System-injected steer messages (e.g. TTSR rule reminders):
-					// Show as dim italic text, distinct from user messages
-					if (textContent.startsWith("[规则提醒]") || textContent.startsWith("[Rule Reminder]")) {
-						this.chatContainer.addChild(new Text(theme.fg("dim", theme.italic(textContent)), 1, 0));
-						break;
-					}
 					const skillBlock = parseSkillBlock(textContent);
 					if (skillBlock) {
 						// Render skill block (collapsible)
@@ -3263,6 +3709,12 @@ export class InteractiveMode {
 		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
 	): void {
 		this.pendingTools.clear();
+		this.activeCollapsedToolGroup = undefined;
+		this.collapsedGroupByToolCallId.clear();
+		this.activeToolSummary = undefined;
+		this.toolSummaryByToolCallId.clear();
+		this.activeToolBatchSummary = undefined;
+		this.toolBatchSummaryByToolCallId.clear();
 		const renderedPendingTools = new Map<string, ToolExecutionComponent>();
 
 		if (options.updateFooter) {
@@ -3270,55 +3722,105 @@ export class InteractiveMode {
 			this.updateEditorBorderColor();
 		}
 
-		for (const message of sessionContext.messages) {
-			// Assistant messages need special handling for tool calls
-			if (message.role === "assistant") {
-				this.addMessageToChat(message);
-				// Render tool call components
-				for (const content of message.content) {
-					if (content.type === "toolCall") {
-						const component = new ToolExecutionComponent(
-							content.name,
-							content.id,
-							content.arguments,
-							{
-								showImages: this.settingsManager.getShowImages(),
-								imageWidthCells: this.settingsManager.getImageWidthCells(),
-							},
-							this.getRegisteredToolDefinition(content.name),
-							this.ui,
-							this.sessionManager.getCwd(),
-						);
-						component.setExpanded(this.toolOutputExpanded);
-						this.chatContainer.addChild(component);
+		const projectedEntries = collapseReadSearchGroups(projectTranscript(sessionContext.messages));
 
-						if (message.stopReason === "aborted" || message.stopReason === "error") {
-							let errorMessage: string;
-							if (message.stopReason === "aborted") {
-								const retryAttempt = this.session.retryAttempt;
-								errorMessage =
-									retryAttempt > 0
-										? `Aborted after ${retryAttempt} retry attempt${retryAttempt > 1 ? "s" : ""}`
-										: "Operation aborted";
-							} else {
-								errorMessage = message.errorMessage || "Error";
-							}
-							component.updateResult({ content: [{ type: "text", text: errorMessage }], isError: true });
+		for (let index = 0; index < projectedEntries.length; index++) {
+			const entry = projectedEntries[index];
+			if (entry.kind === "assistant_turn") {
+				const nextEntry = projectedEntries[index + 1];
+				if (canUseSingleToolSummary(entry, nextEntry)) {
+					if (entry.hasRenderableAssistantContent) {
+						this.addMessageToChat(entry.message);
+					}
+					const summaryComponent = new AssistantToolSummaryComponent(
+						entry.toolCalls[0].name,
+						entry.toolCalls[0].arguments,
+						nextEntry.message,
+						this.sessionManager.getCwd(),
+					);
+					summaryComponent.setExpanded(this.toolOutputExpanded);
+					this.chatContainer.addChild(summaryComponent);
+					index += 1;
+					continue;
+				}
+
+				const toolResultBatch = collectSequentialToolResults(entry, projectedEntries, index + 1);
+				if (toolResultBatch) {
+					if (entry.hasRenderableAssistantContent) {
+						this.addMessageToChat(entry.message);
+					}
+					const batchSummary = new AssistantToolBatchSummaryComponent(
+						toolResultBatch.map((resultEntry, resultIndex) => ({
+							toolName: entry.toolCalls[resultIndex]?.name ?? resultEntry.message.toolName,
+							args: entry.toolCalls[resultIndex]?.arguments ?? {},
+							result: resultEntry.message,
+						})),
+						this.sessionManager.getCwd(),
+					);
+					batchSummary.setExpanded(this.toolOutputExpanded);
+					this.chatContainer.addChild(batchSummary);
+					index += toolResultBatch.length;
+					continue;
+				}
+
+				this.addMessageToChat(entry.message);
+				for (const toolCall of entry.toolCalls) {
+					const component = this.shouldRenderToolAsExecutionComponent(toolCall.name)
+						? new ToolExecutionComponent(
+								toolCall.name,
+								toolCall.id,
+								toolCall.arguments,
+								{
+									showImages: this.settingsManager.getShowImages(),
+									imageWidthCells: this.settingsManager.getImageWidthCells(),
+								},
+								this.getRegisteredToolDefinition(toolCall.name),
+								this.ui,
+								this.sessionManager.getCwd(),
+							)
+						: new AssistantToolSummaryComponent(
+								toolCall.name,
+								toolCall.arguments,
+								undefined,
+								this.sessionManager.getCwd(),
+							);
+					component.setExpanded(this.toolOutputExpanded);
+					this.chatContainer.addChild(component);
+
+					if (entry.message.stopReason === "aborted" || entry.message.stopReason === "error") {
+						let errorMessage: string;
+						if (entry.message.stopReason === "aborted") {
+							const retryAttempt = this.session.retryAttempt;
+							errorMessage =
+								retryAttempt > 0
+									? `Aborted after ${retryAttempt} retry attempt${retryAttempt > 1 ? "s" : ""}`
+									: "Operation aborted";
 						} else {
-							renderedPendingTools.set(content.id, component);
+							errorMessage = entry.message.errorMessage || "Error";
 						}
+						component.updateResult({
+							role: "toolResult",
+							toolCallId: toolCall.id,
+							toolName: toolCall.name,
+							content: [{ type: "text", text: errorMessage }],
+							timestamp: entry.message.timestamp,
+						} as any);
+					} else {
+						renderedPendingTools.set(toolCall.id, component as unknown as ToolExecutionComponent);
 					}
 				}
-			} else if (message.role === "toolResult") {
-				// Match tool results to pending tool components
-				const component = renderedPendingTools.get(message.toolCallId);
+			} else if (entry.kind === "collapsed_tool_group") {
+				const component = new CollapsedToolGroupComponent(this.sessionManager.getCwd(), entry);
+				component.setExpanded(this.toolOutputExpanded);
+				this.chatContainer.addChild(component);
+			} else if (entry.message.role === "toolResult") {
+				const component = renderedPendingTools.get(entry.message.toolCallId);
 				if (component) {
-					component.updateResult(message);
-					renderedPendingTools.delete(message.toolCallId);
+					component.updateResult(entry.message);
+					renderedPendingTools.delete(entry.message.toolCallId);
 				}
 			} else {
-				// All other messages use standard rendering
-				this.addMessageToChat(message, options);
+				this.addMessageToChat(entry.message, options);
 			}
 		}
 
@@ -3327,7 +3829,6 @@ export class InteractiveMode {
 		}
 		this.ui.requestRender();
 	}
-
 	renderInitialMessages(): void {
 		// Get aligned messages and entries from session context
 		const context = this.sessionManager.buildSessionContext();
@@ -3760,23 +4261,6 @@ export class InteractiveMode {
 	 * Get all queued messages (read-only).
 	 * Combines session queue and compaction queue.
 	 */
-	private getAllQueuedMessages(): { steering: string[]; followUp: string[] } {
-		return {
-			steering: [
-				...this.session.getSteeringMessages(),
-				...this.compactionQueuedMessages.filter((msg) => msg.mode === "steer").map((msg) => msg.text),
-			],
-			followUp: [
-				...this.session.getFollowUpMessages(),
-				...this.compactionQueuedMessages.filter((msg) => msg.mode === "followUp").map((msg) => msg.text),
-			],
-		};
-	}
-
-	/**
-	 * Clear all queued messages and return their contents.
-	 * Clears both session queue and compaction queue.
-	 */
 	private clearAllQueues(): { steering: string[]; followUp: string[] } {
 		const { steering, followUp } = this.session.clearQueue();
 		const compactionSteering = this.compactionQueuedMessages
@@ -3795,20 +4279,68 @@ export class InteractiveMode {
 	private updatePendingMessagesDisplay(): void {
 		this.pendingMessagesContainer.clear();
 		const { steering: steeringMessages, followUp: followUpMessages } = this.getAllQueuedMessages();
-		if (steeringMessages.length > 0 || followUpMessages.length > 0) {
+		if (steeringMessages.length > 0 || followUpMessages.length > 0 || this.pendingBashComponents.length > 0) {
 			this.pendingMessagesContainer.addChild(new Spacer(1));
-			for (const message of steeringMessages) {
-				const text = theme.fg("dim", `Steering: ${message}`);
-				this.pendingMessagesContainer.addChild(new TruncatedText(text, 1, 0));
+		}
+
+		if (steeringMessages.length > 0 || followUpMessages.length > 0) {
+			const total = steeringMessages.length + followUpMessages.length;
+			const parts: string[] = [];
+			if (steeringMessages.length > 0) {
+				parts.push(`${steeringMessages.length} steer`);
 			}
-			for (const message of followUpMessages) {
-				const text = theme.fg("dim", `Follow-up: ${message}`);
-				this.pendingMessagesContainer.addChild(new TruncatedText(text, 1, 0));
+			if (followUpMessages.length > 0) {
+				parts.push(`${followUpMessages.length} follow-up`);
 			}
+			const summaryText = theme.fg("dim", `Queued ${total} · ${parts.join(" · ")}`);
+			this.pendingMessagesContainer.addChild(new TruncatedText(summaryText, 1, 0));
+
+			const latest = this.latestQueuedMessage(steeringMessages, followUpMessages);
+			if (latest) {
+				const latestText = theme.fg("dim", `↳ ${latest.label}: ${latest.text}`);
+				this.pendingMessagesContainer.addChild(new TruncatedText(latestText, 1, 0));
+			}
+
 			const dequeueHint = this.getAppKeyDisplay("app.message.dequeue");
 			const hintText = theme.fg("dim", `↳ ${dequeueHint} to edit all queued messages`);
 			this.pendingMessagesContainer.addChild(new TruncatedText(hintText, 1, 0));
 		}
+
+		if (this.pendingBashComponents.length > 0) {
+			for (const component of this.pendingBashComponents) {
+				this.pendingMessagesContainer.addChild(component);
+			}
+		}
+	}
+
+	/**
+	 * Get all queued messages (read-only).
+	 * Combines session queue and compaction queue.
+	 */
+	private getAllQueuedMessages(): { steering: string[]; followUp: string[] } {
+		return {
+			steering: [
+				...this.session.getSteeringMessages(),
+				...this.compactionQueuedMessages.filter((msg) => msg.mode === "steer").map((msg) => msg.text),
+			],
+			followUp: [
+				...this.session.getFollowUpMessages(),
+				...this.compactionQueuedMessages.filter((msg) => msg.mode === "followUp").map((msg) => msg.text),
+			],
+		};
+	}
+
+	private latestQueuedMessage(
+		steeringMessages: string[],
+		followUpMessages: string[],
+	): { label: string; text: string } | undefined {
+		if (followUpMessages.length > 0) {
+			return { label: "Follow-up", text: followUpMessages[followUpMessages.length - 1] };
+		}
+		if (steeringMessages.length > 0) {
+			return { label: "Steer", text: steeringMessages[steeringMessages.length - 1] };
+		}
+		return undefined;
 	}
 
 	private restoreQueuedMessagesToEditor(options?: { abort?: boolean; currentText?: string }): number {
@@ -3930,10 +4462,10 @@ export class InteractiveMode {
 	/** Move pending bash components from pending area to chat */
 	private flushPendingBashComponents(): void {
 		for (const component of this.pendingBashComponents) {
-			this.pendingMessagesContainer.removeChild(component);
 			this.chatContainer.addChild(component);
 		}
 		this.pendingBashComponents = [];
+		this.updatePendingMessagesDisplay();
 	}
 
 	// =========================================================================
@@ -4231,7 +4763,7 @@ export class InteractiveMode {
 		const allModels = this.session.modelRegistry.getAvailable();
 
 		if (allModels.length === 0) {
-			this.showStatus("没有可用的模型");
+			this.showStatus("No models available");
 			return;
 		}
 
@@ -4639,7 +5171,9 @@ export class InteractiveMode {
 	private showLoginProviderSelector(authType: "oauth" | "api_key"): void {
 		const providerOptions = this.getLoginProviderOptions(authType);
 		if (providerOptions.length === 0) {
-			this.showStatus(authType === "oauth" ? "没有可用的订阅 provider。" : "没有可用的 API key provider。");
+			this.showStatus(
+				authType === "oauth" ? "No subscription providers available." : "No API key providers available.",
+			);
 			return;
 		}
 
@@ -4912,16 +5446,19 @@ export class InteractiveMode {
 		const restoreEditor = () => {
 			this.editorContainer.clear();
 			this.editorContainer.addChild(this.editor);
+			this.setExtensionStatus("ui", undefined);
 			this.ui.setFocus(this.editor);
 			this.ui.requestRender();
 		};
 
 		try {
+			this.setExtensionStatus("ui", `waiting · Login to ${providerName}`);
 			await this.session.modelRegistry.authStorage.login(providerId as OAuthProviderId, {
 				onAuth: (info: { url: string; instructions?: string }) => {
 					dialog.showAuth(info.url, info.instructions);
 
 					if (usesCallbackServer) {
+						this.setExtensionStatus("ui", `waiting · Complete browser login for ${providerName}`);
 						// Show input for manual paste, racing with callback
 						dialog
 							.showManualInput("Paste redirect URL below, or complete login in browser:")
@@ -4939,16 +5476,19 @@ export class InteractiveMode {
 							});
 					} else if (providerId === "github-copilot") {
 						// GitHub Copilot polls after onAuth
+						this.setExtensionStatus("ui", "waiting · Browser authentication");
 						dialog.showWaiting("Waiting for browser authentication...");
 					}
 					// For Anthropic: onPrompt is called immediately after
 				},
 
 				onPrompt: async (prompt: { message: string; placeholder?: string }) => {
+					this.setExtensionStatus("ui", `waiting · ${prompt.message}`);
 					return dialog.showPrompt(prompt.message, prompt.placeholder);
 				},
 
 				onProgress: (message: string) => {
+					this.setExtensionStatus("ui", `waiting · ${message}`);
 					dialog.showProgress(message);
 				},
 
@@ -5561,8 +6101,8 @@ export class InteractiveMode {
 			// Create UI component for display
 			this.bashComponent = new BashExecutionComponent(command, this.ui, excludeFromContext);
 			if (this.session.isStreaming) {
-				this.pendingMessagesContainer.addChild(this.bashComponent);
 				this.pendingBashComponents.push(this.bashComponent);
+				this.updatePendingMessagesDisplay();
 			} else {
 				this.chatContainer.addChild(this.bashComponent);
 			}
@@ -5591,8 +6131,8 @@ export class InteractiveMode {
 
 		if (isDeferred) {
 			// Show in pending area when agent is streaming
-			this.pendingMessagesContainer.addChild(this.bashComponent);
 			this.pendingBashComponents.push(this.bashComponent);
+			this.updatePendingMessagesDisplay();
 		} else {
 			// Show in chat immediately when agent is idle
 			this.chatContainer.addChild(this.bashComponent);
@@ -5654,6 +6194,10 @@ export class InteractiveMode {
 
 	stop(): void {
 		this.unregisterSignalHandlers();
+		if (this.progressSurfaceRefreshTimer) {
+			clearInterval(this.progressSurfaceRefreshTimer);
+			this.progressSurfaceRefreshTimer = undefined;
+		}
 		if (this.settingsManager.getShowTerminalProgress()) {
 			this.ui.terminal.setProgress(false);
 		}

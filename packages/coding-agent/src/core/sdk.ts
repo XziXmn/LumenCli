@@ -277,6 +277,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			: defaultActiveToolNames;
 
 	let agent: Agent;
+	let sessionRef: AgentSession | undefined;
 
 	// Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)
 	const convertToLlmWithBlockImages = (messages: AgentMessage[]): Message[] => {
@@ -345,11 +346,14 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			});
 		},
 		onPayload: async (payload, _model) => {
+			sessionRef?.setSpinnerBudgetUsageFromPayload(payload);
 			const runner = extensionRunnerRef.current;
 			if (!runner?.hasHandlers("before_provider_request")) {
 				return payload;
 			}
-			return runner.emitBeforeProviderRequest(payload);
+			const nextPayload = await runner.emitBeforeProviderRequest(payload);
+			sessionRef?.setSpinnerBudgetUsageFromPayload(nextPayload);
+			return nextPayload;
 		},
 		onResponse: async (response, _model) => {
 			const runner = extensionRunnerRef.current;
@@ -403,6 +407,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		extensionRunnerRef,
 		sessionStartEvent: options.sessionStartEvent,
 	});
+	sessionRef = session;
 	const extensionsResult = resourceLoader.getExtensions();
 
 	return {

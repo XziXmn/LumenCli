@@ -12,6 +12,7 @@
  */
 
 import * as crypto from "node:crypto";
+import type { Component, TUI } from "@earendil-works/pi-tui";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
 import type {
 	ExtensionUIContext,
@@ -171,6 +172,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 		setWorkingMessage(_message?: string): void {
 			// Working message not supported in RPC mode - requires TUI loader access
+		},
+
+		setWorkingDetails(_content?: string[] | ((tui: TUI, theme: Theme) => Component & { dispose?(): void })): void {
+			// Working details not supported in RPC mode - requires TUI loader access
 		},
 
 		setWorkingVisible(_visible: boolean): void {
@@ -401,12 +406,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "steer": {
-				await session.steer(command.message, command.images);
+				await session.steerWithSource(command.message, command.images, "rpc");
 				return success(id, "steer");
 			}
 
 			case "follow_up": {
-				await session.followUp(command.message, command.images);
+				await session.followUpWithSource(command.message, command.images, "rpc");
 				return success(id, "follow_up");
 			}
 

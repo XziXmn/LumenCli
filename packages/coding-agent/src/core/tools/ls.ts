@@ -3,7 +3,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { existsSync, readdirSync, statSync } from "fs";
 import nodePath from "path";
 import { type Static, Type } from "typebox";
-import { truncateToVisualLines } from "../../modes/interactive/components/visual-truncate.js";
+import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { resolveToCwd } from "./path-utils.js";
 import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
@@ -58,7 +58,9 @@ function formatLsCall(
 	const invalidArg = invalidArgText(theme);
 	const pathText = path === null ? invalidArg : path || ".";
 	let text = theme.fg("toolTitle", theme.bold(`List(${pathText})`));
-	if (limit !== undefined) text += theme.fg("toolOutput", ` ${theme.fg("muted", `[limit ${limit}]`)}`);
+	if (limit !== undefined) {
+		text += theme.fg("toolOutput", ` (limit ${limit})`);
+	}
 	return text;
 }
 
@@ -70,21 +72,23 @@ function formatLsResult(
 	options: ToolRenderResultOptions,
 	theme: typeof import("../../modes/interactive/theme/theme.js").theme,
 	showImages: boolean,
-	width: number,
 ): string {
+	if (!options.expanded) {
+		const output = getTextOutput(result, showImages).trim();
+		const itemCount = output ? output.split("\n").filter(Boolean).length : 0;
+		return `\n${theme.fg("toolOutput", `Listed ${itemCount} ${itemCount === 1 ? "item" : "items"}`)}`;
+	}
+
 	const output = getTextOutput(result, showImages).trim();
 	let text = "";
 	if (output) {
-		// [Lumen] Visual-line truncation (head mode for sorted directory entries).
-		const styledOutput = output
-			.split("\n")
-			.map((line) => theme.fg("toolOutput", line))
-			.join("\n");
-		if (options.expanded) {
-			text += `\n${styledOutput}`;
-		} else {
-			const preview = truncateToVisualLines(styledOutput, 20, width, 0, "head");
-			text += `\n${preview.visualLines.join("\n")}`;
+		const lines = output.split("\n");
+		const maxLines = options.expanded ? lines.length : 20;
+		const displayLines = lines.slice(0, maxLines);
+		const remaining = lines.length - maxLines;
+		text += `\n${displayLines.map((line) => theme.fg("toolOutput", line)).join("\n")}`;
+		if (remaining > 0) {
+			text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand", "to expand")})`;
 		}
 	}
 
@@ -220,23 +224,9 @@ export function createLsToolDefinition(
 			return text;
 		},
 		renderResult(result, options, theme, context) {
-			// [Lumen] Render lazily at width-time so visual-line truncation reacts to resizes.
-			const showImages = context.showImages;
-			let cachedWidth: number | undefined;
-			let cachedLines: string[] | undefined;
-			return {
-				render(width: number): string[] {
-					if (cachedLines !== undefined && cachedWidth === width) return cachedLines;
-					const out = formatLsResult(result as any, options, theme, showImages, width);
-					cachedLines = out.split("\n");
-					cachedWidth = width;
-					return cachedLines;
-				},
-				invalidate() {
-					cachedLines = undefined;
-					cachedWidth = undefined;
-				},
-			};
+			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+			text.setText(formatLsResult(result as any, options, theme, context.showImages));
+			return text;
 		},
 	};
 }
