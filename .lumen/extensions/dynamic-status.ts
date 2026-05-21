@@ -2,7 +2,7 @@
  * Legacy shim.
  *
  * Claude-style working / task / queued UI is now owned by
- * `.lumen/extensions/claude-task-ui.ts`.
+ * the interactive-mode core progress surface.
  *
  * Keep this file as a no-op shim so older local references don't break.
  */

@@ -1,13 +1,16 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { __renderTaskbarLinesForTest, type TaskbarSnapshot } from "../../../.lumen/extensions/claude-task-ui.js";
+import {
+	__renderProgressSurfaceLinesForTest,
+	type ProgressSurfaceSnapshot,
+} from "../src/modes/interactive/components/progress-surface.js";
 import { initTheme, theme } from "../src/modes/interactive/theme/theme.js";
 import { stripAnsi } from "../src/utils/ansi.js";
 
-function render(snapshot: TaskbarSnapshot): string {
-	return stripAnsi(__renderTaskbarLinesForTest(snapshot, theme).join("\n"));
+function render(snapshot: ProgressSurfaceSnapshot): string {
+	return stripAnsi(__renderProgressSurfaceLinesForTest(snapshot, theme).join("\n"));
 }
 
-describe("claude task ui taskbar", () => {
+describe("core progress surface", () => {
 	beforeAll(() => {
 		initTheme("dark");
 	});
@@ -31,14 +34,6 @@ describe("claude task ui taskbar", () => {
 					group: "数据采集",
 				},
 			],
-			summary: {
-				total: 2,
-				completed: 0,
-				inProgress: 1,
-				pending: 1,
-				failed: 0,
-				abandoned: 0,
-			},
 			queued: undefined,
 			spinner: {
 				elapsedMs: 9_000,
@@ -100,14 +95,6 @@ describe("claude task ui taskbar", () => {
 					group: "阶段一",
 				},
 			],
-			summary: {
-				total: 5,
-				completed: 1,
-				inProgress: 2,
-				pending: 2,
-				failed: 0,
-				abandoned: 0,
-			},
 			queued: undefined,
 			spinner: {
 				elapsedMs: 18_000,
@@ -118,17 +105,175 @@ describe("claude task ui taskbar", () => {
 		});
 
 		expect(output).toContain("正在实现支付模块...");
+		expect(output).not.toContain("@worker 正在实现支付模块...");
 		expect(output).toContain("@worker: edit src/payment.ts · 3 uses · 640 tokens");
 		expect(output).toContain("@tester: 补回归测试 · pending");
+		expect(output).toContain("1 running task");
 		expect(output).toContain("Plan");
 		expect(output).toContain("☒ 需求梳理");
 		expect(output).toContain("☐ 补回归测试");
 	});
 
-	it("renders banner and queued commands together", () => {
+	it("prefers the current todo headline over a running subagent detail", () => {
+		const output = render({
+			tasks: [
+				{
+					id: "task:explore-1",
+					content: "读取 CONTRIBUTING.md",
+					subject: "读取 CONTRIBUTING.md",
+					status: "running",
+					group: "explore",
+					meta: "read CONTRIBUTING.md",
+					toolCount: 1,
+					tokens: 406,
+				},
+				{
+					id: "todo:0:0:抽取公共工具类",
+					content: "抽取公共工具类",
+					subject: "抽取公共工具类",
+					activeForm: "抽取公共工具类",
+					status: "in_progress",
+					group: "阶段一",
+				},
+			],
+			queued: undefined,
+			spinner: {
+				elapsedMs: 22_000,
+				outputTokens: 406,
+				mode: "tool-use",
+			},
+			expanded: false,
+		});
+
+		expect(output).toContain("抽取公共工具类...");
+		expect(output).not.toContain("@explore 读取 CONTRIBUTING.md...");
+		expect(output).toContain("@explore: read CONTRIBUTING.md");
+	});
+
+	it("aggregates multi-agent execution in the headline while keeping detail rows below", () => {
+		const output = render({
+			tasks: [
+				{
+					id: "task:explore-1",
+					content: "读取 CONTRIBUTING.md",
+					subject: "读取 CONTRIBUTING.md",
+					status: "running",
+					group: "explore",
+					meta: "read CONTRIBUTING.md",
+					toolCount: 1,
+					tokens: 1700,
+					durationMs: 14_000,
+				},
+				{
+					id: "task:review-1",
+					content: "扫描错误处理路径",
+					subject: "扫描错误处理路径",
+					status: "running",
+					group: "review",
+					meta: "grep retry logic",
+					toolCount: 2,
+					tokens: 2100,
+					durationMs: 15_000,
+				},
+			],
+			queued: undefined,
+			spinner: {
+				elapsedMs: 15_000,
+				outputTokens: 3800,
+				mode: "tool-use",
+			},
+			expanded: false,
+		});
+
+		expect(output).toContain("2 running tasks...");
+		expect(output).toContain("@explore: read CONTRIBUTING.md");
+		expect(output).toContain("@review: grep retry logic");
+	});
+
+	it("keeps the generic working verb when there is no active todo and the leader is just streaming", () => {
+		const output = render({
+			tasks: [
+				{
+					id: "task:explore-1",
+					content: "读取 CONTRIBUTING.md",
+					subject: "读取 CONTRIBUTING.md",
+					status: "running",
+					group: "explore",
+					meta: "read CONTRIBUTING.md",
+					toolCount: 1,
+					tokens: 1700,
+					durationMs: 14_000,
+				},
+				{
+					id: "task:review-1",
+					content: "扫描错误处理路径",
+					subject: "扫描错误处理路径",
+					status: "running",
+					group: "review",
+					meta: "grep retry logic",
+					toolCount: 2,
+					tokens: 2100,
+					durationMs: 15_000,
+				},
+			],
+			queued: undefined,
+			spinner: {
+				elapsedMs: 15_000,
+				outputTokens: 3800,
+				mode: "responding",
+			},
+			expanded: false,
+		});
+
+		expect(output).not.toContain("2 running tasks...");
+		expect(output).toContain("@explore: read CONTRIBUTING.md");
+		expect(output).toContain("@review: grep retry logic");
+	});
+
+	it("keeps a live multi-agent execution headline instead of falling back to idle", () => {
+		const output = render({
+			tasks: [
+				{
+					id: "task:explore-1",
+					content: "查看Git分支信息",
+					subject: "查看Git分支信息",
+					status: "running",
+					group: "explore",
+					meta: "git branch --show-current",
+					toolCount: 3,
+					tokens: 2048,
+					durationMs: 11_000,
+				},
+				{
+					id: "task:explore-2",
+					content: "读取tsconfig配置",
+					subject: "读取tsconfig配置",
+					status: "running",
+					group: "explore",
+					meta: "read tsconfig.json",
+					toolCount: 2,
+					tokens: 1700,
+					durationMs: 12_000,
+				},
+			],
+			queued: undefined,
+			spinner: {
+				elapsedMs: 12_000,
+				outputTokens: 0,
+				mode: "tool-use",
+			},
+			expanded: false,
+		});
+
+		expect(output).toMatch(/[⣻⣽⣾⣷⣯⣟⢿⡿] 2 running tasks\.\.\./);
+		expect(output).toContain("@explore: git branch --show-current");
+		expect(output).toContain("@explore: read tsconfig.json");
+		expect(output).not.toContain("Idle");
+	});
+
+	it("renders banner headline without mixing queued commands into the status surface", () => {
 		const output = render({
 			tasks: [],
-			summary: undefined,
 			queued: {
 				steering: [],
 				followUp: [
@@ -153,14 +298,13 @@ describe("claude task ui taskbar", () => {
 
 		expect(output).toContain("接口不稳定，正在自动重试");
 		expect(output).toContain("第 1/3 次重试 · timeout");
-		expect(output).toContain("1 queued command");
-		expect(output).toContain("Follow-up: 完成后补文档");
+		expect(output).not.toContain("1 queued command");
+		expect(output).not.toContain("Follow-up: 完成后补文档");
 	});
 
 	it("renders approval banner distinctly", () => {
 		const output = render({
 			tasks: [],
-			summary: undefined,
 			queued: undefined,
 			spinner: {
 				banner: {
@@ -179,7 +323,6 @@ describe("claude task ui taskbar", () => {
 	it("renders user-input banner distinctly", () => {
 		const output = render({
 			tasks: [],
-			summary: undefined,
 			queued: undefined,
 			spinner: {
 				banner: {
@@ -198,7 +341,6 @@ describe("claude task ui taskbar", () => {
 	it("renders stream recovery banner distinctly", () => {
 		const output = render({
 			tasks: [],
-			summary: undefined,
 			queued: undefined,
 			spinner: {
 				banner: {
@@ -232,17 +374,35 @@ describe("claude task ui taskbar", () => {
 					group: "阶段一",
 				},
 			],
-			summary: {
-				total: 2,
-				completed: 1,
-				inProgress: 0,
-				pending: 0,
-				failed: 0,
-				abandoned: 1,
-			},
 			queued: undefined,
 			spinner: undefined,
 			expanded: true,
+		});
+
+		expect(output.trim()).toBe("");
+	});
+
+	it("hides taskbar when only todo plan remains but execution is complete", () => {
+		const output = render({
+			tasks: [
+				{
+					id: "todo:0:0:实现分页查询",
+					content: "实现分页查询",
+					subject: "实现分页查询",
+					status: "in_progress",
+					group: "阶段一",
+				},
+				{
+					id: "todo:0:1:添加参数校验",
+					content: "添加参数校验",
+					subject: "添加参数校验",
+					status: "pending",
+					group: "阶段一",
+				},
+			],
+			queued: undefined,
+			spinner: undefined,
+			expanded: false,
 		});
 
 		expect(output.trim()).toBe("");

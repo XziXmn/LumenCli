@@ -100,33 +100,22 @@ export default function lumenAskUserExtension(pi: ExtensionAPI): void {
 				};
 			}
 
-			ctx.ui.setSpinnerState({
-				banner: {
-					kind: "input",
-					title: "等待你的输入",
-					detail: question,
-				},
-			});
-			try {
-				const answer =
-					mode === "text"
-						? await ctx.ui.input(question, params.default, { signal: _signal })
-						: await ctx.ui.select("Ask User", buildOptions(mode, options), { signal: _signal });
+			const answer =
+				mode === "text"
+					? await ctx.ui.input(question, params.default, { signal: _signal })
+					: await ctx.ui.select("Ask User", buildOptions(mode, options), { signal: _signal });
 
-				if (!answer) {
-					return {
-						content: [{ type: "text" as const, text: "User cancelled the selection." }],
-						details: { question, mode, options, answer: null, cancelled: true } as AskUserDetails,
-					};
-				}
-
+			if (!answer) {
 				return {
-					content: [{ type: "text" as const, text: `User answered: ${answer}` }],
-					details: { question, mode, options, answer, cancelled: false } as AskUserDetails,
+					content: [{ type: "text" as const, text: "User cancelled the selection." }],
+					details: { question, mode, options, answer: null, cancelled: true } as AskUserDetails,
 				};
-			} finally {
-				ctx.ui.setSpinnerState(undefined);
 			}
+
+			return {
+				content: [{ type: "text" as const, text: `User answered: ${answer}` }],
+				details: { question, mode, options, answer, cancelled: false } as AskUserDetails,
+			};
 		},
 
 		renderCall(args: { question?: string; mode?: string; options?: string[] }, theme, _context) {

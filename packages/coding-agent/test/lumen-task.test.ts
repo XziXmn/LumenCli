@@ -336,6 +336,129 @@ describe("lumen-task helpers", () => {
 		expect(stripAnsi(lines.join("\n")).trim()).toBe("");
 	});
 
+	it("renderResult suppresses successful task summaries in transcript", async () => {
+		const extensionsResult = await createTestExtensionsResult([lumenTaskExtension]);
+		const extension = extensionsResult.extensions[0];
+		const taskTool = extension.tools.get("task")?.definition;
+		expect(taskTool).toBeDefined();
+
+		const rendered = taskTool!.renderResult!(
+			{
+				content: [{ type: "text", text: "Done (5 tool uses · 350 tokens · 5.0s)" }],
+				details: {
+					results: [
+						{
+							id: "a",
+							agent: "worker",
+							description: "Task A",
+							output: "ok",
+							exitCode: 0,
+							tokens: 200,
+							durationMs: 3000,
+						},
+						{
+							id: "b",
+							agent: "worker",
+							description: "Task B",
+							output: "ok",
+							exitCode: 0,
+							tokens: 150,
+							durationMs: 2000,
+						},
+					],
+					totalDurationMs: 5000,
+					progress: [],
+				} satisfies TaskToolDetails,
+			} as any,
+			{ expanded: false, isPartial: false },
+			(await import("../src/modes/interactive/theme/theme.js")).theme,
+			{ state: { progressMap: new Map() }, invalidate: () => {} } as any,
+		) as { render: () => string[] } | Text;
+
+		const lines =
+			typeof (rendered as { render?: unknown }).render === "function"
+				? (rendered as { render: () => string[] }).render()
+				: (rendered as Text).render(120);
+		expect(stripAnsi(lines.join("\n")).trim()).toBe("");
+	});
+
+	it("renderResult keeps non-progress task success results visible", async () => {
+		const extensionsResult = await createTestExtensionsResult([lumenTaskExtension]);
+		const extension = extensionsResult.extensions[0];
+		const taskTool = extension.tools.get("task")?.definition;
+		expect(taskTool).toBeDefined();
+
+		const rendered = taskTool!.renderResult!(
+			{
+				content: [{ type: "text", text: "Investigated retry loop and found no regression." }],
+				details: {
+					results: [
+						{
+							id: "a",
+							agent: "worker",
+							description: "Investigate retry loop",
+							output: "Investigated retry loop and found no regression.",
+							exitCode: 0,
+							tokens: 120,
+							durationMs: 1000,
+						},
+					],
+					totalDurationMs: 1000,
+					progress: [],
+				} satisfies TaskToolDetails,
+			} as any,
+			{ expanded: false, isPartial: false },
+			(await import("../src/modes/interactive/theme/theme.js")).theme,
+			{ state: { progressMap: new Map() }, invalidate: () => {} } as any,
+		) as { render: () => string[] } | Text;
+
+		const lines =
+			typeof (rendered as { render?: unknown }).render === "function"
+				? (rendered as { render: () => string[] }).render()
+				: (rendered as Text).render(120);
+		expect(stripAnsi(lines.join("\n"))).toContain("Investigated retry loop and found no regression.");
+	});
+
+	it("renderResult truncates long successful task output into a safe single-line summary", async () => {
+		const extensionsResult = await createTestExtensionsResult([lumenTaskExtension]);
+		const extension = extensionsResult.extensions[0];
+		const taskTool = extension.tools.get("task")?.definition;
+		expect(taskTool).toBeDefined();
+
+		const longOutput = "A".repeat(400);
+		const rendered = taskTool!.renderResult!(
+			{
+				content: [{ type: "text", text: longOutput }],
+				details: {
+					results: [
+						{
+							id: "a",
+							agent: "worker",
+							description: "Long output task",
+							output: longOutput,
+							exitCode: 0,
+							tokens: 200,
+							durationMs: 1000,
+						},
+					],
+					totalDurationMs: 1000,
+					progress: [],
+				} satisfies TaskToolDetails,
+			} as any,
+			{ expanded: false, isPartial: false },
+			(await import("../src/modes/interactive/theme/theme.js")).theme,
+			{ state: { progressMap: new Map() }, invalidate: () => {} } as any,
+		) as { render: () => string[] } | Text;
+
+		const lines =
+			typeof (rendered as { render?: unknown }).render === "function"
+				? (rendered as { render: () => string[] }).render()
+				: (rendered as Text).render(120);
+		const text = stripAnsi(lines.join("\n"));
+		expect(text.length).toBeLessThan(160);
+		expect(text).toContain("...");
+	});
+
 	it("renderCall uses a semantic dot prefix while tasks are running", async () => {
 		const extensionsResult = await createTestExtensionsResult([lumenTaskExtension]);
 		const extension = extensionsResult.extensions[0];

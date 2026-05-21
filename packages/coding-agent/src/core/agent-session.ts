@@ -2478,9 +2478,6 @@ export class AgentSession {
 				},
 				getContextUsage: () => this.getContextUsage(),
 				getSpinnerBudgetUsage: () => this.getSpinnerBudgetUsage(),
-				getTasks: () => this.getTaskUiItems(),
-				getTaskSummary: () => this.getTaskUiSummary(),
-				getQueuedMessages: () => this.getQueuedUiState(),
 				compact: (options) => {
 					void (async () => {
 						try {

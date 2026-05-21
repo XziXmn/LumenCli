@@ -225,6 +225,15 @@ export class ToolExecutionComponent extends Container {
 		return super.render(width);
 	}
 
+	private componentHasVisibleContent(component: Component | undefined): boolean {
+		if (!component) return false;
+		try {
+			return component.render(200).some((line) => line.trim().length > 0);
+		} catch {
+			return true;
+		}
+	}
+
 	private updateDisplay(): void {
 		const bgFn = this.isPartial
 			? (text: string) => theme.bg("toolPendingBg", text)
@@ -249,8 +258,10 @@ export class ToolExecutionComponent extends Container {
 				try {
 					const component = callRenderer(this.args, theme, this.getRenderContext(this.callRendererComponent));
 					this.callRendererComponent = component;
-					renderContainer.addChild(component);
-					hasContent = true;
+					if (this.componentHasVisibleContent(component)) {
+						renderContainer.addChild(component);
+						hasContent = true;
+					}
 				} catch {
 					this.callRendererComponent = undefined;
 					renderContainer.addChild(this.createCallFallback());
@@ -275,8 +286,10 @@ export class ToolExecutionComponent extends Container {
 							this.getRenderContext(this.resultRendererComponent),
 						);
 						this.resultRendererComponent = component;
-						renderContainer.addChild(component);
-						hasContent = true;
+						if (this.componentHasVisibleContent(component)) {
+							renderContainer.addChild(component);
+							hasContent = true;
+						}
 					} catch {
 						this.resultRendererComponent = undefined;
 						const component = this.createResultFallback();

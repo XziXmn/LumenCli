@@ -1,5 +1,8 @@
 # Pluginized Task UI Plan
 
+> Superseded: this document reflects the older extension-owned taskbar direction.
+> Current source of truth is the core-owned progress surface migration plan and the Claude-aligned workflow plan under `docs/superpowers/plans/`.
+
 ## 目的
 
 把 Lumen 的 Claude 风格 `spinner / task / todo / queued` 路线重新定清楚，并明确采用：

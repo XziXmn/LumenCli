@@ -77,9 +77,6 @@ describe("ExtensionRunner", () => {
 		shutdown: () => {},
 		getContextUsage: () => undefined,
 		getSpinnerBudgetUsage: () => undefined,
-		getTasks: () => undefined,
-		getTaskSummary: () => undefined,
-		getQueuedMessages: () => undefined,
 		compact: () => {},
 		getSystemPrompt: () => "",
 	};

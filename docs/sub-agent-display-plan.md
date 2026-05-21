@@ -1,5 +1,8 @@
 # Sub-agent 显示重构 · 定位与计划
 
+> Superseded: this document predates the core-owned Claude-aligned progress workflow.
+> Keep for historical context only; do not use it as the implementation source of truth.
+
 本文档是 #2 议题"子 agent prompt 不应该塞到状态栏标题，应该作为 transcript 里 `● Task(...)` 主行"的定位结果与方案，作为长线任务的起点。
 
 相关上游文档：

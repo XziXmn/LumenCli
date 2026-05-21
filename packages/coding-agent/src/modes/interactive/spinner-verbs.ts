@@ -60,7 +60,7 @@ export const CLAUDE_SPINNER_VERBS = [
 	"Fermenting",
 	"Fiddle-faddling",
 	"Finagling",
-	"Flambéing",
+	"Flambeing",
 	"Flibbertigibbeting",
 	"Flowing",
 	"Flummoxing",
@@ -139,7 +139,7 @@ export const CLAUDE_SPINNER_VERBS = [
 	"Reticulating",
 	"Roosting",
 	"Ruminating",
-	"Sautéing",
+	"Sauteing",
 	"Scampering",
 	"Schlepping",
 	"Scurrying",
@@ -187,9 +187,3 @@ export const CLAUDE_SPINNER_VERBS = [
 	"Zesting",
 	"Zigzagging",
 ] as const;
-
-/**
- * Helper modules under .lumen/extensions may be loaded by broad local extension globs.
- * Export a no-op factory so accidental loading does not fail extension startup.
- */
-export default function () {}

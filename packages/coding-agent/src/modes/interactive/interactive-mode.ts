@@ -116,6 +116,12 @@ import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./c
 import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.js";
+import {
+	createProgressSurfaceWorkingState,
+	ProgressSurfaceComponent,
+	type ProgressSurfaceSnapshot,
+	shouldRenderProgressSurface,
+} from "./components/progress-surface.js";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
@@ -244,7 +250,6 @@ export class InteractiveMode {
 	private ui: TUI;
 	private chatContainer: Container;
 	private pendingMessagesContainer: Container;
-	private pendingMessagesVisible = true;
 	private statusContainer: Container;
 	private defaultEditor: CustomEditor;
 	private editor: EditorComponent;
@@ -269,7 +274,6 @@ export class InteractiveMode {
 	private readonly defaultWorkingMessage = "Working...";
 	private readonly defaultHiddenThinkingLabel = "Thinking...";
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
-	private extensionSpinnerState: SpinnerUiState | undefined = undefined;
 	private spinnerStartedAt = 0;
 	private spinnerResponseChars = 0;
 	private spinnerReportedOutputTokens = 0;
@@ -282,6 +286,9 @@ export class InteractiveMode {
 	private spinnerBanner: SpinnerUiState["banner"] | undefined = undefined;
 	private spinnerBannerTimeout: ReturnType<typeof setTimeout> | undefined = undefined;
 	private spinnerActiveToolCount = 0;
+	private progressSurfaceRefreshTimer: ReturnType<typeof setInterval> | undefined = undefined;
+	private progressSurfaceWorkingState = createProgressSurfaceWorkingState();
+	private progressSurfaceComponent!: ProgressSurfaceComponent;
 
 	private lastSigintTime = 0;
 	private lastEscapeTime = 0;
@@ -308,7 +315,6 @@ export class InteractiveMode {
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
-	private tasksExpanded = false;
 
 	// Thinking block visibility state
 	private hideThinkingBlock = false;
@@ -402,6 +408,11 @@ export class InteractiveMode {
 		this.statusContainer = new Container();
 		this.widgetContainerAbove = new Container();
 		this.widgetContainerBelow = new Container();
+		this.progressSurfaceComponent = new ProgressSurfaceComponent(
+			() => this.getProgressSurfaceSnapshot(),
+			theme,
+			this.progressSurfaceWorkingState,
+		);
 		this.keybindings = KeybindingsManager.create();
 		setKeybindings(this.keybindings);
 		const editorPaddingX = this.settingsManager.getEditorPaddingX();
@@ -671,10 +682,10 @@ export class InteractiveMode {
 		}
 
 		this.ui.addChild(this.chatContainer);
-		this.ui.addChild(this.pendingMessagesContainer);
 		this.ui.addChild(this.statusContainer);
 		this.renderWidgets(); // Initialize with default spacer
 		this.ui.addChild(this.widgetContainerAbove);
+		this.ui.addChild(this.pendingMessagesContainer);
 		this.ui.addChild(this.editorContainer);
 		this.ui.addChild(this.widgetContainerBelow);
 		this.ui.addChild(this.footer);
@@ -1657,9 +1668,6 @@ export class InteractiveMode {
 			},
 			getContextUsage: () => this.session.getContextUsage(),
 			getSpinnerBudgetUsage: () => this.session.getSpinnerBudgetUsage(),
-			getTasks: () => this.session.getTaskUiItems(),
-			getTaskSummary: () => this.session.getTaskUiSummary(),
-			getQueuedMessages: () => this.session.getQueuedUiState(),
 			compact: (options) => {
 				void (async () => {
 					try {
@@ -1702,7 +1710,13 @@ export class InteractiveMode {
 		const summary = this.session.getTaskUiSummary();
 		const usage = this.session.getContextUsage();
 		const now = Date.now();
-		const elapsedMs = this.spinnerStartedAt > 0 ? Math.max(0, now - this.spinnerStartedAt) : undefined;
+		const hasLiveExecution =
+			this.session.isStreaming ||
+			this.session.isCompacting ||
+			this.session.isRetrying ||
+			this.spinnerActiveToolCount > 0;
+		const elapsedMs =
+			hasLiveExecution && this.spinnerStartedAt > 0 ? Math.max(0, now - this.spinnerStartedAt) : undefined;
 
 		let tip: string | undefined;
 		if (this.settingsManager.getSpinnerTipsEnabled() && !summary?.next && elapsedMs !== undefined) {
@@ -1716,9 +1730,9 @@ export class InteractiveMode {
 		}
 
 		const outputTokens =
-			this.spinnerReportedOutputTokens > 0
+			hasLiveExecution && this.spinnerReportedOutputTokens > 0
 				? this.spinnerReportedOutputTokens
-				: this.spinnerResponseChars > 0
+				: hasLiveExecution && this.spinnerResponseChars > 0
 					? Math.round(this.spinnerResponseChars / 4)
 					: undefined;
 		const isThinking =
@@ -1732,13 +1746,16 @@ export class InteractiveMode {
 				: undefined;
 		const budgetText = this.buildDefaultBudgetText(outputTokens, elapsedMs);
 
-		const mode: SpinnerUiState["mode"] = isThinking
-			? "thinking"
-			: this.spinnerActiveToolCount > 0
-				? "tool-use"
-				: this.spinnerResponseChars > 0
-					? "responding"
-					: "requesting";
+		const mode: SpinnerUiState["mode"] | undefined =
+			!hasLiveExecution && !isThinking
+				? undefined
+				: isThinking
+					? "thinking"
+					: this.spinnerActiveToolCount > 0
+						? "tool-use"
+						: this.spinnerResponseChars > 0
+							? "responding"
+							: "requesting";
 
 		if (
 			this.spinnerBanner === undefined &&
@@ -1749,12 +1766,12 @@ export class InteractiveMode {
 			outputTokens === undefined &&
 			!isThinking &&
 			lastThinkingDurationMs === undefined &&
-			mode === "requesting"
+			mode === undefined
 		) {
 			return undefined;
 		}
 
-		return {
+		const spinner: SpinnerUiState = {
 			...(this.spinnerBanner ? { banner: this.spinnerBanner } : {}),
 			...(tip ? { tip } : {}),
 			...(budgetText ? { budgetText } : {}),
@@ -1764,8 +1781,11 @@ export class InteractiveMode {
 			...(isThinking ? { isThinking: true } : {}),
 			...(lastThinkingDurationMs !== undefined ? { lastThinkingDurationMs } : {}),
 			...(this.spinnerCurrentToolLabel ? { currentToolLabel: this.spinnerCurrentToolLabel } : {}),
-			mode,
 		};
+		if (mode !== undefined) {
+			spinner.mode = mode;
+		}
+		return spinner;
 	}
 
 	private buildDefaultBudgetText(outputTokens?: number, elapsedMs?: number): string | undefined {
@@ -1801,14 +1821,6 @@ export class InteractiveMode {
 		return `${hours}h ${remainingMinutes}m`;
 	}
 
-	private getSpinnerState(): SpinnerUiState | undefined {
-		const baseState = this.buildDefaultSpinnerState();
-		if (!this.extensionSpinnerState) {
-			return baseState;
-		}
-		return baseState ? { ...baseState, ...this.extensionSpinnerState } : this.extensionSpinnerState;
-	}
-
 	private getWorkingLoaderMessage(): string {
 		return this.workingMessage ?? this.defaultWorkingMessage;
 	}
@@ -1825,7 +1837,21 @@ export class InteractiveMode {
 
 	private renderWorkingArea(): void {
 		this.statusContainer.clear();
-		if (this.workingVisible && this.session.isStreaming) {
+		const snapshot = this.getProgressSurfaceSnapshot();
+		const shouldRenderSurface = shouldRenderProgressSurface(snapshot);
+		const shouldRenderLoader = this.workingVisible && this.session.isStreaming && !shouldRenderSurface;
+		const hasWorkingDetails =
+			this.workingDetailsComponent !== undefined ||
+			(this.workingDetailsLines !== undefined && this.workingDetailsLines.length > 0);
+		if (!shouldRenderSurface && !shouldRenderLoader && !hasWorkingDetails) {
+			return;
+		}
+
+		this.statusContainer.addChild(new Spacer(1));
+		if (shouldRenderSurface) {
+			this.statusContainer.addChild(this.progressSurfaceComponent);
+		}
+		if (shouldRenderLoader) {
 			if (!this.loadingAnimation) {
 				this.loadingAnimation = this.createWorkingLoader();
 			}
@@ -1846,6 +1872,33 @@ export class InteractiveMode {
 			this.loadingAnimation = undefined;
 		}
 		this.renderWorkingArea();
+	}
+
+	private getProgressSurfaceSnapshot(): ProgressSurfaceSnapshot {
+		return {
+			tasks: this.session.getTaskUiItems() ?? [],
+			queued: undefined,
+			spinner: this.buildDefaultSpinnerState(),
+			expanded: false,
+		};
+	}
+
+	private syncProgressSurfaceRefreshLoop(): void {
+		const snapshot = this.getProgressSurfaceSnapshot();
+		const needsRefresh = snapshot.spinner !== undefined && shouldRenderProgressSurface(snapshot);
+		if (needsRefresh) {
+			if (this.progressSurfaceRefreshTimer) {
+				return;
+			}
+			this.progressSurfaceRefreshTimer = setInterval(() => {
+				this.ui.requestRender();
+			}, 250);
+			return;
+		}
+		if (this.progressSurfaceRefreshTimer) {
+			clearInterval(this.progressSurfaceRefreshTimer);
+			this.progressSurfaceRefreshTimer = undefined;
+		}
 	}
 
 	private setWorkingVisible(visible: boolean): void {
@@ -1882,11 +1935,6 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private setSpinnerState(state?: SpinnerUiState): void {
-		this.extensionSpinnerState = state;
-		this.ui.requestRender();
-	}
-
 	private clearSpinnerBannerTimeout(): void {
 		if (this.spinnerBannerTimeout) {
 			clearTimeout(this.spinnerBannerTimeout);
@@ -1906,6 +1954,7 @@ export class InteractiveMode {
 				}
 			}, options.expiresMs);
 		}
+		this.syncProgressSurfaceRefreshLoop();
 		this.ui.requestRender();
 	}
 
@@ -1969,6 +2018,7 @@ export class InteractiveMode {
 		this.spinnerCurrentToolLabel = undefined;
 		this.clearSpinnerBannerTimeout();
 		this.spinnerBanner = undefined;
+		this.syncProgressSurfaceRefreshLoop();
 	}
 
 	/**
@@ -2057,7 +2107,6 @@ export class InteractiveMode {
 		}
 		this.workingDetailsComponent = undefined;
 		this.workingVisible = true;
-		this.extensionSpinnerState = undefined;
 		this.resetSpinnerRuntimeState();
 		this.setWorkingIndicator();
 		if (this.loadingAnimation) {
@@ -2221,9 +2270,6 @@ export class InteractiveMode {
 			setWorkingVisible: (visible) => this.setWorkingVisible(visible),
 			setWorkingIndicator: (options) => this.setWorkingIndicator(options),
 			setHiddenThinkingLabel: (label) => this.setHiddenThinkingLabel(label),
-			setSpinnerState: (state) => this.setSpinnerState(state),
-			getSpinnerState: () => this.getSpinnerState(),
-			setQueuedVisible: (visible) => this.setQueuedVisible(visible),
 			setWidget: (key, content, options) => this.setExtensionWidget(key, content, options),
 			setFooter: (factory) => this.setExtensionFooter(factory),
 			setHeader: (factory) => this.setExtensionHeader(factory),
@@ -2261,9 +2307,6 @@ export class InteractiveMode {
 			},
 			getToolsExpanded: () => this.toolOutputExpanded,
 			setToolsExpanded: (expanded) => this.setToolsExpanded(expanded),
-			getTasksExpanded: () => this.tasksExpanded,
-			setTasksExpanded: (expanded) => this.setTasksExpanded(expanded),
-			toggleTasksExpanded: () => this.toggleTasksExpanded(),
 		};
 	}
 
@@ -2946,577 +2989,587 @@ export class InteractiveMode {
 
 		this.footer.invalidate();
 
-		switch (event.type) {
-			case "agent_start":
-				this.spinnerStartedAt = Date.now();
-				this.spinnerResponseChars = 0;
-				this.spinnerReportedOutputTokens = 0;
-				this.spinnerThinkingStartedAt = null;
-				this.spinnerThinkingMinimumVisibleUntil = null;
-				this.spinnerThinkingDurationMs = null;
-				this.spinnerThoughtForVisibleUntil = null;
-				this.spinnerCurrentToolLabel = undefined;
-				this.spinnerActiveToolCount = 0;
-				this.pendingTools.clear();
-				if (this.settingsManager.getShowTerminalProgress()) {
-					this.ui.terminal.setProgress(true);
-				}
-				// Restore main escape handler if retry handler is still active
-				// (retry success event fires later, but we need main handler now)
-				if (this.retryEscapeHandler) {
-					this.defaultEditor.onEscape = this.retryEscapeHandler;
-					this.retryEscapeHandler = undefined;
-				}
-				if (this.retryCountdown) {
-					this.retryCountdown.dispose();
-					this.retryCountdown = undefined;
-				}
-				if (this.retryLoader) {
-					this.retryLoader.stop();
-					this.retryLoader = undefined;
-				}
-				this.stopWorkingLoader();
-				if (this.workingVisible) {
-					this.loadingAnimation = this.createWorkingLoader();
-					this.statusContainer.addChild(this.loadingAnimation);
-				}
-				this.ui.requestRender();
-				break;
-
-			case "queue_update":
-				this.updatePendingMessagesDisplay();
-				this.ui.requestRender();
-				break;
-
-			case "session_info_changed":
-				this.updateTerminalTitle();
-				this.footer.invalidate();
-				this.ui.requestRender();
-				break;
-
-			case "thinking_level_changed":
-				this.footer.invalidate();
-				this.updateEditorBorderColor();
-				break;
-
-			case "message_start":
-				if (event.message.role === "custom") {
-					this.addMessageToChat(event.message);
+		try {
+			switch (event.type) {
+				case "agent_start":
+					this.spinnerStartedAt = Date.now();
+					this.spinnerResponseChars = 0;
+					this.spinnerReportedOutputTokens = 0;
+					this.spinnerThinkingStartedAt = null;
+					this.spinnerThinkingMinimumVisibleUntil = null;
+					this.spinnerThinkingDurationMs = null;
+					this.spinnerThoughtForVisibleUntil = null;
+					this.spinnerCurrentToolLabel = undefined;
+					this.spinnerActiveToolCount = 0;
+					this.pendingTools.clear();
+					if (this.settingsManager.getShowTerminalProgress()) {
+						this.ui.terminal.setProgress(true);
+					}
+					// Restore main escape handler if retry handler is still active
+					// (retry success event fires later, but we need main handler now)
+					if (this.retryEscapeHandler) {
+						this.defaultEditor.onEscape = this.retryEscapeHandler;
+						this.retryEscapeHandler = undefined;
+					}
+					if (this.retryCountdown) {
+						this.retryCountdown.dispose();
+						this.retryCountdown = undefined;
+					}
+					if (this.retryLoader) {
+						this.retryLoader.stop();
+						this.retryLoader = undefined;
+					}
+					this.stopWorkingLoader();
+					if (this.workingVisible) {
+						this.loadingAnimation = this.createWorkingLoader();
+					}
+					this.renderWorkingArea();
 					this.ui.requestRender();
-				} else if (event.message.role === "user") {
-					this.addMessageToChat(event.message);
+					break;
+
+				case "queue_update":
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
-				} else if (event.message.role === "assistant") {
-					this.activeCollapsedToolGroup = undefined;
-					this.activeToolSummary = undefined;
-					this.streamingComponent = new AssistantMessageComponent(
-						undefined,
-						this.hideThinkingBlock,
-						this.getMarkdownThemeWithSettings(),
-						this.hiddenThinkingLabel,
-					);
-					this.streamingMessage = event.message;
-					this.chatContainer.addChild(this.streamingComponent);
-					this.streamingComponent.updateContent(this.streamingMessage);
+					break;
+
+				case "session_info_changed":
+					this.updateTerminalTitle();
+					this.footer.invalidate();
 					this.ui.requestRender();
-				}
-				break;
+					break;
 
-			case "message_update":
-				if (this.streamingComponent && event.message.role === "assistant") {
-					this.streamingMessage = event.message;
-					this.updateSpinnerRuntimeFromAssistantMessage(event.message);
-					const assistantMessageEvent = event.assistantMessageEvent;
-					if (assistantMessageEvent.type === "thinking_start") {
-						if (this.spinnerThinkingStartedAt === null) {
-							this.spinnerThinkingStartedAt = Date.now();
-							this.spinnerThinkingMinimumVisibleUntil = null;
-							this.spinnerThinkingDurationMs = null;
-							this.spinnerThoughtForVisibleUntil = null;
-						}
-					} else if (assistantMessageEvent.type === "thinking_end") {
-						if (this.spinnerThinkingStartedAt !== null) {
-							const endedAt = Date.now();
-							this.spinnerThinkingDurationMs = endedAt - this.spinnerThinkingStartedAt;
-							const minimumVisibleUntil = this.spinnerThinkingStartedAt + 2000;
-							this.spinnerThinkingMinimumVisibleUntil =
-								endedAt < minimumVisibleUntil ? minimumVisibleUntil : null;
-							this.spinnerThoughtForVisibleUntil =
-								(endedAt < minimumVisibleUntil ? minimumVisibleUntil : endedAt) + 2000;
-							this.spinnerThinkingStartedAt = null;
-						}
-					}
-					const projectedTurn = projectAssistantTurn(this.streamingMessage);
-					this.streamingComponent.updateContent(this.streamingMessage);
+				case "thinking_level_changed":
+					this.footer.invalidate();
+					this.updateEditorBorderColor();
+					break;
 
-					const shouldCollapseStreamingTools =
-						projectedTurn.toolCalls.length > 1 &&
-						!projectedTurn.hasRenderableAssistantContent &&
-						projectedTurn.toolCalls.every((toolCall) => isCollapsibleToolName(toolCall.name));
-
-					if (shouldCollapseStreamingTools) {
-						if (!this.activeCollapsedToolGroup) {
-							this.activeCollapsedToolGroup = new CollapsedToolGroupComponent(this.sessionManager.getCwd());
-							this.activeCollapsedToolGroup.setExpanded(this.toolOutputExpanded);
-							this.chatContainer.addChild(this.activeCollapsedToolGroup);
-						}
-						for (const toolCall of projectedTurn.toolCalls) {
-							this.activeCollapsedToolGroup.addOrUpdateToolCall(toolCall.id, toolCall.name, toolCall.arguments);
-							this.collapsedGroupByToolCallId.set(toolCall.id, this.activeCollapsedToolGroup);
-						}
+				case "message_start":
+					if (event.message.role === "custom") {
+						this.addMessageToChat(event.message);
 						this.ui.requestRender();
-						break;
-					}
-
-					const shouldUseStreamingToolSummary =
-						projectedTurn.toolCalls.length === 1 &&
-						!this.shouldRenderToolAsExecutionComponent(projectedTurn.toolCalls[0]?.name ?? "");
-
-					if (shouldUseStreamingToolSummary) {
-						const toolCall = projectedTurn.toolCalls[0];
-						if (!this.activeToolSummary) {
-							this.activeToolSummary = new AssistantToolSummaryComponent(
-								toolCall.name,
-								toolCall.arguments,
-								undefined,
-								this.sessionManager.getCwd(),
-							);
-							this.activeToolSummary.setExpanded(this.toolOutputExpanded);
-							this.chatContainer.addChild(this.activeToolSummary);
-						} else {
-							this.activeToolSummary.updateArgs(toolCall.arguments);
-						}
-						this.toolSummaryByToolCallId.set(toolCall.id, this.activeToolSummary);
+					} else if (event.message.role === "user") {
+						this.addMessageToChat(event.message);
+						this.updatePendingMessagesDisplay();
 						this.ui.requestRender();
-						break;
-					}
-
-					const shouldUseStreamingToolBatchSummary =
-						projectedTurn.toolCalls.length > 1 &&
-						!projectedTurn.hasRenderableAssistantContent &&
-						projectedTurn.toolCalls.every(
-							(toolCall) => !this.shouldRenderToolAsExecutionComponent(toolCall.name),
+					} else if (event.message.role === "assistant") {
+						this.activeCollapsedToolGroup = undefined;
+						this.activeToolSummary = undefined;
+						this.streamingComponent = new AssistantMessageComponent(
+							undefined,
+							this.hideThinkingBlock,
+							this.getMarkdownThemeWithSettings(),
+							this.hiddenThinkingLabel,
 						);
-
-					if (shouldUseStreamingToolBatchSummary) {
-						if (!this.activeToolBatchSummary) {
-							this.activeToolBatchSummary = new AssistantToolBatchSummaryComponent(
-								[],
-								this.sessionManager.getCwd(),
-							);
-							this.activeToolBatchSummary.setExpanded(this.toolOutputExpanded);
-							this.chatContainer.addChild(this.activeToolBatchSummary);
-						}
-						for (const toolCall of projectedTurn.toolCalls) {
-							this.activeToolBatchSummary.addOrUpdateToolCall(toolCall.name, toolCall.arguments, toolCall.id);
-							this.toolBatchSummaryByToolCallId.set(toolCall.id, this.activeToolBatchSummary);
-						}
+						this.streamingMessage = event.message;
+						this.chatContainer.addChild(this.streamingComponent);
+						this.streamingComponent.updateContent(this.streamingMessage);
 						this.ui.requestRender();
-						break;
 					}
+					break;
 
-					for (const toolCall of projectedTurn.toolCalls) {
-						if (this.shouldRenderToolAsExecutionComponent(toolCall.name)) {
-							let component = this.pendingTools.get(toolCall.id);
-							if (!component) {
-								component = new ToolExecutionComponent(
-									toolCall.name,
+				case "message_update":
+					if (this.streamingComponent && event.message.role === "assistant") {
+						this.streamingMessage = event.message;
+						this.updateSpinnerRuntimeFromAssistantMessage(event.message);
+						const assistantMessageEvent = event.assistantMessageEvent;
+						if (assistantMessageEvent.type === "thinking_start") {
+							if (this.spinnerThinkingStartedAt === null) {
+								this.spinnerThinkingStartedAt = Date.now();
+								this.spinnerThinkingMinimumVisibleUntil = null;
+								this.spinnerThinkingDurationMs = null;
+								this.spinnerThoughtForVisibleUntil = null;
+							}
+						} else if (assistantMessageEvent.type === "thinking_end") {
+							if (this.spinnerThinkingStartedAt !== null) {
+								const endedAt = Date.now();
+								this.spinnerThinkingDurationMs = endedAt - this.spinnerThinkingStartedAt;
+								const minimumVisibleUntil = this.spinnerThinkingStartedAt + 2000;
+								this.spinnerThinkingMinimumVisibleUntil =
+									endedAt < minimumVisibleUntil ? minimumVisibleUntil : null;
+								this.spinnerThoughtForVisibleUntil =
+									(endedAt < minimumVisibleUntil ? minimumVisibleUntil : endedAt) + 2000;
+								this.spinnerThinkingStartedAt = null;
+							}
+						}
+						const projectedTurn = projectAssistantTurn(this.streamingMessage);
+						this.streamingComponent.updateContent(this.streamingMessage);
+
+						const shouldCollapseStreamingTools =
+							projectedTurn.toolCalls.length > 1 &&
+							!projectedTurn.hasRenderableAssistantContent &&
+							projectedTurn.toolCalls.every((toolCall) => isCollapsibleToolName(toolCall.name));
+
+						if (shouldCollapseStreamingTools) {
+							if (!this.activeCollapsedToolGroup) {
+								this.activeCollapsedToolGroup = new CollapsedToolGroupComponent(this.sessionManager.getCwd());
+								this.activeCollapsedToolGroup.setExpanded(this.toolOutputExpanded);
+								this.chatContainer.addChild(this.activeCollapsedToolGroup);
+							}
+							for (const toolCall of projectedTurn.toolCalls) {
+								this.activeCollapsedToolGroup.addOrUpdateToolCall(
 									toolCall.id,
+									toolCall.name,
 									toolCall.arguments,
-									{
-										showImages: this.settingsManager.getShowImages(),
-										imageWidthCells: this.settingsManager.getImageWidthCells(),
-									},
-									this.getRegisteredToolDefinition(toolCall.name),
-									this.ui,
+								);
+								this.collapsedGroupByToolCallId.set(toolCall.id, this.activeCollapsedToolGroup);
+							}
+							this.ui.requestRender();
+							break;
+						}
+
+						const shouldUseStreamingToolSummary =
+							projectedTurn.toolCalls.length === 1 &&
+							!this.shouldRenderToolAsExecutionComponent(projectedTurn.toolCalls[0]?.name ?? "");
+
+						if (shouldUseStreamingToolSummary) {
+							const toolCall = projectedTurn.toolCalls[0];
+							if (!this.activeToolSummary) {
+								this.activeToolSummary = new AssistantToolSummaryComponent(
+									toolCall.name,
+									toolCall.arguments,
+									undefined,
 									this.sessionManager.getCwd(),
 								);
-								component.setExpanded(this.toolOutputExpanded);
-								this.chatContainer.addChild(component);
-								this.pendingTools.set(toolCall.id, component);
+								this.activeToolSummary.setExpanded(this.toolOutputExpanded);
+								this.chatContainer.addChild(this.activeToolSummary);
+							} else {
+								this.activeToolSummary.updateArgs(toolCall.arguments);
 							}
-							component.updateArgs(toolCall.arguments);
-							continue;
+							this.toolSummaryByToolCallId.set(toolCall.id, this.activeToolSummary);
+							this.ui.requestRender();
+							break;
 						}
 
-						if (
-							!this.pendingTools.has(toolCall.id) &&
-							!this.collapsedGroupByToolCallId.has(toolCall.id) &&
-							!this.toolSummaryByToolCallId.has(toolCall.id) &&
-							!this.toolBatchSummaryByToolCallId.has(toolCall.id)
-						) {
-							const summaryComponent = new AssistantToolSummaryComponent(
-								toolCall.name,
-								toolCall.arguments,
-								undefined,
-								this.sessionManager.getCwd(),
+						const shouldUseStreamingToolBatchSummary =
+							projectedTurn.toolCalls.length > 1 &&
+							!projectedTurn.hasRenderableAssistantContent &&
+							projectedTurn.toolCalls.every(
+								(toolCall) => !this.shouldRenderToolAsExecutionComponent(toolCall.name),
 							);
-							summaryComponent.setExpanded(this.toolOutputExpanded);
-							this.chatContainer.addChild(summaryComponent);
-							this.toolSummaryByToolCallId.set(toolCall.id, summaryComponent);
-							this.activeToolSummary = summaryComponent;
-							continue;
+
+						if (shouldUseStreamingToolBatchSummary) {
+							if (!this.activeToolBatchSummary) {
+								this.activeToolBatchSummary = new AssistantToolBatchSummaryComponent(
+									[],
+									this.sessionManager.getCwd(),
+								);
+								this.activeToolBatchSummary.setExpanded(this.toolOutputExpanded);
+								this.chatContainer.addChild(this.activeToolBatchSummary);
+							}
+							for (const toolCall of projectedTurn.toolCalls) {
+								this.activeToolBatchSummary.addOrUpdateToolCall(toolCall.name, toolCall.arguments, toolCall.id);
+								this.toolBatchSummaryByToolCallId.set(toolCall.id, this.activeToolBatchSummary);
+							}
+							this.ui.requestRender();
+							break;
 						}
 
-						const summaryComponent = this.toolSummaryByToolCallId.get(toolCall.id);
-						if (summaryComponent) {
-							summaryComponent.updateArgs(toolCall.arguments);
-							continue;
-						}
+						for (const toolCall of projectedTurn.toolCalls) {
+							if (this.shouldRenderToolAsExecutionComponent(toolCall.name)) {
+								let component = this.pendingTools.get(toolCall.id);
+								if (!component) {
+									component = new ToolExecutionComponent(
+										toolCall.name,
+										toolCall.id,
+										toolCall.arguments,
+										{
+											showImages: this.settingsManager.getShowImages(),
+											imageWidthCells: this.settingsManager.getImageWidthCells(),
+										},
+										this.getRegisteredToolDefinition(toolCall.name),
+										this.ui,
+										this.sessionManager.getCwd(),
+									);
+									component.setExpanded(this.toolOutputExpanded);
+									this.chatContainer.addChild(component);
+									this.pendingTools.set(toolCall.id, component);
+								}
+								component.updateArgs(toolCall.arguments);
+								continue;
+							}
 
-						const component = this.pendingTools.get(toolCall.id);
-						if (component) {
-							component.updateArgs(toolCall.arguments);
+							if (
+								!this.pendingTools.has(toolCall.id) &&
+								!this.collapsedGroupByToolCallId.has(toolCall.id) &&
+								!this.toolSummaryByToolCallId.has(toolCall.id) &&
+								!this.toolBatchSummaryByToolCallId.has(toolCall.id)
+							) {
+								const summaryComponent = new AssistantToolSummaryComponent(
+									toolCall.name,
+									toolCall.arguments,
+									undefined,
+									this.sessionManager.getCwd(),
+								);
+								summaryComponent.setExpanded(this.toolOutputExpanded);
+								this.chatContainer.addChild(summaryComponent);
+								this.toolSummaryByToolCallId.set(toolCall.id, summaryComponent);
+								this.activeToolSummary = summaryComponent;
+								continue;
+							}
+
+							const summaryComponent = this.toolSummaryByToolCallId.get(toolCall.id);
+							if (summaryComponent) {
+								summaryComponent.updateArgs(toolCall.arguments);
+								continue;
+							}
+
+							const component = this.pendingTools.get(toolCall.id);
+							if (component) {
+								component.updateArgs(toolCall.arguments);
+							}
 						}
+						this.ui.requestRender();
+					}
+					break;
+
+				case "message_end":
+					if (event.message.role === "user") break;
+					if (this.streamingComponent && event.message.role === "assistant") {
+						this.streamingMessage = event.message;
+						this.updateSpinnerRuntimeFromAssistantMessage(event.message);
+						const projectedTurn = projectAssistantTurn(this.streamingMessage);
+						let errorMessage: string | undefined;
+						if (this.streamingMessage.stopReason === "aborted") {
+							const retryAttempt = this.session.retryAttempt;
+							errorMessage =
+								retryAttempt > 0
+									? `Aborted after ${retryAttempt} retry attempt${retryAttempt > 1 ? "s" : ""}`
+									: "Operation aborted";
+							this.streamingMessage.errorMessage = errorMessage;
+						}
+						this.streamingComponent.updateContent(this.streamingMessage);
+
+						if (this.streamingMessage.stopReason === "aborted" || this.streamingMessage.stopReason === "error") {
+							if (!errorMessage) {
+								errorMessage = this.streamingMessage.errorMessage || "Error";
+							}
+							for (const [, component] of this.pendingTools.entries()) {
+								component.updateResult({
+									content: [{ type: "text", text: errorMessage }],
+									isError: true,
+								});
+							}
+							this.pendingTools.clear();
+							if (this.activeCollapsedToolGroup) {
+								this.activeCollapsedToolGroup.markAllCompleted();
+								this.activeCollapsedToolGroup = undefined;
+							}
+							this.collapsedGroupByToolCallId.clear();
+							this.activeToolSummary = undefined;
+							this.toolSummaryByToolCallId.clear();
+							this.activeToolBatchSummary = undefined;
+							this.toolBatchSummaryByToolCallId.clear();
+						} else {
+							// Args are now complete - trigger diff computation for edit tools
+							for (const [, component] of this.pendingTools.entries()) {
+								component.setArgsComplete();
+							}
+						}
+						if (!projectedTurn.hasRenderableAssistantContent) {
+							this.chatContainer.removeChild(this.streamingComponent);
+						}
+						this.streamingComponent = undefined;
+						this.streamingMessage = undefined;
+						this.footer.invalidate();
 					}
 					this.ui.requestRender();
-				}
-				break;
+					break;
 
-			case "message_end":
-				if (event.message.role === "user") break;
-				if (this.streamingComponent && event.message.role === "assistant") {
-					this.streamingMessage = event.message;
-					this.updateSpinnerRuntimeFromAssistantMessage(event.message);
-					const projectedTurn = projectAssistantTurn(this.streamingMessage);
-					let errorMessage: string | undefined;
-					if (this.streamingMessage.stopReason === "aborted") {
-						const retryAttempt = this.session.retryAttempt;
-						errorMessage =
-							retryAttempt > 0
-								? `Aborted after ${retryAttempt} retry attempt${retryAttempt > 1 ? "s" : ""}`
-								: "Operation aborted";
-						this.streamingMessage.errorMessage = errorMessage;
+				case "tool_execution_start": {
+					this.spinnerActiveToolCount++;
+					this.spinnerCurrentToolLabel = this.describeSpinnerToolLabel(
+						event.toolName,
+						event.args as Record<string, unknown>,
+					);
+					if (this.collapsedGroupByToolCallId.has(event.toolCallId)) {
+						this.ui.requestRender();
+						break;
 					}
-					this.streamingComponent.updateContent(this.streamingMessage);
+					if (this.toolSummaryByToolCallId.has(event.toolCallId)) {
+						this.ui.requestRender();
+						break;
+					}
+					if (this.toolBatchSummaryByToolCallId.has(event.toolCallId)) {
+						this.ui.requestRender();
+						break;
+					}
+					let component = this.pendingTools.get(event.toolCallId);
+					if (!component) {
+						component = new ToolExecutionComponent(
+							event.toolName,
+							event.toolCallId,
+							event.args,
+							{
+								showImages: this.settingsManager.getShowImages(),
+								imageWidthCells: this.settingsManager.getImageWidthCells(),
+							},
+							this.getRegisteredToolDefinition(event.toolName),
+							this.ui,
+							this.sessionManager.getCwd(),
+						);
+						component.setExpanded(this.toolOutputExpanded);
+						this.chatContainer.addChild(component);
+						this.pendingTools.set(event.toolCallId, component);
+					}
+					component.markExecutionStarted();
+					this.ui.requestRender();
+					break;
+				}
 
-					if (this.streamingMessage.stopReason === "aborted" || this.streamingMessage.stopReason === "error") {
-						if (!errorMessage) {
-							errorMessage = this.streamingMessage.errorMessage || "Error";
-						}
-						for (const [, component] of this.pendingTools.entries()) {
-							component.updateResult({
-								content: [{ type: "text", text: errorMessage }],
-								isError: true,
-							});
-						}
-						this.pendingTools.clear();
-						if (this.activeCollapsedToolGroup) {
-							this.activeCollapsedToolGroup.markAllCompleted();
+				case "tool_execution_update": {
+					if (this.collapsedGroupByToolCallId.has(event.toolCallId)) {
+						this.ui.requestRender();
+						break;
+					}
+					if (this.toolSummaryByToolCallId.has(event.toolCallId)) {
+						this.ui.requestRender();
+						break;
+					}
+					if (this.toolBatchSummaryByToolCallId.has(event.toolCallId)) {
+						this.ui.requestRender();
+						break;
+					}
+					const component = this.pendingTools.get(event.toolCallId);
+					if (component) {
+						component.updateResult({ ...event.partialResult, isError: false }, true);
+						this.ui.requestRender();
+					}
+					break;
+				}
+
+				case "tool_execution_end": {
+					this.spinnerActiveToolCount = Math.max(0, this.spinnerActiveToolCount - 1);
+					if (this.spinnerActiveToolCount === 0) {
+						this.spinnerCurrentToolLabel = undefined;
+					}
+					const collapsedGroup = this.collapsedGroupByToolCallId.get(event.toolCallId);
+					if (collapsedGroup) {
+						collapsedGroup.markCompleted(event.toolCallId);
+						this.collapsedGroupByToolCallId.delete(event.toolCallId);
+						if (this.activeCollapsedToolGroup === collapsedGroup && collapsedGroup.isComplete()) {
 							this.activeCollapsedToolGroup = undefined;
 						}
-						this.collapsedGroupByToolCallId.clear();
-						this.activeToolSummary = undefined;
-						this.toolSummaryByToolCallId.clear();
-						this.activeToolBatchSummary = undefined;
-						this.toolBatchSummaryByToolCallId.clear();
-					} else {
-						// Args are now complete - trigger diff computation for edit tools
-						for (const [, component] of this.pendingTools.entries()) {
-							component.setArgsComplete();
+						this.ui.requestRender();
+						break;
+					}
+					const summary = this.toolSummaryByToolCallId.get(event.toolCallId);
+					if (summary) {
+						summary.updateResult(event.result as any);
+						this.toolSummaryByToolCallId.delete(event.toolCallId);
+						if (this.activeToolSummary === summary) {
+							this.activeToolSummary = undefined;
 						}
+						this.ui.requestRender();
+						break;
 					}
-					if (!projectedTurn.hasRenderableAssistantContent) {
-						this.chatContainer.removeChild(this.streamingComponent);
-					}
-					this.streamingComponent = undefined;
-					this.streamingMessage = undefined;
-					this.footer.invalidate();
-				}
-				this.ui.requestRender();
-				break;
-
-			case "tool_execution_start": {
-				this.spinnerActiveToolCount++;
-				this.spinnerCurrentToolLabel = this.describeSpinnerToolLabel(
-					event.toolName,
-					event.args as Record<string, unknown>,
-				);
-				if (this.collapsedGroupByToolCallId.has(event.toolCallId)) {
-					this.ui.requestRender();
-					break;
-				}
-				if (this.toolSummaryByToolCallId.has(event.toolCallId)) {
-					this.ui.requestRender();
-					break;
-				}
-				if (this.toolBatchSummaryByToolCallId.has(event.toolCallId)) {
-					this.ui.requestRender();
-					break;
-				}
-				let component = this.pendingTools.get(event.toolCallId);
-				if (!component) {
-					component = new ToolExecutionComponent(
-						event.toolName,
-						event.toolCallId,
-						event.args,
-						{
-							showImages: this.settingsManager.getShowImages(),
-							imageWidthCells: this.settingsManager.getImageWidthCells(),
-						},
-						this.getRegisteredToolDefinition(event.toolName),
-						this.ui,
-						this.sessionManager.getCwd(),
-					);
-					component.setExpanded(this.toolOutputExpanded);
-					this.chatContainer.addChild(component);
-					this.pendingTools.set(event.toolCallId, component);
-				}
-				component.markExecutionStarted();
-				this.ui.requestRender();
-				break;
-			}
-
-			case "tool_execution_update": {
-				if (this.collapsedGroupByToolCallId.has(event.toolCallId)) {
-					this.ui.requestRender();
-					break;
-				}
-				if (this.toolSummaryByToolCallId.has(event.toolCallId)) {
-					this.ui.requestRender();
-					break;
-				}
-				if (this.toolBatchSummaryByToolCallId.has(event.toolCallId)) {
-					this.ui.requestRender();
-					break;
-				}
-				const component = this.pendingTools.get(event.toolCallId);
-				if (component) {
-					component.updateResult({ ...event.partialResult, isError: false }, true);
-					this.ui.requestRender();
-				}
-				break;
-			}
-
-			case "tool_execution_end": {
-				this.spinnerActiveToolCount = Math.max(0, this.spinnerActiveToolCount - 1);
-				if (this.spinnerActiveToolCount === 0) {
-					this.spinnerCurrentToolLabel = undefined;
-				}
-				const collapsedGroup = this.collapsedGroupByToolCallId.get(event.toolCallId);
-				if (collapsedGroup) {
-					collapsedGroup.markCompleted(event.toolCallId);
-					this.collapsedGroupByToolCallId.delete(event.toolCallId);
-					if (this.activeCollapsedToolGroup === collapsedGroup && collapsedGroup.isComplete()) {
-						this.activeCollapsedToolGroup = undefined;
-					}
-					this.ui.requestRender();
-					break;
-				}
-				const summary = this.toolSummaryByToolCallId.get(event.toolCallId);
-				if (summary) {
-					summary.updateResult(event.result as any);
-					this.toolSummaryByToolCallId.delete(event.toolCallId);
-					if (this.activeToolSummary === summary) {
-						this.activeToolSummary = undefined;
-					}
-					this.ui.requestRender();
-					break;
-				}
-				const batchSummary = this.toolBatchSummaryByToolCallId.get(event.toolCallId);
-				if (batchSummary) {
-					batchSummary.updateResult(event.toolCallId, event.result as any, event.toolName);
-					this.toolBatchSummaryByToolCallId.delete(event.toolCallId);
-					if (this.activeToolBatchSummary === batchSummary) {
-						const stillActive = [...this.toolBatchSummaryByToolCallId.values()].some(
-							(value) => value === batchSummary,
-						);
-						if (!stillActive) {
-							this.activeToolBatchSummary = undefined;
-						}
-					}
-					this.ui.requestRender();
-					break;
-				}
-				const component = this.pendingTools.get(event.toolCallId);
-				if (component) {
-					component.updateResult({ ...event.result, isError: event.isError });
-					this.pendingTools.delete(event.toolCallId);
-					this.ui.requestRender();
-				}
-				break;
-			}
-
-			case "agent_end":
-				if (this.settingsManager.getShowTerminalProgress()) {
-					this.ui.terminal.setProgress(false);
-				}
-				if (this.spinnerThinkingStartedAt === null) {
-					this.spinnerThinkingMinimumVisibleUntil = null;
-				}
-				if (this.loadingAnimation) {
-					this.loadingAnimation.stop();
-					this.loadingAnimation = undefined;
-					this.statusContainer.clear();
-				}
-				if (this.streamingComponent) {
-					this.chatContainer.removeChild(this.streamingComponent);
-					this.streamingComponent = undefined;
-					this.streamingMessage = undefined;
-				}
-				this.pendingTools.clear();
-				this.activeCollapsedToolGroup = undefined;
-				this.collapsedGroupByToolCallId.clear();
-				this.activeToolSummary = undefined;
-				this.toolSummaryByToolCallId.clear();
-				this.activeToolBatchSummary = undefined;
-				this.toolBatchSummaryByToolCallId.clear();
-				this.resetSpinnerRuntimeState();
-
-				await this.checkShutdownRequested();
-
-				this.ui.requestRender();
-				break;
-
-			case "compaction_hooks_start": {
-				this.spinnerSystemOverrideMessage =
-					event.phase === "pre" ? "Running PreCompact hooks…" : "Running PostCompact hooks…";
-				this.ui.requestRender();
-				break;
-			}
-
-			case "compaction_hooks_end": {
-				this.spinnerSystemOverrideMessage = undefined;
-				this.ui.requestRender();
-				break;
-			}
-
-			case "compaction_start": {
-				this.spinnerSystemOverrideMessage =
-					event.reason === "manual"
-						? "Compacting conversation"
-						: event.reason === "overflow"
-							? "Auto-compacting after overflow"
-							: "Auto-compacting conversation";
-				this.setSpinnerBanner({
-					kind: "info",
-					title:
-						event.reason === "manual"
-							? "正在整理上下文"
-							: event.reason === "overflow"
-								? "上下文溢出，正在自动整理"
-								: "正在自动整理上下文",
-					detail: `${keyText("app.interrupt")} 可取消`,
-				});
-				if (this.settingsManager.getShowTerminalProgress()) {
-					this.ui.terminal.setProgress(true);
-				}
-				// Keep editor active; submissions are queued during compaction.
-				this.autoCompactionEscapeHandler = this.defaultEditor.onEscape;
-				this.defaultEditor.onEscape = () => {
-					this.session.abortCompaction();
-				};
-				this.ui.requestRender();
-				break;
-			}
-
-			case "compaction_end": {
-				this.spinnerSystemOverrideMessage = undefined;
-				this.setSpinnerBanner(undefined);
-				if (this.settingsManager.getShowTerminalProgress()) {
-					this.ui.terminal.setProgress(false);
-				}
-				if (this.autoCompactionEscapeHandler) {
-					this.defaultEditor.onEscape = this.autoCompactionEscapeHandler;
-					this.autoCompactionEscapeHandler = undefined;
-				}
-				if (this.autoCompactionLoader) {
-					this.autoCompactionLoader.stop();
-					this.autoCompactionLoader = undefined;
-					this.statusContainer.clear();
-				}
-				if (event.aborted) {
-					if (event.reason === "manual") {
-						this.showError("Compaction cancelled");
-					} else {
-						this.showStatus("Auto-compaction cancelled");
-					}
-				} else if (event.result) {
-					this.chatContainer.clear();
-					this.rebuildChatFromMessages();
-					this.addMessageToChat(
-						createCompactionSummaryMessage(
-							event.result.summary,
-							event.result.tokensBefore,
-							new Date().toISOString(),
-						),
-					);
-					this.footer.invalidate();
-				} else if (event.errorMessage) {
-					if (event.reason === "manual") {
-						this.showError(event.errorMessage);
-					} else {
-						this.chatContainer.addChild(new Spacer(1));
-						this.chatContainer.addChild(new Text(theme.fg("error", event.errorMessage), 1, 0));
-					}
-				}
-				void this.flushCompactionQueue({ willRetry: event.willRetry });
-				this.ui.requestRender();
-				break;
-			}
-
-			case "auto_retry_start": {
-				this.spinnerSystemOverrideMessage = `Retrying request (${event.attempt}/${event.maxAttempts})`;
-				this.setSpinnerBanner({
-					kind: "warning",
-					title: "接口不稳定，正在自动重试",
-					detail: `第 ${event.attempt}/${event.maxAttempts} 次重试 · ${event.errorMessage || "request failed"}`,
-				});
-				// Set up escape to abort retry
-				this.retryEscapeHandler = this.defaultEditor.onEscape;
-				this.defaultEditor.onEscape = () => {
-					this.session.abortRetry();
-				};
-				this.retryCountdown?.dispose();
-				this.retryCountdown = new CountdownTimer(
-					event.delayMs,
-					this.ui,
-					(seconds) => {
-						this.setSpinnerBanner({
-							kind: "warning",
-							title: "接口不稳定，正在自动重试",
-							detail: `第 ${event.attempt}/${event.maxAttempts} 次重试 · ${seconds}s 后继续`,
-						});
-					},
-					() => {
-						this.retryCountdown = undefined;
-					},
-				);
-				this.ui.requestRender();
-				break;
-			}
-
-			case "auto_retry_end": {
-				this.spinnerSystemOverrideMessage = undefined;
-				// Restore escape handler
-				if (this.retryEscapeHandler) {
-					this.defaultEditor.onEscape = this.retryEscapeHandler;
-					this.retryEscapeHandler = undefined;
-				}
-				if (this.retryCountdown) {
-					this.retryCountdown.dispose();
-					this.retryCountdown = undefined;
-				}
-				this.setSpinnerBanner(
-					event.success
-						? {
-								kind: "success",
-								title: "接口已恢复",
+					const batchSummary = this.toolBatchSummaryByToolCallId.get(event.toolCallId);
+					if (batchSummary) {
+						batchSummary.updateResult(event.toolCallId, event.result as any, event.toolName);
+						this.toolBatchSummaryByToolCallId.delete(event.toolCallId);
+						if (this.activeToolBatchSummary === batchSummary) {
+							const stillActive = [...this.toolBatchSummaryByToolCallId.values()].some(
+								(value) => value === batchSummary,
+							);
+							if (!stillActive) {
+								this.activeToolBatchSummary = undefined;
 							}
-						: {
-								kind: "error",
-								title: "接口请求失败",
-								detail: `已重试 ${event.attempt} 次`,
-							},
-					event.success ? { expiresMs: 1500 } : undefined,
-				);
-				if (!event.success) {
-					this.showError(`Retry failed after ${event.attempt} attempts: ${event.finalError || "Unknown error"}`);
+						}
+						this.ui.requestRender();
+						break;
+					}
+					const component = this.pendingTools.get(event.toolCallId);
+					if (component) {
+						component.updateResult({ ...event.result, isError: event.isError });
+						this.pendingTools.delete(event.toolCallId);
+						this.ui.requestRender();
+					}
+					break;
 				}
-				this.ui.requestRender();
-				break;
+
+				case "agent_end":
+					if (this.settingsManager.getShowTerminalProgress()) {
+						this.ui.terminal.setProgress(false);
+					}
+					if (this.spinnerThinkingStartedAt === null) {
+						this.spinnerThinkingMinimumVisibleUntil = null;
+					}
+					if (this.loadingAnimation) {
+						this.loadingAnimation.stop();
+						this.loadingAnimation = undefined;
+					}
+					this.renderWorkingArea();
+					if (this.streamingComponent) {
+						this.chatContainer.removeChild(this.streamingComponent);
+						this.streamingComponent = undefined;
+						this.streamingMessage = undefined;
+					}
+					this.pendingTools.clear();
+					this.activeCollapsedToolGroup = undefined;
+					this.collapsedGroupByToolCallId.clear();
+					this.activeToolSummary = undefined;
+					this.toolSummaryByToolCallId.clear();
+					this.activeToolBatchSummary = undefined;
+					this.toolBatchSummaryByToolCallId.clear();
+					this.resetSpinnerRuntimeState();
+
+					await this.checkShutdownRequested();
+
+					this.ui.requestRender();
+					break;
+
+				case "compaction_hooks_start": {
+					this.spinnerSystemOverrideMessage =
+						event.phase === "pre" ? "Running PreCompact hooks…" : "Running PostCompact hooks…";
+					this.ui.requestRender();
+					break;
+				}
+
+				case "compaction_hooks_end": {
+					this.spinnerSystemOverrideMessage = undefined;
+					this.ui.requestRender();
+					break;
+				}
+
+				case "compaction_start": {
+					this.spinnerSystemOverrideMessage =
+						event.reason === "manual"
+							? "Compacting conversation"
+							: event.reason === "overflow"
+								? "Auto-compacting after overflow"
+								: "Auto-compacting conversation";
+					this.setSpinnerBanner({
+						kind: "info",
+						title:
+							event.reason === "manual"
+								? "正在整理上下文"
+								: event.reason === "overflow"
+									? "上下文溢出，正在自动整理"
+									: "正在自动整理上下文",
+						detail: `${keyText("app.interrupt")} 可取消`,
+					});
+					if (this.settingsManager.getShowTerminalProgress()) {
+						this.ui.terminal.setProgress(true);
+					}
+					// Keep editor active; submissions are queued during compaction.
+					this.autoCompactionEscapeHandler = this.defaultEditor.onEscape;
+					this.defaultEditor.onEscape = () => {
+						this.session.abortCompaction();
+					};
+					this.ui.requestRender();
+					break;
+				}
+
+				case "compaction_end": {
+					this.spinnerSystemOverrideMessage = undefined;
+					this.setSpinnerBanner(undefined);
+					if (this.settingsManager.getShowTerminalProgress()) {
+						this.ui.terminal.setProgress(false);
+					}
+					if (this.autoCompactionEscapeHandler) {
+						this.defaultEditor.onEscape = this.autoCompactionEscapeHandler;
+						this.autoCompactionEscapeHandler = undefined;
+					}
+					if (this.autoCompactionLoader) {
+						this.autoCompactionLoader.stop();
+						this.autoCompactionLoader = undefined;
+						this.statusContainer.clear();
+					}
+					if (event.aborted) {
+						if (event.reason === "manual") {
+							this.showError("Compaction cancelled");
+						} else {
+							this.showStatus("Auto-compaction cancelled");
+						}
+					} else if (event.result) {
+						this.chatContainer.clear();
+						this.rebuildChatFromMessages();
+						this.addMessageToChat(
+							createCompactionSummaryMessage(
+								event.result.summary,
+								event.result.tokensBefore,
+								new Date().toISOString(),
+							),
+						);
+						this.footer.invalidate();
+					} else if (event.errorMessage) {
+						if (event.reason === "manual") {
+							this.showError(event.errorMessage);
+						} else {
+							this.chatContainer.addChild(new Spacer(1));
+							this.chatContainer.addChild(new Text(theme.fg("error", event.errorMessage), 1, 0));
+						}
+					}
+					void this.flushCompactionQueue({ willRetry: event.willRetry });
+					this.ui.requestRender();
+					break;
+				}
+
+				case "auto_retry_start": {
+					this.spinnerSystemOverrideMessage = `Retrying request (${event.attempt}/${event.maxAttempts})`;
+					this.setSpinnerBanner({
+						kind: "warning",
+						title: "接口不稳定，正在自动重试",
+						detail: `第 ${event.attempt}/${event.maxAttempts} 次重试 · ${event.errorMessage || "request failed"}`,
+					});
+					// Set up escape to abort retry
+					this.retryEscapeHandler = this.defaultEditor.onEscape;
+					this.defaultEditor.onEscape = () => {
+						this.session.abortRetry();
+					};
+					this.retryCountdown?.dispose();
+					this.retryCountdown = new CountdownTimer(
+						event.delayMs,
+						this.ui,
+						(seconds) => {
+							this.setSpinnerBanner({
+								kind: "warning",
+								title: "接口不稳定，正在自动重试",
+								detail: `第 ${event.attempt}/${event.maxAttempts} 次重试 · ${seconds}s 后继续`,
+							});
+						},
+						() => {
+							this.retryCountdown = undefined;
+						},
+					);
+					this.ui.requestRender();
+					break;
+				}
+
+				case "auto_retry_end": {
+					this.spinnerSystemOverrideMessage = undefined;
+					// Restore escape handler
+					if (this.retryEscapeHandler) {
+						this.defaultEditor.onEscape = this.retryEscapeHandler;
+						this.retryEscapeHandler = undefined;
+					}
+					if (this.retryCountdown) {
+						this.retryCountdown.dispose();
+						this.retryCountdown = undefined;
+					}
+					this.setSpinnerBanner(
+						event.success
+							? {
+									kind: "success",
+									title: "接口已恢复",
+								}
+							: {
+									kind: "error",
+									title: "接口请求失败",
+									detail: `已重试 ${event.attempt} 次`,
+								},
+						event.success ? { expiresMs: 1500 } : undefined,
+					);
+					if (!event.success) {
+						this.showError(
+							`Retry failed after ${event.attempt} attempts: ${event.finalError || "Unknown error"}`,
+						);
+					}
+					this.ui.requestRender();
+					break;
+				}
 			}
+		} finally {
+			this.syncProgressSurfaceRefreshLoop();
 		}
 	}
 
@@ -4063,12 +4116,6 @@ export class InteractiveMode {
 		this.setToolsExpanded(!this.toolOutputExpanded);
 	}
 
-	private setQueuedVisible(visible: boolean): void {
-		this.pendingMessagesVisible = visible;
-		this.updatePendingMessagesDisplay();
-		this.ui.requestRender();
-	}
-
 	private setToolsExpanded(expanded: boolean): void {
 		this.toolOutputExpanded = expanded;
 		const activeHeader = this.customHeader ?? this.builtInHeader;
@@ -4080,15 +4127,6 @@ export class InteractiveMode {
 				child.setExpanded(expanded);
 			}
 		}
-		this.ui.requestRender();
-	}
-
-	private toggleTasksExpanded(): void {
-		this.setTasksExpanded(!this.tasksExpanded);
-	}
-
-	private setTasksExpanded(expanded: boolean): void {
-		this.tasksExpanded = expanded;
 		this.ui.requestRender();
 	}
 
@@ -4223,23 +4261,6 @@ export class InteractiveMode {
 	 * Get all queued messages (read-only).
 	 * Combines session queue and compaction queue.
 	 */
-	private getAllQueuedMessages(): { steering: string[]; followUp: string[] } {
-		return {
-			steering: [
-				...this.session.getSteeringMessages(),
-				...this.compactionQueuedMessages.filter((msg) => msg.mode === "steer").map((msg) => msg.text),
-			],
-			followUp: [
-				...this.session.getFollowUpMessages(),
-				...this.compactionQueuedMessages.filter((msg) => msg.mode === "followUp").map((msg) => msg.text),
-			],
-		};
-	}
-
-	/**
-	 * Clear all queued messages and return their contents.
-	 * Clears both session queue and compaction queue.
-	 */
 	private clearAllQueues(): { steering: string[]; followUp: string[] } {
 		const { steering, followUp } = this.session.clearQueue();
 		const compactionSteering = this.compactionQueuedMessages
@@ -4255,28 +4276,14 @@ export class InteractiveMode {
 		};
 	}
 
-	private latestQueuedMessage(
-		steeringMessages: string[],
-		followUpMessages: string[],
-	): { label: string; text: string } | undefined {
-		if (followUpMessages.length > 0) {
-			return { label: "Follow-up", text: followUpMessages[followUpMessages.length - 1] };
-		}
-		if (steeringMessages.length > 0) {
-			return { label: "Steer", text: steeringMessages[steeringMessages.length - 1] };
-		}
-		return undefined;
-	}
-
 	private updatePendingMessagesDisplay(): void {
 		this.pendingMessagesContainer.clear();
 		const { steering: steeringMessages, followUp: followUpMessages } = this.getAllQueuedMessages();
-		if (!this.pendingMessagesVisible) {
-			return;
-		}
-		if (steeringMessages.length > 0 || followUpMessages.length > 0) {
+		if (steeringMessages.length > 0 || followUpMessages.length > 0 || this.pendingBashComponents.length > 0) {
 			this.pendingMessagesContainer.addChild(new Spacer(1));
+		}
 
+		if (steeringMessages.length > 0 || followUpMessages.length > 0) {
 			const total = steeringMessages.length + followUpMessages.length;
 			const parts: string[] = [];
 			if (steeringMessages.length > 0) {
@@ -4298,6 +4305,42 @@ export class InteractiveMode {
 			const hintText = theme.fg("dim", `↳ ${dequeueHint} to edit all queued messages`);
 			this.pendingMessagesContainer.addChild(new TruncatedText(hintText, 1, 0));
 		}
+
+		if (this.pendingBashComponents.length > 0) {
+			for (const component of this.pendingBashComponents) {
+				this.pendingMessagesContainer.addChild(component);
+			}
+		}
+	}
+
+	/**
+	 * Get all queued messages (read-only).
+	 * Combines session queue and compaction queue.
+	 */
+	private getAllQueuedMessages(): { steering: string[]; followUp: string[] } {
+		return {
+			steering: [
+				...this.session.getSteeringMessages(),
+				...this.compactionQueuedMessages.filter((msg) => msg.mode === "steer").map((msg) => msg.text),
+			],
+			followUp: [
+				...this.session.getFollowUpMessages(),
+				...this.compactionQueuedMessages.filter((msg) => msg.mode === "followUp").map((msg) => msg.text),
+			],
+		};
+	}
+
+	private latestQueuedMessage(
+		steeringMessages: string[],
+		followUpMessages: string[],
+	): { label: string; text: string } | undefined {
+		if (followUpMessages.length > 0) {
+			return { label: "Follow-up", text: followUpMessages[followUpMessages.length - 1] };
+		}
+		if (steeringMessages.length > 0) {
+			return { label: "Steer", text: steeringMessages[steeringMessages.length - 1] };
+		}
+		return undefined;
 	}
 
 	private restoreQueuedMessagesToEditor(options?: { abort?: boolean; currentText?: string }): number {
@@ -4419,10 +4462,10 @@ export class InteractiveMode {
 	/** Move pending bash components from pending area to chat */
 	private flushPendingBashComponents(): void {
 		for (const component of this.pendingBashComponents) {
-			this.pendingMessagesContainer.removeChild(component);
 			this.chatContainer.addChild(component);
 		}
 		this.pendingBashComponents = [];
+		this.updatePendingMessagesDisplay();
 	}
 
 	// =========================================================================
@@ -6058,8 +6101,8 @@ export class InteractiveMode {
 			// Create UI component for display
 			this.bashComponent = new BashExecutionComponent(command, this.ui, excludeFromContext);
 			if (this.session.isStreaming) {
-				this.pendingMessagesContainer.addChild(this.bashComponent);
 				this.pendingBashComponents.push(this.bashComponent);
+				this.updatePendingMessagesDisplay();
 			} else {
 				this.chatContainer.addChild(this.bashComponent);
 			}
@@ -6088,8 +6131,8 @@ export class InteractiveMode {
 
 		if (isDeferred) {
 			// Show in pending area when agent is streaming
-			this.pendingMessagesContainer.addChild(this.bashComponent);
 			this.pendingBashComponents.push(this.bashComponent);
+			this.updatePendingMessagesDisplay();
 		} else {
 			// Show in chat immediately when agent is idle
 			this.chatContainer.addChild(this.bashComponent);
@@ -6151,6 +6194,10 @@ export class InteractiveMode {
 
 	stop(): void {
 		this.unregisterSignalHandlers();
+		if (this.progressSurfaceRefreshTimer) {
+			clearInterval(this.progressSurfaceRefreshTimer);
+			this.progressSurfaceRefreshTimer = undefined;
+		}
 		if (this.settingsManager.getShowTerminalProgress()) {
 			this.ui.terminal.setProgress(false);
 		}

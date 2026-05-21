@@ -197,6 +197,11 @@ export function formatTaskResultSummary(details: TaskToolDetails): string {
 	return `Done (${parts.join(" · ")})`;
 }
 
+function isPureTaskProgressSummary(text: string | undefined): boolean {
+	if (!text) return false;
+	return /^(Done|Failed) \(.+\)$/.test(text.trim());
+}
+
 // ============================================================================
 // EventBus Channels
 // ============================================================================
@@ -483,6 +488,15 @@ function formatDuration(ms: number): string {
 	return `${(ms / 1000).toFixed(1)}s`;
 }
 
+function summarizeTaskSuccess(details: TaskToolDetails): string | undefined {
+	if (details.results.length !== 1) return undefined;
+	const [result] = details.results;
+	if (result.exitCode !== 0 || !result.output.trim()) return undefined;
+	const normalized = result.output.replace(/\s+/g, " ").trim();
+	if (!normalized || normalized === "(no output)") return undefined;
+	return normalized.length > 120 ? `${normalized.slice(0, 117).trimEnd()}...` : normalized;
+}
+
 // ============================================================================
 // Tool Schema
 // ============================================================================
@@ -701,8 +715,15 @@ export default function lumenTaskExtension(pi: ExtensionAPI): void {
 
 			const lines: string[] = [];
 
-			if (!options.isPartial && details) {
-				lines.push(theme.fg("dim", `  ⎿ ${formatTaskResultSummary(details)}`));
+			const hasFailure = details?.results.some((entry) => entry.exitCode !== 0) ?? false;
+
+			if (!options.isPartial && hasFailure && details) {
+				lines.push(theme.fg("error", `  ⎿ ${formatTaskResultSummary(details)}`));
+			} else if (!options.isPartial && details) {
+				const summaryText = summarizeTaskSuccess(details);
+				if (summaryText && !isPureTaskProgressSummary(summaryText)) {
+					lines.push(theme.fg("dim", `  ⎿ ${summaryText}`));
+				}
 			}
 
 			return {

@@ -488,6 +488,11 @@ function formatCompactResult(phases: TodoPhase[], errors: string[]): string {
 	return summary;
 }
 
+function isPureTodoProgressSummary(text: string | undefined): boolean {
+	if (!text) return false;
+	return /^Todo \d+\/\d+ completed · \d+ remaining(?: · Current .+)?$/.test(text.trim());
+}
+
 export function getSessionTodoUiItems(): TaskUiItem[] | undefined {
 	if (sessionPhases.length === 0) return undefined;
 	return sessionPhases.flatMap((phase, phaseIndex) =>
@@ -604,28 +609,39 @@ export default function lumenTodoExtension(pi: ExtensionAPI): void {
 				if (entry.phase) parts.push(`(${entry.phase})`);
 				return parts.join(" ");
 			}) ?? ["update"];
+			const firstOp = args?.ops?.[0]?.op;
+			if (ops.length > 1 || firstOp === "init") {
+				return new Text("", 0, 0);
+			}
 			const dot = context.isError
 				? theme.fg("error", "●")
 				: context.isPartial
 					? theme.fg("dim", "●")
-					: theme.fg("success", "●");
-			const text = `${dot} ${theme.fg("toolTitle", theme.bold("todo "))}${theme.fg("muted", ops.join(", "))}`;
+					: theme.fg("dim", "●");
+			const text = `${dot} ${theme.fg("toolTitle", "todo ")}${theme.fg("muted", ops.join(", "))}`;
 			return new Text(text, 0, 0);
 		},
 
 		renderResult(
 			result: { content: Array<{ type: string; text?: string }>; details?: TodoToolDetails },
-			_options: ToolRenderResultOptions,
+			options: ToolRenderResultOptions,
 			theme,
 			_context,
 		) {
+			if (options.isPartial) {
+				return new Text("", 0, 0);
+			}
 			const details = result.details;
 			if (!details) {
 				const fallback = result.content?.[0]?.text ?? "No todos";
 				return new Text(theme.fg("dim", fallback), 0, 0);
 			}
+			const summaryText = result.content?.[0]?.text;
+			if (details.errors.length === 0 && isPureTodoProgressSummary(summaryText)) {
+				return new Text("", 0, 0);
+			}
 			const summary = formatCompactResult(details.phases, details.errors);
-			return new Text(theme.fg("dim", summary), 0, 0);
+			return new Text(details.errors.length > 0 ? theme.fg("error", summary) : theme.fg("dim", summary), 0, 0);
 		},
 	});
 

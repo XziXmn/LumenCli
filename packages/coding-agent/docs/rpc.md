@@ -1002,6 +1002,8 @@ Some `ExtensionUIContext` methods are not supported or degraded in RPC mode beca
 - `getTheme()` returns `undefined`
 - `setTheme()` returns `{ success: false, error: "..." }`
 
+The core prompt-side progress surface is also not extension-owned in RPC mode. Passive host-facing signals such as `setStatus()` and `setWidget()` still forward through the extension UI request channel, but queue/banner/execution/plan rendering remains a core concern of the host UI.
+
 Note: `ctx.hasUI` is `true` in RPC mode because the dialog and fire-and-forget methods are functional via the extension UI sub-protocol.
 
 ### Extension UI Requests (stdout)
