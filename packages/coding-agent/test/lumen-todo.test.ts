@@ -21,7 +21,7 @@ describe("lumenTodoExtension", () => {
 	// Behavior 3: footer does not carry task/todo primary summary display.
 	// The todo extension resets state on session_start but no longer writes
 	// a setStatus footer line. The compact summary is rendered via renderResult only.
-	it("keeps todo summaries visible when they contain semantic current-task information", async () => {
+	it("suppresses todo progress summaries even when they include current-task information", async () => {
 		const extensionsResult = await createTestExtensionsResult([lumenTodoExtension]);
 		const extension = extensionsResult.extensions[0];
 		const todoTool = extension.tools.get("todo")?.definition;
@@ -59,8 +59,7 @@ describe("lumenTodoExtension", () => {
 			{} as any,
 		) as Text;
 		const text = stripAnsi(rendered.render(120).join("\n"));
-		expect(text).toContain("Todo 0/2 completed · 2 remaining");
-		expect(text).toContain("Current 总结仓库结构和特点");
+		expect(text.trim()).toBe("");
 	});
 
 	it("hides multi-op todo call rows so transcript does not repeat status-bar progress semantics", async () => {
@@ -153,5 +152,24 @@ describe("lumenTodoExtension", () => {
 		) as Text;
 		const text = stripAnsi(rendered.render(120).join("\n"));
 		expect(text).toContain("Todo list cleared.");
+	});
+
+	it("keeps todo errors visible even when successful progress summaries are suppressed", async () => {
+		const extensionsResult = await createTestExtensionsResult([lumenTodoExtension]);
+		const extension = extensionsResult.extensions[0];
+		const todoTool = extension.tools.get("todo")?.definition;
+		expect(todoTool).toBeDefined();
+
+		const rendered = todoTool!.renderResult!(
+			{
+				content: [{ type: "text", text: 'Errors: Task "不存在的任务" not found' }],
+				details: { phases: [], errors: ['Task "不存在的任务" not found'] },
+			} as any,
+			{ expanded: false, isPartial: false },
+			(await import("../src/modes/interactive/theme/theme.js")).theme,
+			{} as any,
+		) as Text;
+		const text = stripAnsi(rendered.render(120).join("\n"));
+		expect(text).toContain('Errors: Task "不存在的任务" not found');
 	});
 });

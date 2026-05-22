@@ -6,6 +6,10 @@
 - No emojis in commits, issues, PR comments, or code
 - No fluff or cheerful filler text
 - Technical prose only, be kind but direct (e.g., "Thanks @user" not "Thanks so much @user!")
+- In user-facing conversation, prefer plain language over internal jargon. Avoid hard-to-understand labels like `approval`, `user-input`, `retry`, `reconnect`, `queue`, `banner`, `transcript`, or `matrix` unless they are truly necessary.
+- When a technical term must appear, explain it immediately in simpler words. Prefer phrases like “等待你确认的状态”, “等待你输入内容的状态”, “接口自动重试”, “网络连接恢复中”, “待发送消息区”, “聊天正文”, “行为对照表”.
+- Bad: “approval / user-input / retry / reconnect 行为矩阵”
+- Good: “等待你确认、等待你输入、接口自动重试、网络恢复这几种状态，在界面里各自应该怎么显示、什么时候消失”
 
 ## Code Quality
 

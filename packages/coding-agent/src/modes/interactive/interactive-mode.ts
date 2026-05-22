@@ -4285,24 +4285,17 @@ export class InteractiveMode {
 
 		if (steeringMessages.length > 0 || followUpMessages.length > 0) {
 			const total = steeringMessages.length + followUpMessages.length;
-			const parts: string[] = [];
-			if (steeringMessages.length > 0) {
-				parts.push(`${steeringMessages.length} steer`);
-			}
-			if (followUpMessages.length > 0) {
-				parts.push(`${followUpMessages.length} follow-up`);
-			}
-			const summaryText = theme.fg("dim", `Queued ${total} · ${parts.join(" · ")}`);
+			const summaryText = theme.fg("dim", `${total} queued command${total === 1 ? "" : "s"}`);
 			this.pendingMessagesContainer.addChild(new TruncatedText(summaryText, 1, 0));
 
 			const latest = this.latestQueuedMessage(steeringMessages, followUpMessages);
 			if (latest) {
-				const latestText = theme.fg("dim", `↳ ${latest.label}: ${latest.text}`);
+				const latestText = theme.fg("dim", `  ⎿ ${latest.label}: ${latest.text}`);
 				this.pendingMessagesContainer.addChild(new TruncatedText(latestText, 1, 0));
 			}
 
 			const dequeueHint = this.getAppKeyDisplay("app.message.dequeue");
-			const hintText = theme.fg("dim", `↳ ${dequeueHint} to edit all queued messages`);
+			const hintText = theme.fg("dim", `  ⎿ ${dequeueHint} to edit all queued messages`);
 			this.pendingMessagesContainer.addChild(new TruncatedText(hintText, 1, 0));
 		}
 

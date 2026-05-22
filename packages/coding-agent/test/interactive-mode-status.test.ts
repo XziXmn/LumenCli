@@ -4,8 +4,12 @@ import { type AutocompleteProvider, CombinedAutocompleteProvider, Container } fr
 import { beforeAll, describe, expect, test, vi } from "vitest";
 import type { AutocompleteProviderFactory } from "../src/core/extensions/types.js";
 import type { SourceInfo } from "../src/core/source-info.js";
+import {
+	createProgressSurfaceWorkingState,
+	ProgressSurfaceComponent,
+} from "../src/modes/interactive/components/progress-surface.js";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.js";
-import { initTheme } from "../src/modes/interactive/theme/theme.js";
+import { initTheme, theme } from "../src/modes/interactive/theme/theme.js";
 
 function renderLastLine(container: Container, width = 120): string {
 	const last = container.children[container.children.length - 1];
@@ -25,6 +29,24 @@ function normalizeRenderedOutput(container: Container, width = 220): string {
 		.map((line) => line.replace(/\s+$/g, ""))
 		.join("\n")
 		.trim();
+}
+
+function createLiveTodoSnapshot(spinner: unknown) {
+	return {
+		tasks: [
+			{
+				id: "todo:0:0:整理接口定义",
+				content: "整理接口定义",
+				subject: "整理接口定义",
+				activeForm: "整理接口定义",
+				status: "in_progress" as const,
+				group: "接口收口",
+			},
+		],
+		queued: undefined,
+		spinner: spinner as never,
+		expanded: false,
+	};
 }
 
 type ExtensionFixture = {
@@ -274,6 +296,9 @@ describe("InteractiveMode spinner helpers", () => {
 	test("buildDefaultSpinnerState preserves overrideMessage even when it is the only signal", () => {
 		const fakeThis: any = {
 			session: {
+				isStreaming: false,
+				isCompacting: false,
+				isRetrying: false,
 				getTaskUiSummary: () => undefined,
 				getContextUsage: () => undefined,
 				getSpinnerBudgetUsage: () => undefined,
@@ -293,7 +318,7 @@ describe("InteractiveMode spinner helpers", () => {
 		};
 
 		const state = (InteractiveMode as any).prototype.buildDefaultSpinnerState.call(fakeThis);
-		expect(state).toEqual({ overrideMessage: "Compacting conversation", mode: "requesting" });
+		expect(state).toEqual({ overrideMessage: "Compacting conversation" });
 	});
 
 	test("buildDefaultSpinnerState does not synthesize task or queued tips", () => {
@@ -334,6 +359,9 @@ describe("InteractiveMode spinner helpers", () => {
 		const now = Date.now();
 		const fakeThis: any = {
 			session: {
+				isStreaming: true,
+				isCompacting: false,
+				isRetrying: false,
 				getTaskUiSummary: () => ({
 					total: 1,
 					completed: 0,
@@ -369,6 +397,9 @@ describe("InteractiveMode spinner helpers", () => {
 		const now = Date.now();
 		const fakeThis: any = {
 			session: {
+				isStreaming: true,
+				isCompacting: false,
+				isRetrying: false,
 				getTaskUiSummary: () => ({
 					total: 1,
 					completed: 0,
@@ -404,6 +435,9 @@ describe("InteractiveMode spinner helpers", () => {
 		const now = Date.now();
 		const fakeThis: any = {
 			session: {
+				isStreaming: true,
+				isCompacting: false,
+				isRetrying: false,
 				getTaskUiSummary: () => ({
 					total: 1,
 					completed: 0,
@@ -445,6 +479,12 @@ describe("InteractiveMode spinner helpers", () => {
 			statusContainer,
 			workingVisible: false,
 			session: { isStreaming: false },
+			getProgressSurfaceSnapshot: () => ({
+				tasks: [],
+				queued: undefined,
+				spinner: undefined,
+				expanded: false,
+			}),
 			loadingAnimation: undefined,
 			ui: { requestRender: vi.fn() },
 			renderWorkingArea() {
@@ -461,6 +501,255 @@ describe("InteractiveMode spinner helpers", () => {
 		expect(fakeThis.workingDetailsComponent).toBeDefined();
 		expect(renderAll(statusContainer)).toContain("DETAILS");
 		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(1);
+	});
+
+	test("updatePendingMessagesDisplay renders queued prompts as a separate prompt-side queue slot", () => {
+		initTheme("dark");
+
+		const fakeThis: any = {
+			pendingMessagesContainer: new Container(),
+			pendingBashComponents: [],
+			getAllQueuedMessages: () => ({
+				steering: ["先看 retry 逻辑"],
+				followUp: ["完成后补文档"],
+			}),
+			getAppKeyDisplay: () => "Alt+Up",
+			latestQueuedMessage: (steeringMessages: string[], followUpMessages: string[]) =>
+				(InteractiveMode as any).prototype.latestQueuedMessage.call(fakeThis, steeringMessages, followUpMessages),
+		};
+
+		(InteractiveMode as any).prototype.updatePendingMessagesDisplay.call(fakeThis);
+
+		const output = normalizeRenderedOutput(fakeThis.pendingMessagesContainer);
+		expect(output).toContain("2 queued commands");
+		expect(output).toContain("⎿ Follow-up: 完成后补文档");
+		expect(output).toContain("⎿ Alt+Up to edit all queued messages");
+		expect(output).not.toContain("Queued 2 · 1 steer · 1 follow-up");
+		expect(output).not.toContain("↳");
+	});
+
+	test("setSpinnerBanner auto-clears timed success banners without clearing newer banners", () => {
+		vi.useFakeTimers();
+		try {
+			const fakeThis: any = {
+				spinnerBanner: undefined,
+				spinnerBannerTimeout: undefined,
+				clearSpinnerBannerTimeout() {
+					return (InteractiveMode as any).prototype.clearSpinnerBannerTimeout.call(this);
+				},
+				syncProgressSurfaceRefreshLoop: vi.fn(),
+				ui: { requestRender: vi.fn() },
+			};
+
+			const successBanner = { kind: "success", title: "接口已恢复" };
+			const warningBanner = { kind: "warning", title: "网络连接不稳定，正在恢复会话流" };
+
+			(InteractiveMode as any).prototype.setSpinnerBanner.call(fakeThis, successBanner, { expiresMs: 1500 });
+			expect(fakeThis.spinnerBanner).toEqual(successBanner);
+
+			vi.advanceTimersByTime(1000);
+			expect(fakeThis.spinnerBanner).toEqual(successBanner);
+
+			(InteractiveMode as any).prototype.setSpinnerBanner.call(fakeThis, warningBanner);
+			expect(fakeThis.spinnerBanner).toEqual(warningBanner);
+
+			vi.advanceTimersByTime(1000);
+			expect(fakeThis.spinnerBanner).toEqual(warningBanner);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	test("setSpinnerBanner keeps error banners visible when no expiry is set", () => {
+		vi.useFakeTimers();
+		try {
+			const fakeThis: any = {
+				spinnerBanner: undefined,
+				spinnerBannerTimeout: undefined,
+				clearSpinnerBannerTimeout() {
+					return (InteractiveMode as any).prototype.clearSpinnerBannerTimeout.call(this);
+				},
+				syncProgressSurfaceRefreshLoop: vi.fn(),
+				ui: { requestRender: vi.fn() },
+			};
+
+			const errorBanner = { kind: "error", title: "接口请求失败", detail: "已重试 3 次" };
+
+			(InteractiveMode as any).prototype.setSpinnerBanner.call(fakeThis, errorBanner);
+			expect(fakeThis.spinnerBanner).toEqual(errorBanner);
+
+			vi.advanceTimersByTime(10_000);
+			expect(fakeThis.spinnerBanner).toEqual(errorBanner);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	test("timed success banners disappear and the todo headline becomes visible again", () => {
+		vi.useFakeTimers();
+		try {
+			const working = createProgressSurfaceWorkingState(0);
+			const statusContainer = new Container();
+			const fakeThis: any = {
+				spinnerBanner: undefined,
+				spinnerBannerTimeout: undefined,
+				progressSurfaceWorkingState: working,
+				statusContainer,
+				workingVisible: false,
+				session: {
+					isStreaming: false,
+					isCompacting: false,
+					isRetrying: false,
+					getTaskUiSummary: () => undefined,
+					getContextUsage: () => undefined,
+					getSpinnerBudgetUsage: () => undefined,
+				},
+				settingsManager: { getSpinnerTipsEnabled: () => true },
+				buildDefaultBudgetText: (outputTokens?: number, elapsedMs?: number) =>
+					(InteractiveMode as any).prototype.buildDefaultBudgetText.call(fakeThis, outputTokens, elapsedMs),
+				getProgressSurfaceSnapshot() {
+					return createLiveTodoSnapshot((InteractiveMode as any).prototype.buildDefaultSpinnerState.call(this));
+				},
+				clearSpinnerBannerTimeout() {
+					return (InteractiveMode as any).prototype.clearSpinnerBannerTimeout.call(this);
+				},
+				syncProgressSurfaceRefreshLoop: vi.fn(),
+				ui: { requestRender: vi.fn() },
+				progressSurfaceComponent: undefined,
+				renderWorkingArea() {
+					return (InteractiveMode as any).prototype.renderWorkingArea.call(this);
+				},
+			};
+			fakeThis.progressSurfaceComponent = new ProgressSurfaceComponent(
+				() => fakeThis.getProgressSurfaceSnapshot(),
+				theme,
+				working,
+			);
+
+			const successBanner = { kind: "success", title: "接口已恢复" };
+			(InteractiveMode as any).prototype.setSpinnerBanner.call(fakeThis, successBanner, { expiresMs: 1500 });
+
+			fakeThis.renderWorkingArea();
+			let output = normalizeRenderedOutput(statusContainer);
+			expect(output).toContain("接口已恢复");
+			expect(output).not.toContain("整理接口定义...");
+
+			vi.advanceTimersByTime(1500);
+			fakeThis.renderWorkingArea();
+			output = normalizeRenderedOutput(statusContainer);
+			expect(output).toContain("整理接口定义...");
+			expect(output).toContain("Plan");
+			expect(output).not.toContain("接口已恢复");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	test("error banners stay visible and keep overriding the todo headline", () => {
+		vi.useFakeTimers();
+		try {
+			const working = createProgressSurfaceWorkingState(0);
+			const statusContainer = new Container();
+			const fakeThis: any = {
+				spinnerBanner: undefined,
+				spinnerBannerTimeout: undefined,
+				progressSurfaceWorkingState: working,
+				statusContainer,
+				workingVisible: false,
+				session: {
+					isStreaming: false,
+					isCompacting: false,
+					isRetrying: false,
+					getTaskUiSummary: () => undefined,
+					getContextUsage: () => undefined,
+					getSpinnerBudgetUsage: () => undefined,
+				},
+				settingsManager: { getSpinnerTipsEnabled: () => true },
+				buildDefaultBudgetText: (outputTokens?: number, elapsedMs?: number) =>
+					(InteractiveMode as any).prototype.buildDefaultBudgetText.call(fakeThis, outputTokens, elapsedMs),
+				getProgressSurfaceSnapshot() {
+					return createLiveTodoSnapshot((InteractiveMode as any).prototype.buildDefaultSpinnerState.call(this));
+				},
+				clearSpinnerBannerTimeout() {
+					return (InteractiveMode as any).prototype.clearSpinnerBannerTimeout.call(this);
+				},
+				syncProgressSurfaceRefreshLoop: vi.fn(),
+				ui: { requestRender: vi.fn() },
+				progressSurfaceComponent: undefined,
+				renderWorkingArea() {
+					return (InteractiveMode as any).prototype.renderWorkingArea.call(this);
+				},
+			};
+			fakeThis.progressSurfaceComponent = new ProgressSurfaceComponent(
+				() => fakeThis.getProgressSurfaceSnapshot(),
+				theme,
+				working,
+			);
+
+			const errorBanner = { kind: "error", title: "接口请求失败", detail: "已重试 3 次" };
+			(InteractiveMode as any).prototype.setSpinnerBanner.call(fakeThis, errorBanner);
+
+			fakeThis.renderWorkingArea();
+			const initial = normalizeRenderedOutput(statusContainer);
+			expect(initial).toContain("接口请求失败");
+			expect(initial).not.toContain("整理接口定义...");
+
+			vi.advanceTimersByTime(10_000);
+			fakeThis.renderWorkingArea();
+			const after = normalizeRenderedOutput(statusContainer);
+			expect(after).toContain("接口请求失败");
+			expect(after).not.toContain("整理接口定义...");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	test("hideExtensionSelector clears approval banner and waiting status", () => {
+		const editorContainer = new Container();
+		const editor = { render: () => [""], invalidate: () => {} } as any;
+		const selector = { dispose: vi.fn(), render: () => [""], invalidate: () => {} } as any;
+		const setExtensionStatus = vi.fn();
+		const setSpinnerBanner = vi.fn();
+		const fakeThis: any = {
+			editorContainer,
+			editor,
+			extensionSelector: selector,
+			setExtensionStatus,
+			setSpinnerBanner,
+			ui: { setFocus: vi.fn(), requestRender: vi.fn() },
+		};
+
+		(InteractiveMode as any).prototype.hideExtensionSelector.call(fakeThis);
+
+		expect(selector.dispose).toHaveBeenCalledTimes(1);
+		expect(fakeThis.extensionSelector).toBeUndefined();
+		expect(setExtensionStatus).toHaveBeenCalledWith("ui", undefined);
+		expect(setSpinnerBanner).toHaveBeenCalledWith(undefined);
+		expect(fakeThis.ui.setFocus).toHaveBeenCalledWith(editor);
+	});
+
+	test("hideExtensionInput clears input banner and waiting status", () => {
+		const editorContainer = new Container();
+		const editor = { render: () => [""], invalidate: () => {} } as any;
+		const input = { dispose: vi.fn(), render: () => [""], invalidate: () => {} } as any;
+		const setExtensionStatus = vi.fn();
+		const setSpinnerBanner = vi.fn();
+		const fakeThis: any = {
+			editorContainer,
+			editor,
+			extensionInput: input,
+			setExtensionStatus,
+			setSpinnerBanner,
+			ui: { setFocus: vi.fn(), requestRender: vi.fn() },
+		};
+
+		(InteractiveMode as any).prototype.hideExtensionInput.call(fakeThis);
+
+		expect(input.dispose).toHaveBeenCalledTimes(1);
+		expect(fakeThis.extensionInput).toBeUndefined();
+		expect(setExtensionStatus).toHaveBeenCalledWith("ui", undefined);
+		expect(setSpinnerBanner).toHaveBeenCalledWith(undefined);
+		expect(fakeThis.ui.setFocus).toHaveBeenCalledWith(editor);
 	});
 });
 

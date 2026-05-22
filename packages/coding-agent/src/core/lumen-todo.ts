@@ -488,6 +488,11 @@ function formatCompactResult(phases: TodoPhase[], errors: string[]): string {
 	return summary;
 }
 
+function isStructuredTodoProgressBody(text: string | undefined): boolean {
+	if (!text) return false;
+	return /^Progress: \d+\/\d+ completed, \d+ remaining\b/.test(text.trim());
+}
+
 function isPureTodoProgressSummary(text: string | undefined): boolean {
 	if (!text) return false;
 	return /^Todo \d+\/\d+ completed · \d+ remaining(?: · Current .+)?$/.test(text.trim());
@@ -637,7 +642,10 @@ export default function lumenTodoExtension(pi: ExtensionAPI): void {
 				return new Text(theme.fg("dim", fallback), 0, 0);
 			}
 			const summaryText = result.content?.[0]?.text;
-			if (details.errors.length === 0 && isPureTodoProgressSummary(summaryText)) {
+			if (
+				details.errors.length === 0 &&
+				(isStructuredTodoProgressBody(summaryText) || isPureTodoProgressSummary(summaryText))
+			) {
 				return new Text("", 0, 0);
 			}
 			const summary = formatCompactResult(details.phases, details.errors);

@@ -320,6 +320,36 @@ describe("core progress surface", () => {
 		expect(output).toContain("将修改 4 个文件，确认后继续");
 	});
 
+	it("lets approval banner and override message dominate over a live todo headline", () => {
+		const output = render({
+			tasks: [
+				{
+					id: "todo:0:0:实现核心功能",
+					content: "实现核心功能",
+					subject: "实现核心功能",
+					activeForm: "实现核心功能",
+					status: "in_progress",
+					group: "开发实现",
+				},
+			],
+			queued: undefined,
+			spinner: {
+				banner: {
+					kind: "approval",
+					title: "等待审批确认",
+					detail: "将修改 4 个文件，确认后继续",
+				},
+				overrideMessage: "Waiting for approval",
+				mode: "requesting",
+			},
+			expanded: false,
+		});
+
+		expect(output).toContain("等待审批确认");
+		expect(output).toContain("Waiting for approval...");
+		expect(output).not.toContain("实现核心功能...");
+	});
+
 	it("renders user-input banner distinctly", () => {
 		const output = render({
 			tasks: [],
@@ -338,6 +368,34 @@ describe("core progress surface", () => {
 		expect(output).toContain("请选择：保守修复 / 一次性重构");
 	});
 
+	it("lets user-input banner dominate over a live todo headline", () => {
+		const output = render({
+			tasks: [
+				{
+					id: "todo:0:0:整理接口定义",
+					content: "整理接口定义",
+					subject: "整理接口定义",
+					activeForm: "整理接口定义",
+					status: "in_progress",
+					group: "接口收口",
+				},
+			],
+			queued: undefined,
+			spinner: {
+				banner: {
+					kind: "input",
+					title: "等待你的输入",
+					detail: "请选择：保守修复 / 一次性重构",
+				},
+			},
+			expanded: false,
+		});
+
+		expect(output).toContain("等待你的输入...");
+		expect(output).toContain("请选择：保守修复 / 一次性重构");
+		expect(output).not.toContain("整理接口定义...");
+	});
+
 	it("renders stream recovery banner distinctly", () => {
 		const output = render({
 			tasks: [],
@@ -354,6 +412,34 @@ describe("core progress surface", () => {
 
 		expect(output).toContain("网络连接不稳定，正在恢复会话流");
 		expect(output).toContain("SSE reconnect · 第 2/10 次");
+	});
+
+	it("lets reconnect banner dominate over a live todo headline", () => {
+		const output = render({
+			tasks: [
+				{
+					id: "todo:0:0:继续拉取接口结果",
+					content: "继续拉取接口结果",
+					subject: "继续拉取接口结果",
+					activeForm: "继续拉取接口结果",
+					status: "in_progress",
+					group: "数据同步",
+				},
+			],
+			queued: undefined,
+			spinner: {
+				banner: {
+					kind: "warning",
+					title: "网络连接不稳定，正在恢复会话流",
+					detail: "SSE reconnect · 第 2/10 次",
+				},
+			},
+			expanded: false,
+		});
+
+		expect(output).toContain("网络连接不稳定，正在恢复会话流...");
+		expect(output).toContain("SSE reconnect · 第 2/10 次");
+		expect(output).not.toContain("继续拉取接口结果...");
 	});
 
 	it("hides taskbar when only completed or abandoned todo items remain", () => {
@@ -382,7 +468,7 @@ describe("core progress surface", () => {
 		expect(output.trim()).toBe("");
 	});
 
-	it("hides taskbar when only todo plan remains but execution is complete", () => {
+	it("keeps taskbar visible when only todo plan remains so todo can own progress", () => {
 		const output = render({
 			tasks: [
 				{
@@ -405,6 +491,10 @@ describe("core progress surface", () => {
 			expanded: false,
 		});
 
-		expect(output.trim()).toBe("");
+		expect(output).toContain("实现分页查询...");
+		expect(output).toContain("Plan");
+		expect(output).toContain("◐ 实现分页查询");
+		expect(output).toContain("☐ 添加参数校验");
+		expect(output).toContain("Next: 添加参数校验");
 	});
 });

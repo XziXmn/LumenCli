@@ -202,6 +202,10 @@ function buildHeadlineText(
 		return inlineText(spinner.overrideMessage, MAX_WORKING_PREVIEW_CHARS);
 	}
 
+	if (spinner?.banner?.title) {
+		return inlineText(spinner.banner.title, MAX_WORKING_PREVIEW_CHARS);
+	}
+
 	if (currentPlan?.activeForm) {
 		return inlineText(currentPlan.activeForm, MAX_WORKING_PREVIEW_CHARS);
 	}
@@ -392,10 +396,11 @@ function renderPlanLines(items: TaskUiItem[], expanded: boolean, theme: Theme): 
 }
 
 export function shouldRenderProgressSurface(snapshot: ProgressSurfaceSnapshot): boolean {
-	const { execution } = splitTasks(snapshot);
+	const { execution, plan } = splitTasks(snapshot);
 	const executionHasLive = execution.some(
 		(item) => item.status === "running" || item.status === "in_progress" || item.status === "pending",
 	);
+	const planHasLive = plan.some((item) => item.status === "in_progress" || item.status === "pending");
 	const hasSpinnerSurface =
 		snapshot.spinner?.banner !== undefined ||
 		snapshot.spinner?.overrideMessage !== undefined ||
@@ -406,7 +411,7 @@ export function shouldRenderProgressSurface(snapshot: ProgressSurfaceSnapshot): 
 		snapshot.spinner?.outputTokens !== undefined ||
 		snapshot.spinner?.budgetText !== undefined ||
 		snapshot.spinner?.tip !== undefined;
-	return hasSpinnerSurface || executionHasLive;
+	return hasSpinnerSurface || executionHasLive || planHasLive;
 }
 
 function renderProgressSurfaceLines(
