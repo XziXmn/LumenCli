@@ -40,6 +40,7 @@ import {
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
+import { declineLegacyPiImport, detectLegacyPiImport, importLegacyPiConfig } from "./legacy-pi-import.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
@@ -183,6 +184,26 @@ async function promptConfirm(message: string): Promise<boolean> {
 			resolve(answer.toLowerCase() === "y" || answer.toLowerCase() === "yes");
 		});
 	});
+}
+
+async function maybeImportLegacyPiConfig(cwd: string, agentDir: string, appMode: AppMode): Promise<string | undefined> {
+	const prompt = detectLegacyPiImport(cwd, agentDir);
+	if (!prompt) {
+		return undefined;
+	}
+
+	if (appMode !== "interactive") {
+		return undefined;
+	}
+
+	const confirmed = await promptConfirm(prompt.message);
+	if (!confirmed) {
+		declineLegacyPiImport(prompt);
+		return "Skipped importing legacy .pi configuration. You can migrate it later into .lumen manually or via the migration skill.";
+	}
+
+	const result = importLegacyPiConfig(cwd, agentDir, prompt);
+	return result.summaryMessage;
 }
 
 function validateForkFlags(parsed: Args): void {
@@ -489,6 +510,7 @@ export async function main(args: string[], options?: MainOptions) {
 
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
+	const legacyImportMessage = await maybeImportLegacyPiConfig(cwd, agentDir, appMode);
 	const startupSettingsManager = SettingsManager.create(cwd, agentDir);
 	reportDiagnostics(collectSettingsDiagnostics(startupSettingsManager, "startup session lookup"));
 
@@ -690,6 +712,7 @@ export async function main(args: string[], options?: MainOptions) {
 
 		const interactiveMode = new InteractiveMode(runtime, {
 			migratedProviders,
+			legacyImportMessage,
 			modelFallbackMessage,
 			initialMessage,
 			initialImages,

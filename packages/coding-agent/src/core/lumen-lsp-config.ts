@@ -12,7 +12,7 @@
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
-import { CONFIG_DIR_NAME, LEGACY_CONFIG_DIR_NAME } from "../config.js";
+import { CONFIG_DIR_NAME } from "../config.js";
 import type { ServerConfig } from "./lumen-lsp-types.js";
 
 // ============================================================================
@@ -124,13 +124,12 @@ export interface LspConfig {
 let cachedConfig: { cwd: string; config: LspConfig } | undefined;
 
 /**
- * Load LSP config from .lumen/lsp.json (or .pi/lsp.json as fallback),
- * merging with built-in defaults.
+ * Load LSP config from .lumen/lsp.json and merge with built-in defaults.
  */
 export function loadLspConfig(cwd: string): LspConfig {
 	if (cachedConfig?.cwd === cwd) return cachedConfig.config;
 
-	const candidates = [join(cwd, CONFIG_DIR_NAME, "lsp.json"), join(cwd, LEGACY_CONFIG_DIR_NAME, "lsp.json")];
+	const candidates = [join(cwd, CONFIG_DIR_NAME, "lsp.json")];
 
 	let userServers: Record<string, Partial<ServerConfig>> = {};
 	let idleTimeoutMs = 10 * 60 * 1000;

@@ -2,7 +2,7 @@
 
 # Pi Packages
 
-Pi packages bundle extensions, skills, prompt templates, and themes so you can share them through npm or git. A package can declare resources in `package.json` under the `pi` key, or use conventional directories.
+Pi packages bundle extensions, skills, prompt templates, and themes so you can share them through npm or git. A package can declare resources in `package.json` under the `lumen` key, or use conventional directories. The legacy `pi` key is still accepted for compatibility.
 
 ## Table of Contents
 
@@ -36,7 +36,7 @@ pi update npm:@foo/bar      # update one package
 pi update --extension npm:@foo/bar
 ```
 
-By default, `install` and `remove` write to global settings (`~/.pi/agent/settings.json`). Use `-l` to write to project settings (`.pi/settings.json`) instead. Project settings can be shared with your team, and pi installs any missing packages automatically on startup.
+By default, `install` and `remove` write to global settings (`~/.lumen/agent/settings.json`). Use `-l` to write to project settings (`.lumen/settings.json`) instead. Project settings can be shared with your team, and Lumen installs any missing packages automatically on startup.
 
 To try a package without installing it, use `--extension` or `-e`. This installs to a temporary directory for the current run only:
 
@@ -58,7 +58,7 @@ npm:pkg
 
 - Versioned specs are pinned and skipped by package updates (`pi update`, `pi update --extensions`).
 - Global installs use `npm install -g`.
-- Project installs go under `.pi/npm/`.
+- Project installs go under `.lumen/npm/`.
 - Set `npmCommand` in `settings.json` to pin npm package lookup and install operations to a specific wrapper command such as `mise` or `asdf`.
 
 Example:
@@ -84,7 +84,7 @@ ssh://git@github.com/user/repo@v1
 - SSH URLs use your configured SSH keys automatically (respects `~/.ssh/config`).
 - For non-interactive runs (for example CI), you can set `GIT_TERMINAL_PROMPT=0` to disable credential prompts and set `GIT_SSH_COMMAND` (for example `ssh -o BatchMode=yes -o ConnectTimeout=5`) to fail fast.
 - Refs pin the package and skip package updates (`pi update`, `pi update --extensions`).
-- Cloned to `~/.pi/agent/git/<host>/<path>` (global) or `.pi/git/<host>/<path>` (project).
+- Cloned to `~/.lumen/agent/git/<host>/<path>` (global) or `.lumen/git/<host>/<path>` (project).
 - Runs `npm install` after clone or pull if `package.json` exists.
 
 **SSH examples:**
@@ -110,13 +110,13 @@ Local paths point to files or directories on disk and are added to settings with
 
 ## Creating a Pi Package
 
-Add a `pi` manifest to `package.json` or use conventional directories. Include the `pi-package` keyword for discoverability.
+Add a `lumen` manifest to `package.json` or use conventional directories. Include the `pi-package` keyword for discoverability. The legacy `pi` manifest is still accepted for compatibility, but new packages should prefer `lumen`.
 
 ```json
 {
   "name": "my-package",
   "keywords": ["pi-package"],
-  "pi": {
+  "lumen": {
     "extensions": ["./extensions"],
     "skills": ["./skills"],
     "prompts": ["./prompts"],
@@ -135,7 +135,7 @@ The [package gallery](https://pi.dev/packages) displays packages tagged with `pi
 {
   "name": "my-package",
   "keywords": ["pi-package"],
-  "pi": {
+  "lumen": {
     "extensions": ["./extensions"],
     "video": "https://example.com/demo.mp4",
     "image": "https://example.com/screenshot.png"
@@ -152,7 +152,7 @@ If both are set, video takes precedence.
 
 ### Convention Directories
 
-If no `pi` manifest is present, pi auto-discovers resources from these directories:
+If no `lumen` manifest is present, pi auto-discovers resources from these directories:
 
 - `extensions/` loads `.ts` and `.js` files
 - `skills/` recursively finds `SKILL.md` folders and loads top-level `.md` files as skills
@@ -175,7 +175,7 @@ Example:
     "shitty-extensions": "^1.0.1"
   },
   "bundledDependencies": ["shitty-extensions"],
-  "pi": {
+  "lumen": {
     "extensions": ["extensions", "node_modules/shitty-extensions/extensions"],
     "skills": ["skills", "node_modules/shitty-extensions/skills"]
   }
@@ -212,7 +212,7 @@ Filter what a package loads using the object form in settings:
 
 ## Enable and Disable Resources
 
-Use `pi config` to enable or disable extensions, skills, prompt templates, and themes from installed packages and local directories. Works for both global (`~/.pi/agent`) and project (`.pi/`) scopes.
+Use `pi config` to enable or disable extensions, skills, prompt templates, and themes from installed packages and local directories. Works for both global (`~/.lumen/agent`) and project (`.lumen/`) scopes.
 
 ## Scope and Deduplication
 

@@ -10,6 +10,7 @@ import {
 	type SelfUpdateCommand,
 	VERSION,
 } from "./config.js";
+import type { PackageCompatibilityAudit } from "./core/package-manager.js";
 import { DefaultPackageManager } from "./core/package-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import { shouldUseWindowsShell } from "./utils/child-process.js";
@@ -38,6 +39,24 @@ function reportSettingsErrors(settingsManager: SettingsManager, context: string)
 		console.error(chalk.yellow(`Warning (${context}, ${scope} settings): ${error.message}`));
 		if (error.stack) {
 			console.error(chalk.dim(error.stack));
+		}
+	}
+}
+
+function reportCompatibilityAudits(audits: PackageCompatibilityAudit[]): void {
+	for (const audit of audits) {
+		const prefix =
+			audit.status === "needs-ai-review"
+				? chalk.red("Warning")
+				: audit.status === "light-adapt"
+					? chalk.yellow("Warning")
+					: chalk.green("Info");
+		console.error(`${prefix}: ${audit.source} (${audit.status})`);
+		for (const reason of audit.reasons) {
+			console.error(chalk.dim(`  - ${reason}`));
+		}
+		if (audit.status === "needs-ai-review") {
+			console.error(chalk.dim("  Use the pi-config-migration skill to adapt this plugin safely."));
 		}
 	}
 }
@@ -424,6 +443,7 @@ export async function handlePackageCommand(args: string[]): Promise<boolean> {
 		switch (options.command) {
 			case "install":
 				await packageManager.installAndPersist(source!, { local: options.local });
+				reportCompatibilityAudits(packageManager.getLastCompatibilityAudits());
 				console.log(chalk.green(`Installed ${source}`));
 				return true;
 

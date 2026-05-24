@@ -123,6 +123,36 @@ describe("extensions discovery", () => {
 		expect(result.extensions[0].path).toContain("main.ts");
 	});
 
+	it("prefers lumen manifest over legacy pi manifest", async () => {
+		const subdir = path.join(extensionsDir, "my-package");
+		const lumenDir = path.join(subdir, "lumen");
+		const legacyDir = path.join(subdir, "legacy");
+		fs.mkdirSync(subdir);
+		fs.mkdirSync(lumenDir, { recursive: true });
+		fs.mkdirSync(legacyDir, { recursive: true });
+		fs.writeFileSync(path.join(lumenDir, "main.ts"), extensionCode);
+		fs.writeFileSync(path.join(legacyDir, "main.ts"), extensionCode);
+		fs.writeFileSync(
+			path.join(subdir, "package.json"),
+			JSON.stringify({
+				name: "my-package",
+				lumen: {
+					extensions: ["./lumen/main.ts"],
+				},
+				pi: {
+					extensions: ["./legacy/main.ts"],
+				},
+			}),
+		);
+
+		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+
+		expect(result.errors).toHaveLength(0);
+		expect(result.extensions).toHaveLength(1);
+		expect(result.extensions[0].path).toContain("lumen");
+		expect(result.extensions[0].path).toContain("main.ts");
+	});
+
 	it("package.json can declare multiple extensions", async () => {
 		const subdir = path.join(extensionsDir, "my-package");
 		fs.mkdirSync(subdir);

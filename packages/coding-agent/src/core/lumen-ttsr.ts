@@ -12,7 +12,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CONFIG_DIR_NAME, getAgentDir, LEGACY_CONFIG_DIR_NAME } from "../config.js";
+import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 import type { ExtensionAPI } from "./extensions/types.js";
 
 // ============================================================================
@@ -125,11 +125,7 @@ function loadRulesFromDir(dir: string): TtsrRule[] {
 }
 
 function discoverRules(cwd: string): TtsrRule[] {
-	const dirs = [
-		join(getAgentDir(), "rules"),
-		join(cwd, CONFIG_DIR_NAME, "rules"),
-		join(cwd, LEGACY_CONFIG_DIR_NAME, "rules"),
-	];
+	const dirs = [join(getAgentDir(), "rules"), join(cwd, CONFIG_DIR_NAME, "rules")];
 
 	const allRules: TtsrRule[] = [];
 	for (const dir of dirs) {

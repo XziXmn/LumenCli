@@ -14,6 +14,10 @@
 - Fixed keybinding hints to show Option instead of Alt on macOS ([#4289](https://github.com/earendil-works/pi/issues/4289)).
 - Fixed the interactive update notification to render the changelog as an OSC 8 hyperlink when the terminal supports hyperlinks ([#4280](https://github.com/earendil-works/pi/issues/4280)).
 
+### Changed
+
+- Changed package and extension manifest loading to prefer `lumen` while still accepting legacy `pi` manifests for compatibility, and added install-time compatibility audits for legacy Pi and oh-my-pi plugins.
+
 ## [0.74.0] - 2026-05-07
 
 ### Changed

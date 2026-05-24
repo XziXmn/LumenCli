@@ -412,21 +412,17 @@ interface PackageJson {
 		name?: string;
 		configDir?: string;
 	};
-	piConfig?: {
-		name?: string;
-		configDir?: string;
-	};
 }
 
 const pkg = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8")) as PackageJson;
 
-const lumenConfig = pkg.lumenConfig ?? pkg.piConfig;
+const lumenConfig = pkg.lumenConfig;
 const configName: string | undefined = lumenConfig?.name;
 export const PACKAGE_NAME: string = pkg.name || "@earendil-works/pi-coding-agent";
 export const APP_NAME: string = configName || "lumen";
 export const APP_TITLE: string = "Lumen";
 export const CONFIG_DIR_NAME: string = lumenConfig?.configDir || ".lumen";
-/** Legacy config dir name for fallback reads (community plugin compat) */
+/** Legacy config dir name used only for migration/import. */
 export const LEGACY_CONFIG_DIR_NAME: string = ".pi";
 export const VERSION: string = pkg.version || "0.0.0";
 
@@ -449,25 +445,16 @@ export function getShareViewerUrl(gistId: string): string {
 }
 
 // =============================================================================
-// User Config Paths (~/.pi/agent/*)
+// User Config Paths (~/.lumen/agent/*)
 // =============================================================================
 
-/** Get the agent config directory (e.g., ~/.lumen/agent/) with .pi/ fallback */
+/** Get the agent config directory (e.g., ~/.lumen/agent/) */
 export function getAgentDir(): string {
 	const envDir = process.env[ENV_AGENT_DIR];
 	if (envDir) {
 		return expandTildePath(envDir);
 	}
-	const primaryDir = join(homedir(), CONFIG_DIR_NAME, "agent");
-	if (existsSync(primaryDir)) {
-		return primaryDir;
-	}
-	// Fallback: read from legacy .pi/ if .lumen/ doesn't exist yet
-	const legacyDir = join(homedir(), LEGACY_CONFIG_DIR_NAME, "agent");
-	if (existsSync(legacyDir)) {
-		return legacyDir;
-	}
-	return primaryDir;
+	return join(homedir(), CONFIG_DIR_NAME, "agent");
 }
 
 /** Get path to user's custom themes directory */

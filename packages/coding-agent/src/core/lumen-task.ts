@@ -21,7 +21,7 @@ import { Agent } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { CONFIG_DIR_NAME, getAgentDir, LEGACY_CONFIG_DIR_NAME } from "../config.js";
+import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { createEventBus, type EventBus } from "./event-bus.js";
 import type {
@@ -108,10 +108,9 @@ function loadAgentsFromDir(dir: string, source: AgentSource): AgentConfig[] {
 export function discoverAgents(cwd: string): AgentConfig[] {
 	const userDir = join(getAgentDir(), "agents");
 	const projectDir = join(cwd, CONFIG_DIR_NAME, "agents");
-	const legacyDir = join(cwd, LEGACY_CONFIG_DIR_NAME, "agents");
 
 	const userAgents = loadAgentsFromDir(userDir, "user");
-	const projectAgents = [...loadAgentsFromDir(projectDir, "project"), ...loadAgentsFromDir(legacyDir, "project")];
+	const projectAgents = loadAgentsFromDir(projectDir, "project");
 
 	const agentMap = new Map<string, AgentConfig>();
 	for (const agent of userAgents) agentMap.set(agent.name, agent);

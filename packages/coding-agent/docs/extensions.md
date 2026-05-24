@@ -4,7 +4,7 @@
 
 Extensions are TypeScript modules that extend pi's behavior. They can subscribe to lifecycle events, register custom tools callable by the LLM, add commands, and more.
 
-> **Placement for /reload:** Put extensions in `~/.pi/agent/extensions/` (global) or `.pi/extensions/` (project-local) for auto-discovery. Use `pi -e ./path.ts` only for quick tests. Extensions in auto-discovered locations can be hot-reloaded with `/reload`.
+> **Placement for /reload:** Put extensions in `~/.lumen/agent/extensions/` (global) or `.lumen/extensions/` (project-local) for auto-discovery. Legacy `.pi/` paths are only imported during migration. Use `pi -e ./path.ts` only for quick tests. Extensions in auto-discovered locations can be hot-reloaded with `/reload`.
 
 **Key capabilities:**
 - **Custom tools** - Register tools the LLM can call via `pi.registerTool()`
@@ -60,7 +60,7 @@ See [examples/extensions/](../examples/extensions/) for working implementations.
 
 ## Quick Start
 
-Create `~/.pi/agent/extensions/my-extension.ts`:
+Create `~/.lumen/agent/extensions/my-extension.ts`:
 
 ```typescript
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -119,10 +119,10 @@ Extensions are auto-discovered from:
 
 | Location | Scope |
 |----------|-------|
-| `~/.pi/agent/extensions/*.ts` | Global (all projects) |
-| `~/.pi/agent/extensions/*/index.ts` | Global (subdirectory) |
-| `.pi/extensions/*.ts` | Project-local |
-| `.pi/extensions/*/index.ts` | Project-local (subdirectory) |
+| `~/.lumen/agent/extensions/*.ts` | Global (all projects) |
+| `~/.lumen/agent/extensions/*/index.ts` | Global (subdirectory) |
+| `.lumen/extensions/*.ts` | Project-local |
+| `.lumen/extensions/*/index.ts` | Project-local (subdirectory) |
 
 Additional paths via `settings.json`:
 
@@ -170,7 +170,7 @@ export default function (pi: ExtensionAPI) {
     const ok = await ctx.ui.confirm("Title", "Are you sure?");
     ctx.ui.notify("Done!", "success");
     ctx.ui.setStatus("my-ext", "Processing...");  // Footer status
-    ctx.ui.setWidget("my-ext", ["Line 1", "Line 2"]);  // Widget above editor (default)
+    ctx.ui.setWidget("my-ext", ["Line 1", "Line 2"]);  // Upper slot in the extension area below the editor (default)
   });
 
   // Register tools, commands, shortcuts, flags
@@ -227,14 +227,14 @@ This pattern makes the fetched models available during normal startup and to `pi
 **Single file** - simplest, for small extensions:
 
 ```
-~/.pi/agent/extensions/
+~/.lumen/agent/extensions/
 └── my-extension.ts
 ```
 
 **Directory with index.ts** - for multi-file extensions:
 
 ```
-~/.pi/agent/extensions/
+~/.lumen/agent/extensions/
 └── my-extension/
     ├── index.ts        # Entry point (exports default function)
     ├── tools.ts        # Helper module
@@ -244,7 +244,7 @@ This pattern makes the fetched models available during normal startup and to `pi
 **Package with dependencies** - for extensions that need npm packages:
 
 ```
-~/.pi/agent/extensions/
+~/.lumen/agent/extensions/
 └── my-extension/
     ├── package.json    # Declares dependencies and entry points
     ├── package-lock.json
@@ -261,7 +261,7 @@ This pattern makes the fetched models available during normal startup and to `pi
     "zod": "^3.0.0",
     "chalk": "^5.0.0"
   },
-  "pi": {
+  "lumen": {
     "extensions": ["./src/index.ts"]
   }
 }
@@ -2214,9 +2214,9 @@ ctx.ui.setWorkingIndicator({
 ctx.ui.setWorkingIndicator({ frames: [] });  // Hide indicator
 ctx.ui.setWorkingIndicator();  // Restore default spinner
 
-// Widget above editor (default)
+// Upper slot in the extension area below the editor (default)
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"]);
-// Widget below editor
+// Lower slot in the extension area below the editor
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"], { placement: "belowEditor" });
 ctx.ui.setWidget("my-widget", (tui, theme) => new Text(theme.fg("accent", "Custom"), 0, 0));
 ctx.ui.setWidget("my-widget", undefined);  // Clear
