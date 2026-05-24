@@ -60,20 +60,24 @@ function formatAuthor(author?: GhMetadata["author"]): string | undefined {
 
 export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
 	const setWidget = (ctx: ExtensionContext, match: PromptMatch, title?: string, authorText?: string) => {
-		ctx.ui.setWidget("prompt-url", (_tui, thm) => {
-			const titleText = title ? thm.fg("accent", title) : thm.fg("accent", match.url);
-			const authorLine = authorText ? thm.fg("muted", authorText) : undefined;
-			const urlLine = thm.fg("dim", match.url);
+		ctx.ui.setWidget(
+			"prompt-url",
+			(_tui, thm) => {
+				const titleText = title ? thm.fg("accent", title) : thm.fg("accent", match.url);
+				const authorLine = authorText ? thm.fg("muted", authorText) : undefined;
+				const urlLine = thm.fg("dim", match.url);
 
-			const lines = [titleText];
-			if (authorLine) lines.push(authorLine);
-			lines.push(urlLine);
+				const lines = [titleText];
+				if (authorLine) lines.push(authorLine);
+				lines.push(urlLine);
 
-			const container = new Container();
-			container.addChild(new DynamicBorder((s: string) => thm.fg("muted", s)));
-			container.addChild(new Text(lines.join("\n"), 1, 0));
-			return container;
-		});
+				const container = new Container();
+				container.addChild(new DynamicBorder((s: string) => thm.fg("muted", s)));
+				container.addChild(new Text(lines.join("\n"), 1, 0));
+				return container;
+			},
+			{ placement: "belowEditor" },
+		);
 	};
 
 	const applySessionName = (ctx: ExtensionContext, match: PromptMatch, title?: string) => {

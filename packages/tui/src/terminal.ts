@@ -68,6 +68,9 @@ export class ProcessTerminal implements Terminal {
 	private _modifyOtherKeysActive = false;
 	private stdinBuffer?: StdinBuffer;
 	private stdinDataHandler?: (data: string) => void;
+	private privateCsiResponseBuffer = "";
+	private startupWindowsDsrPending = process.platform === "win32";
+	private startupWindowsDsrTimer?: ReturnType<typeof setTimeout>;
 	private progressInterval?: ReturnType<typeof setInterval>;
 	private writeLogPath = (() => {
 		const env = process.env.PI_TUI_WRITE_LOG || "";
@@ -122,6 +125,14 @@ export class ProcessTerminal implements Terminal {
 		// The query handler intercepts input temporarily, then installs the user's handler
 		// See: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 		this.queryAndEnableKittyProtocol();
+		if (this.startupWindowsDsrTimer) {
+			clearTimeout(this.startupWindowsDsrTimer);
+		}
+		this.startupWindowsDsrPending = process.platform === "win32";
+		this.startupWindowsDsrTimer = setTimeout(() => {
+			this.startupWindowsDsrPending = false;
+			this.startupWindowsDsrTimer = undefined;
+		}, 1000);
 	}
 
 	/**
@@ -137,9 +148,51 @@ export class ProcessTerminal implements Terminal {
 
 		// Kitty protocol response pattern: \x1b[?<flags>u
 		const kittyResponsePattern = /^\x1b\[\?(\d+)u$/;
+		// Private CSI partial: \x1b[?<digits/semicolons>...
+		const privateCsiPartialPattern = /^\x1b\[\?[\d;]*$/;
 
 		// Forward individual sequences to the input handler
 		this.stdinBuffer.on("data", (sequence) => {
+			if (this.privateCsiResponseBuffer || privateCsiPartialPattern.test(sequence)) {
+				if (this.privateCsiResponseBuffer && sequence.startsWith("\x1b")) {
+					this.privateCsiResponseBuffer = "";
+				} else {
+					this.privateCsiResponseBuffer += sequence;
+					if (this.privateCsiResponseBuffer.length > 256) {
+						this.privateCsiResponseBuffer = "";
+						return;
+					}
+					const lastChar = this.privateCsiResponseBuffer.at(-1);
+					if (!lastChar) {
+						return;
+					}
+					const lastCode = lastChar.charCodeAt(0);
+					if (lastCode >= 0x40 && lastCode <= 0x7e) {
+						sequence = this.privateCsiResponseBuffer;
+						this.privateCsiResponseBuffer = "";
+					} else if (!privateCsiPartialPattern.test(this.privateCsiResponseBuffer)) {
+						this.privateCsiResponseBuffer = "";
+						return;
+					} else {
+						return;
+					}
+				}
+			}
+
+			// ConPTY may issue a startup DSR query (ESC[6n) and wait for a cursor
+			// position response before the session fully starts. We don't have the
+			// PTY-host layer from oh-my-pi in this repo, so the closest safe fallback
+			// is to answer a single early Windows query here and keep it off elsewhere.
+			if (process.platform === "win32" && this.startupWindowsDsrPending && sequence === "\x1b[6n") {
+				process.stdout.write("\x1b[1;1R");
+				this.startupWindowsDsrPending = false;
+				if (this.startupWindowsDsrTimer) {
+					clearTimeout(this.startupWindowsDsrTimer);
+					this.startupWindowsDsrTimer = undefined;
+				}
+				return;
+			}
+
 			// Check for Kitty protocol response (only if not already enabled)
 			if (!this._kittyProtocolActive) {
 				const match = sequence.match(kittyResponsePattern);
@@ -269,6 +322,11 @@ export class ProcessTerminal implements Terminal {
 	}
 
 	stop(): void {
+		if (this.startupWindowsDsrTimer) {
+			clearTimeout(this.startupWindowsDsrTimer);
+			this.startupWindowsDsrTimer = undefined;
+		}
+		this.startupWindowsDsrPending = false;
 		if (this.clearProgressInterval()) {
 			process.stdout.write(TERMINAL_PROGRESS_CLEAR_SEQUENCE);
 		}
@@ -292,6 +350,7 @@ export class ProcessTerminal implements Terminal {
 			this.stdinBuffer.destroy();
 			this.stdinBuffer = undefined;
 		}
+		this.privateCsiResponseBuffer = "";
 
 		// Remove event handlers
 		if (this.stdinDataHandler) {

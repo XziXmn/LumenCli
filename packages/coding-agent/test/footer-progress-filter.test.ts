@@ -40,4 +40,24 @@ describe("FooterComponent progress status filtering", () => {
 		footer.dispose();
 		footerData.dispose();
 	});
+
+	it("also hides approval-style ui status text so footer stays passive", () => {
+		const ctx = createTestSession({ inMemory: true });
+		cleanup = ctx.cleanup;
+
+		const footerData = new FooterDataProvider(ctx.tempDir);
+		footerData.setExtensionStatus("ui", "waiting · 等待审批确认");
+		footerData.setExtensionStatus("queue", "queued 1");
+		footerData.setExtensionStatus("custom", "passive footer note");
+
+		const footer = new FooterComponent(ctx.session, footerData);
+		const rendered = stripAnsi(footer.render(160).join("\n"));
+
+		expect(rendered).toContain("passive footer note");
+		expect(rendered).not.toContain("等待审批确认");
+		expect(rendered).not.toContain("queued 1");
+
+		footer.dispose();
+		footerData.dispose();
+	});
 });

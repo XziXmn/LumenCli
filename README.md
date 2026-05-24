@@ -1,19 +1,21 @@
 # LumenCli
 
-个人深度定制的 [Pi](https://github.com/earendil-works/pi-mono) coding agent fork。
+基于 [Pi](https://github.com/earendil-works/pi-mono) 的个人增强版 LLM coding agent，并选择性融合 [oh-my-pi](https://github.com/can1357/oh-my-pi) 的补充功能。
 
 ## 当前状态
 
 - 主线交互实现集中在 `packages/coding-agent/src/modes/interactive/`
 - 输入框上方任务栏是唯一主动进度面，`todo` / `task` 在 transcript 中只保留语义痕迹
-- `.lumen/` 是首选配置目录，`.pi/` fallback 仍保留用于兼容社区配置
+- `.lumen/` 是首选配置目录，`.pi/` 仅作为旧配置迁移来源
+- 功能策略上以 `pi` 兼容为基础，按需吸收 `oh-my-pi` 的增强能力，但避免偏离 `pi` 主线过远，确保后续仍能相对顺畅地同步上游更新
 
 ## 特性
 
 - **中文优先**：系统提示词默认中文回复，slash 命令描述中文化
-- **本地推理**：默认配置指向本地 mimo 推理服务（`mimo-v2.5-pro` 编程特化 + `mimo-v2.5` 多模态）
+- **模型可替换**：运行时模型不定死；当前仓库里的本地 `mimo` 配置只是为了便于联调和测试而保留的临时默认示例
 - **Pi 全功能继承**：保留 Pi 原生 tools、extensions、themes、skills 能力
-- **社区兼容**：保留 `.pi/` 目录 fallback 读取，社区插件可直接复用
+- **oh-my-pi 增强吸收**：将 `oh-my-pi` 视为 `pi` 的功能补充来源，按需移植稳定且有价值的增强能力
+- **社区兼容**：可从旧 `.pi/` 目录迁移配置与插件资产到 `.lumen/`
 
 ## 文档导航
 
@@ -42,7 +44,7 @@ lumen "列出 src/ 下所有 .ts 文件"
 # 非交互模式
 lumen -p "重构这段代码"
 
-# 使用本地 mimo
+# 使用本地 mimo（当前仅作便于测试的默认示例）
 lumen --provider local-mimo --model mimo-v2.5-pro
 
 # 从源码运行（开发时，推荐）
@@ -52,15 +54,22 @@ npx tsx packages/coding-agent/src/cli.ts
 ./lumen-test.sh
 # Windows PowerShell:
 # .\lumen-test.ps1
+
+# Windows 中文输入法 / progress surface 手工验证
+# .\ime-progress-surface-debug.ps1
 ```
+
+手工验证说明见 [docs/ime-manual-check.md](docs/ime-manual-check.md)。
 
 `--tui` 已移除。现在直接启动就是唯一保留的 `pi-tui` 交互界面。
 
 ## 配置
 
-配置目录：`~/.lumen/agent/`（兼容读取 `~/.pi/agent/`）
+配置目录：`~/.lumen/agent/`
 
 ### 本地 mimo 推理服务
+
+说明：`mimo` 不是写死的唯一模型，只是当前仓库为了方便本地验证和测试保留的临时默认配置。实际使用时可以自由切换到其他 provider / model，或改写 `models.json` 与 preset。
 
 将 `.lumen/default-models.json` 复制到 `~/.lumen/agent/models.json`：
 
@@ -71,7 +80,7 @@ cp .lumen/default-models.json ~/.lumen/agent/models.json
 
 ### 项目级配置
 
-项目根目录下 `.lumen/` 目录（兼容读取 `.pi/`）：
+项目根目录下 `.lumen/` 目录：
 
 - `extensions/` - 项目扩展
 - `prompts/` - 提示词模板
@@ -80,6 +89,8 @@ cp .lumen/default-models.json ~/.lumen/agent/models.json
 - `settings.json` - 项目设置
 - `SYSTEM.md` - 自定义系统提示词
 - `APPEND_SYSTEM.md` - 追加系统提示词
+
+如果你以前用的是 Pi，可以把旧 `.pi/` 里的相应文件手动迁移到 `.lumen/`，新版本不再把 `.pi/` 当运行时读取目标。
 
 ## 包结构
 

@@ -20,7 +20,9 @@ export class CountdownTimer {
 		this.intervalId = setInterval(() => {
 			this.remainingSeconds--;
 			this.onTick(this.remainingSeconds);
-			this.tui?.requestRender();
+			if (!this.tui?.shouldSuppressBackgroundRenderUpdates?.()) {
+				this.tui?.requestRender();
+			}
 
 			if (this.remainingSeconds <= 0) {
 				this.dispose();

@@ -43,3 +43,47 @@ describe("ProcessTerminal dimensions", () => {
 		}
 	});
 });
+
+describe("ProcessTerminal startup Windows DSR handling", () => {
+	it("replies to a startup DSR query on Windows only", () => {
+		const terminal = new ProcessTerminal();
+		const originalPlatform = process.platform;
+		const originalWrite = process.stdout.write;
+
+		const writes: string[] = [];
+		const forwarded: string[] = [];
+
+		Object.defineProperty(process, "platform", {
+			value: "win32",
+			configurable: true,
+		});
+		(process.stdout.write as unknown as (chunk: string) => boolean) = ((chunk: string) => {
+			writes.push(chunk);
+			return true;
+		}) as typeof process.stdout.write;
+
+		try {
+			(terminal as any).inputHandler = (data: string) => forwarded.push(data);
+			(terminal as any).startupWindowsDsrPending = true;
+			(terminal as any).setupStdinBuffer();
+			const buffer = (terminal as any).stdinBuffer;
+
+			buffer.process("\x1b[6n");
+
+			assert.ok(writes.includes("\x1b[1;1R"));
+			assert.deepStrictEqual(forwarded, []);
+
+			writes.length = 0;
+			(terminal as any).startupWindowsDsrPending = false;
+			buffer.process("\x1b[6n");
+			assert.deepStrictEqual(forwarded, ["\x1b[6n"]);
+			assert.deepStrictEqual(writes, []);
+		} finally {
+			Object.defineProperty(process, "platform", {
+				value: originalPlatform,
+				configurable: true,
+			});
+			process.stdout.write = originalWrite;
+		}
+	});
+});

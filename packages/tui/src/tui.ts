@@ -244,9 +244,12 @@ export class TUI extends Container {
 	private previousHeight = 0;
 	private focusedComponent: Component | null = null;
 	private inputListeners = new Set<InputListener>();
+	private handlingInputEvent = false;
 
 	/** Global callback for debug key (Shift+Ctrl+D). Called before input is forwarded to focused component. */
 	public onDebug?: () => void;
+	/** Optional hook used by higher layers to pause animation-driven redraws while the user is typing. */
+	public shouldSuppressBackgroundRenderUpdates?: () => boolean;
 	private renderRequested = false;
 	private renderTimer: NodeJS.Timeout | undefined;
 	private lastRenderAt = 0;
@@ -309,17 +312,18 @@ export class TUI extends Container {
 	}
 
 	setFocus(component: Component | null): void {
-		// Clear focused flag on old component
-		if (isFocusable(this.focusedComponent)) {
-			this.focusedComponent.focused = false;
-		}
+		this.syncFocusableState(this.focusedComponent, false);
 
 		this.focusedComponent = component;
 
-		// Set focused flag on new component
-		if (isFocusable(component)) {
-			component.focused = true;
+		this.syncFocusableState(component, true);
+	}
+
+	private syncFocusableState(component: Component | null, focused: boolean): void {
+		if (!isFocusable(component)) {
+			return;
 		}
+		component.focused = focused;
 	}
 
 	/**
@@ -493,6 +497,9 @@ export class TUI extends Container {
 	}
 
 	requestRender(force = false): void {
+		if (!force && !this.handlingInputEvent && this.shouldSuppressBackgroundRenderUpdates?.()) {
+			return;
+		}
 		if (force) {
 			this.previousLines = [];
 			this.previousWidth = -1; // -1 triggers widthChanged, forcing a full clear
@@ -591,8 +598,13 @@ export class TUI extends Container {
 			if (isKeyRelease(data) && !this.focusedComponent.wantsKeyRelease) {
 				return;
 			}
-			this.focusedComponent.handleInput(data);
-			this.requestRender();
+			this.handlingInputEvent = true;
+			try {
+				this.focusedComponent.handleInput(data);
+				this.requestRender();
+			} finally {
+				this.handlingInputEvent = false;
+			}
 		}
 	}
 
@@ -758,11 +770,10 @@ export class TUI extends Container {
 	private compositeOverlays(lines: string[], termWidth: number, termHeight: number): string[] {
 		if (this.overlayStack.length === 0) return lines;
 		const result = [...lines];
-
-		// Pre-render all visible overlays and calculate positions
 		const rendered: { overlayLines: string[]; row: number; col: number; w: number }[] = [];
 		let minLinesNeeded = result.length;
 
+		// Pre-render all visible overlays and calculate positions
 		const visibleEntries = this.overlayStack.filter((e) => this.isOverlayVisible(e));
 		visibleEntries.sort((a, b) => a.focusOrder - b.focusOrder);
 		for (const entry of visibleEntries) {
@@ -991,10 +1002,12 @@ export class TUI extends Container {
 				if (i > 0) buffer += "\r\n";
 				buffer += newLines[i];
 			}
+			this.cursorRow = Math.max(0, newLines.length - 1);
+			const { seq, toRow } = this.cursorControlSequence(cursorPos, newLines.length, this.cursorRow);
+			this.hardwareCursorRow = toRow;
+			buffer += seq;
 			buffer += "\x1b[?2026l"; // End synchronized output
 			this.terminal.write(buffer);
-			this.cursorRow = Math.max(0, newLines.length - 1);
-			this.hardwareCursorRow = this.cursorRow;
 			// Reset max lines when clearing, otherwise track growth
 			if (clear) {
 				this.maxLinesRendered = newLines.length;
@@ -1003,7 +1016,6 @@ export class TUI extends Container {
 			}
 			const bufferLength = Math.max(height, newLines.length);
 			this.previousViewportTop = Math.max(0, bufferLength - height);
-			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousLines = newLines;
 			this.previousKittyImageIds = this.collectKittyImageIds(newLines);
 			this.previousWidth = width;
@@ -1079,7 +1091,7 @@ export class TUI extends Container {
 
 		// No changes - but still need to update hardware cursor position if it moved
 		if (firstChanged === -1) {
-			this.positionHardwareCursor(cursorPos, newLines.length);
+			this.writeCursorPosition(cursorPos, newLines.length);
 			this.previousViewportTop = prevViewportTop;
 			this.previousHeight = height;
 			return;
@@ -1118,12 +1130,13 @@ export class TUI extends Container {
 				if (extraLines > 0) {
 					buffer += `\x1b[${extraLines}A`;
 				}
+				this.cursorRow = targetRow;
+				const { seq, toRow } = this.cursorControlSequence(cursorPos, newLines.length, targetRow);
+				this.hardwareCursorRow = toRow;
+				buffer += seq;
 				buffer += "\x1b[?2026l";
 				this.terminal.write(buffer);
-				this.cursorRow = targetRow;
-				this.hardwareCursorRow = targetRow;
 			}
-			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousLines = newLines;
 			this.previousKittyImageIds = this.collectKittyImageIds(newLines);
 			this.previousWidth = width;
@@ -1227,6 +1240,9 @@ export class TUI extends Container {
 			buffer += `\x1b[${extraLines}A`;
 		}
 
+		const { seq, toRow } = this.cursorControlSequence(cursorPos, newLines.length, finalCursorRow);
+		this.hardwareCursorRow = toRow;
+		buffer += seq;
 		buffer += "\x1b[?2026l"; // End synchronized output
 
 		if (process.env.PI_TUI_DEBUG === "1") {
@@ -1263,15 +1279,11 @@ export class TUI extends Container {
 
 		// Track cursor position for next render
 		// cursorRow tracks end of content (for viewport calculation)
-		// hardwareCursorRow tracks actual terminal cursor position (for movement)
+		// hardwareCursorRow was already updated by cursorControlSequence above.
 		this.cursorRow = Math.max(0, newLines.length - 1);
-		this.hardwareCursorRow = finalCursorRow;
 		// Track terminal's working area (grows but doesn't shrink unless cleared)
 		this.maxLinesRendered = Math.max(this.maxLinesRendered, newLines.length);
 		this.previousViewportTop = Math.max(prevViewportTop, finalCursorRow - height + 1);
-
-		// Position hardware cursor for IME
-		this.positionHardwareCursor(cursorPos, newLines.length);
 
 		this.previousLines = newLines;
 		this.previousKittyImageIds = this.collectKittyImageIds(newLines);
@@ -1284,36 +1296,36 @@ export class TUI extends Container {
 	 * @param cursorPos The cursor position extracted from rendered output, or null
 	 * @param totalLines Total number of rendered lines
 	 */
-	private positionHardwareCursor(cursorPos: { row: number; col: number } | null, totalLines: number): void {
+	private cursorControlSequence(
+		cursorPos: { row: number; col: number } | null,
+		totalLines: number,
+		fromRow: number,
+	): { seq: string; toRow: number } {
+		if (!cursorPos || totalLines <= 0) {
+			return { seq: "\x1b[?25l", toRow: fromRow };
+		}
+
+		const targetRow = Math.max(0, Math.min(cursorPos.row, totalLines - 1));
+		const targetCol = Math.max(0, cursorPos.col);
+		const rowDelta = targetRow - fromRow;
+		let seq = "";
+		if (rowDelta > 0) {
+			seq += `\x1b[${rowDelta}B`;
+		} else if (rowDelta < 0) {
+			seq += `\x1b[${-rowDelta}A`;
+		}
+		seq += `\x1b[${targetCol + 1}G`;
+		seq += this.showHardwareCursor ? "\x1b[?25h" : "\x1b[?25l";
+		return { seq, toRow: targetRow };
+	}
+
+	private writeCursorPosition(cursorPos: { row: number; col: number } | null, totalLines: number): void {
 		if (!cursorPos || totalLines <= 0) {
 			this.terminal.hideCursor();
 			return;
 		}
-
-		// Clamp cursor position to valid range
-		const targetRow = Math.max(0, Math.min(cursorPos.row, totalLines - 1));
-		const targetCol = Math.max(0, cursorPos.col);
-
-		// Move cursor from current position to target
-		const rowDelta = targetRow - this.hardwareCursorRow;
-		let buffer = "";
-		if (rowDelta > 0) {
-			buffer += `\x1b[${rowDelta}B`; // Move down
-		} else if (rowDelta < 0) {
-			buffer += `\x1b[${-rowDelta}A`; // Move up
-		}
-		// Move to absolute column (1-indexed)
-		buffer += `\x1b[${targetCol + 1}G`;
-
-		if (buffer) {
-			this.terminal.write(buffer);
-		}
-
-		this.hardwareCursorRow = targetRow;
-		if (this.showHardwareCursor) {
-			this.terminal.showCursor();
-		} else {
-			this.terminal.hideCursor();
-		}
+		const { seq, toRow } = this.cursorControlSequence(cursorPos, totalLines, this.hardwareCursorRow);
+		this.hardwareCursorRow = toRow;
+		this.terminal.write(`\x1b[?2026h${seq}\x1b[?2026l`);
 	}
 }

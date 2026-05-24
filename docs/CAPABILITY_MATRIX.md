@@ -20,7 +20,7 @@
 | 能力项 | 状态 | 落点 | 能力说明 | 当前现状 | 来源 | 下一动作 / 风险约束 |
 |---|---|---|---|---|---|---|
 | `.lumen/` 主配置目录 | 已完成 | compatibility | 以 `.lumen/` 作为项目级与用户级主配置面 | 已成为当前主路径 | manifest, fork-bootstrap/tasks | 继续保持为新能力默认落点 |
-| `.pi/` fallback 兼容 | 已完成 | compatibility | 保留旧插件、旧 prompts、旧 rules 的兼容读取 | 当前仍有效，且必须保留 | manifest, README, 当前用户约束 | 不得因目录整理或重构破坏读取链路 |
+| `.lumen/` 迁移来源 | 已完成 | compatibility | 旧插件、旧 prompts、旧 rules 的一次性迁移来源 | 当前只作为导入来源保留 | manifest, README, 当前用户约束 | 不得因目录整理或重构破坏导入/迁移链路 |
 | 中文化默认体验 | 已完成 | core | CLI、system prompt、slash 描述、欢迎语默认中文化 | 已融入主线 | manifest | 后续随上游变更做局部维护 |
 | upstream 同步纪律 | 已完成 | docs-process | 明确 `upstream` 只拉不推，`origin` 才推送 | README 与当前操作规则已收口 | README, manifest | 继续把此约束写进规划与流程文档 |
 | 规划真源治理 | 进行中 | docs-process | 收口总规划、能力矩阵、专题计划和 archive 的关系 | 本次重构正在建立新体系 | 当前文档重构 | 后续要防止重新长出平级规划文档 |

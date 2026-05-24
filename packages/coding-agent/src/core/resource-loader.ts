@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import chalk from "chalk";
-import { CONFIG_DIR_NAME, LEGACY_CONFIG_DIR_NAME } from "../config.js";
+import { CONFIG_DIR_NAME } from "../config.js";
 import { loadThemeFromPath, type Theme } from "../modes/interactive/theme/theme.js";
 import type { ResourceDiagnostic } from "./diagnostics.js";
 
@@ -674,11 +674,6 @@ export class DefaultResourceLoader implements ResourceLoader {
 			join(this.cwd, CONFIG_DIR_NAME, "prompts"),
 			join(this.cwd, CONFIG_DIR_NAME, "themes"),
 			join(this.cwd, CONFIG_DIR_NAME, "extensions"),
-			// Legacy .pi/ fallback for community plugin compat
-			join(this.cwd, LEGACY_CONFIG_DIR_NAME, "skills"),
-			join(this.cwd, LEGACY_CONFIG_DIR_NAME, "prompts"),
-			join(this.cwd, LEGACY_CONFIG_DIR_NAME, "themes"),
-			join(this.cwd, LEGACY_CONFIG_DIR_NAME, "extensions"),
 		];
 
 		for (const root of agentRoots) {
@@ -740,11 +735,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const themes: Theme[] = [];
 		const diagnostics: ResourceDiagnostic[] = [];
 		if (includeDefaults) {
-			const defaultDirs = [
-				join(this.agentDir, "themes"),
-				join(this.cwd, CONFIG_DIR_NAME, "themes"),
-				join(this.cwd, LEGACY_CONFIG_DIR_NAME, "themes"),
-			];
+			const defaultDirs = [join(this.agentDir, "themes"), join(this.cwd, CONFIG_DIR_NAME, "themes")];
 
 			for (const dir of defaultDirs) {
 				this.loadThemesFromDir(dir, themes, diagnostics);
@@ -895,12 +886,6 @@ export class DefaultResourceLoader implements ResourceLoader {
 			return projectPath;
 		}
 
-		// Legacy .pi/ fallback
-		const legacyProjectPath = join(this.cwd, LEGACY_CONFIG_DIR_NAME, "SYSTEM.md");
-		if (existsSync(legacyProjectPath)) {
-			return legacyProjectPath;
-		}
-
 		const globalPath = join(this.agentDir, "SYSTEM.md");
 		if (existsSync(globalPath)) {
 			return globalPath;
@@ -913,12 +898,6 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const projectPath = join(this.cwd, CONFIG_DIR_NAME, "APPEND_SYSTEM.md");
 		if (existsSync(projectPath)) {
 			return projectPath;
-		}
-
-		// Legacy .pi/ fallback
-		const legacyProjectPath = join(this.cwd, LEGACY_CONFIG_DIR_NAME, "APPEND_SYSTEM.md");
-		if (existsSync(legacyProjectPath)) {
-			return legacyProjectPath;
 		}
 
 		const globalPath = join(this.agentDir, "APPEND_SYSTEM.md");

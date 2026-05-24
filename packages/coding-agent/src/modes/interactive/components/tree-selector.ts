@@ -1148,7 +1148,6 @@ export class TreeSelectorComponent extends Container implements Focusable {
 			this.labelInput.focused = value;
 		}
 	}
-
 	constructor(
 		tree: SessionTreeNode[],
 		currentLeafId: string | null,

@@ -233,6 +233,8 @@ export function isApiKeyLoginProvider(
 export interface InteractiveModeOptions {
 	/** Providers that were migrated to auth.json (shows warning) */
 	migratedProviders?: string[];
+	/** Info/warning message about one-time legacy .pi import flow */
+	legacyImportMessage?: string;
 	/** Warning message if session model couldn't be restored */
 	modelFallbackMessage?: string;
 	/** Initial message to send on startup (can include @file content) */
@@ -250,6 +252,7 @@ export class InteractiveMode {
 	private ui: TUI;
 	private chatContainer: Container;
 	private pendingMessagesContainer: Container;
+	private promptAreaContainer: Container;
 	private statusContainer: Container;
 	private defaultEditor: CustomEditor;
 	private editor: EditorComponent;
@@ -257,6 +260,7 @@ export class InteractiveMode {
 	private autocompleteProvider: AutocompleteProvider | undefined;
 	private autocompleteProviderWrappers: AutocompleteProviderFactory[] = [];
 	private fdPath: string | undefined;
+	private interactionAreaContainer: Container;
 	private editorContainer: Container;
 	private footer: FooterComponent;
 	private footerDataProvider: FooterDataProvider;
@@ -289,6 +293,11 @@ export class InteractiveMode {
 	private progressSurfaceRefreshTimer: ReturnType<typeof setInterval> | undefined = undefined;
 	private progressSurfaceWorkingState = createProgressSurfaceWorkingState();
 	private progressSurfaceComponent!: ProgressSurfaceComponent;
+	private static readonly INPUT_ACTIVITY_SUPPRESSION_MS = 200;
+	private inputActivitySuppressedUntil = 0;
+	private inputActivityResumeTimer: ReturnType<typeof setTimeout> | undefined;
+	private inputActivityListenerCleanup: (() => void) | undefined;
+	private terminalProgressActive = false;
 
 	private lastSigintTime = 0;
 	private lastEscapeTime = 0;
@@ -356,9 +365,10 @@ export class InteractiveMode {
 	private extensionEditor: ExtensionEditorComponent | undefined = undefined;
 	private extensionTerminalInputUnsubscribers = new Set<() => void>();
 
-	// Extension widgets (components rendered above/below the editor)
+	// Extension widgets rendered in the lower extension area beneath the editor.
 	private extensionWidgetsAbove = new Map<string, Component & { dispose?(): void }>();
 	private extensionWidgetsBelow = new Map<string, Component & { dispose?(): void }>();
+	private extensionAreaContainer!: Container;
 	private widgetContainerAbove!: Container;
 	private widgetContainerBelow!: Container;
 
@@ -402,12 +412,23 @@ export class InteractiveMode {
 		this.version = VERSION;
 		this.ui = new TUI(new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
+		this.ui.shouldSuppressBackgroundRenderUpdates = () => this.isInputActivitySuppressed();
+		this.inputActivityListenerCleanup = this.ui.addInputListener((data) => {
+			if (data.length > 0) {
+				this.markInputActivity();
+			}
+			return undefined;
+		});
 		this.headerContainer = new Container();
 		this.chatContainer = new Container();
+		this.promptAreaContainer = new Container();
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
+		this.extensionAreaContainer = new Container();
 		this.widgetContainerAbove = new Container();
 		this.widgetContainerBelow = new Container();
+		this.extensionAreaContainer.addChild(this.widgetContainerAbove);
+		this.extensionAreaContainer.addChild(this.widgetContainerBelow);
 		this.progressSurfaceComponent = new ProgressSurfaceComponent(
 			() => this.getProgressSurfaceSnapshot(),
 			theme,
@@ -422,6 +443,7 @@ export class InteractiveMode {
 			autocompleteMaxVisible,
 		});
 		this.editor = this.defaultEditor;
+		this.interactionAreaContainer = new Container();
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
@@ -681,14 +703,7 @@ export class InteractiveMode {
 			this.headerContainer.addChild(this.builtInHeader);
 		}
 
-		this.ui.addChild(this.chatContainer);
-		this.ui.addChild(this.statusContainer);
-		this.renderWidgets(); // Initialize with default spacer
-		this.ui.addChild(this.widgetContainerAbove);
-		this.ui.addChild(this.pendingMessagesContainer);
-		this.ui.addChild(this.editorContainer);
-		this.ui.addChild(this.widgetContainerBelow);
-		this.ui.addChild(this.footer);
+		this.attachMainLayout();
 		this.ui.setFocus(this.editor);
 
 		this.setupKeyHandlers();
@@ -718,6 +733,21 @@ export class InteractiveMode {
 
 		// Initialize available provider count for footer display
 		await this.updateAvailableProviderCount();
+	}
+
+	private attachMainLayout(): void {
+		this.promptAreaContainer.clear();
+		this.promptAreaContainer.addChild(this.statusContainer);
+		this.promptAreaContainer.addChild(this.pendingMessagesContainer);
+		this.interactionAreaContainer.clear();
+		this.interactionAreaContainer.addChild(this.editorContainer);
+		this.interactionAreaContainer.addChild(this.extensionAreaContainer);
+		this.interactionAreaContainer.addChild(this.footer);
+
+		this.ui.addChild(this.chatContainer);
+		this.ui.addChild(this.promptAreaContainer);
+		this.renderWidgets(); // Initialize with default spacer
+		this.ui.addChild(this.interactionAreaContainer);
 	}
 
 	/**
@@ -762,10 +792,21 @@ export class InteractiveMode {
 		});
 
 		// Show startup warnings
-		const { migratedProviders, modelFallbackMessage, initialMessage, initialImages, initialMessages } = this.options;
+		const {
+			migratedProviders,
+			legacyImportMessage,
+			modelFallbackMessage,
+			initialMessage,
+			initialImages,
+			initialMessages,
+		} = this.options;
 
 		if (migratedProviders && migratedProviders.length > 0) {
 			this.showWarning(`Migrated credentials to auth.json: ${migratedProviders.join(", ")}`);
+		}
+
+		if (legacyImportMessage) {
+			this.showStatus(legacyImportMessage);
 		}
 
 		const modelsJsonError = this.session.modelRegistry.getError();
@@ -1825,6 +1866,35 @@ export class InteractiveMode {
 		return this.workingMessage ?? this.defaultWorkingMessage;
 	}
 
+	private isInputActivitySuppressed(): boolean {
+		return Date.now() < this.inputActivitySuppressedUntil;
+	}
+
+	private markInputActivity(): void {
+		const wasSuppressed = this.isInputActivitySuppressed();
+		this.inputActivitySuppressedUntil = Date.now() + InteractiveMode.INPUT_ACTIVITY_SUPPRESSION_MS;
+		if (this.inputActivityResumeTimer) {
+			clearTimeout(this.inputActivityResumeTimer);
+		}
+		if (!wasSuppressed) {
+			this.syncTerminalProgressIndicator();
+		}
+		this.inputActivityResumeTimer = setTimeout(() => {
+			this.inputActivityResumeTimer = undefined;
+			this.requestRenderUnlessInputSuppressed();
+			this.syncProgressSurfaceRefreshLoop();
+			this.syncTerminalProgressIndicator();
+		}, InteractiveMode.INPUT_ACTIVITY_SUPPRESSION_MS + 1);
+		this.syncProgressSurfaceRefreshLoop();
+	}
+
+	private requestRenderUnlessInputSuppressed(force = false): void {
+		if (this.isInputActivitySuppressed()) {
+			return;
+		}
+		this.ui.requestRender(force);
+	}
+
 	private createWorkingLoader(): Loader {
 		return new Loader(
 			this.ui,
@@ -1886,12 +1956,19 @@ export class InteractiveMode {
 	private syncProgressSurfaceRefreshLoop(): void {
 		const snapshot = this.getProgressSurfaceSnapshot();
 		const needsRefresh = snapshot.spinner !== undefined && shouldRenderProgressSurface(snapshot);
+		if (this.isInputActivitySuppressed()) {
+			if (this.progressSurfaceRefreshTimer) {
+				clearInterval(this.progressSurfaceRefreshTimer);
+				this.progressSurfaceRefreshTimer = undefined;
+			}
+			return;
+		}
 		if (needsRefresh) {
 			if (this.progressSurfaceRefreshTimer) {
 				return;
 			}
 			this.progressSurfaceRefreshTimer = setInterval(() => {
-				this.ui.requestRender();
+				this.requestRenderUnlessInputSuppressed();
 			}, 250);
 			return;
 		}
@@ -1899,6 +1976,23 @@ export class InteractiveMode {
 			clearInterval(this.progressSurfaceRefreshTimer);
 			this.progressSurfaceRefreshTimer = undefined;
 		}
+	}
+
+	private setTerminalProgressActive(active: boolean): void {
+		this.terminalProgressActive = active;
+		this.syncTerminalProgressIndicator();
+	}
+
+	private syncTerminalProgressIndicator(): void {
+		if (!this.settingsManager.getShowTerminalProgress()) {
+			this.ui.terminal.setProgress(false);
+			return;
+		}
+		if (this.isInputActivitySuppressed()) {
+			this.ui.terminal.setProgress(false);
+			return;
+		}
+		this.ui.terminal.setProgress(this.terminalProgressActive);
 	}
 
 	private setWorkingVisible(visible: boolean): void {
@@ -1943,6 +2037,15 @@ export class InteractiveMode {
 	}
 
 	private setSpinnerBanner(banner: SpinnerUiState["banner"] | undefined, options?: { expiresMs?: number }): void {
+		const requestRender = () => {
+			const renderHelper = (this as unknown as { requestRenderUnlessInputSuppressed?: (force?: boolean) => void })
+				.requestRenderUnlessInputSuppressed;
+			if (typeof renderHelper === "function") {
+				renderHelper.call(this);
+				return;
+			}
+			this.ui.requestRender();
+		};
 		this.clearSpinnerBannerTimeout();
 		this.spinnerBanner = banner;
 		if (banner && options?.expiresMs && options.expiresMs > 0) {
@@ -1950,12 +2053,12 @@ export class InteractiveMode {
 				this.spinnerBannerTimeout = undefined;
 				if (this.spinnerBanner === banner) {
 					this.spinnerBanner = undefined;
-					this.ui.requestRender();
+					requestRender();
 				}
 			}, options.expiresMs);
 		}
 		this.syncProgressSurfaceRefreshLoop();
-		this.ui.requestRender();
+		requestRender();
 	}
 
 	private describeSpinnerToolLabel(toolName: string, args: Record<string, unknown>): string | undefined {
@@ -2022,7 +2125,7 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Set an extension widget (string array or custom component).
+	 * Set an extension widget in the lower extension area (upper or lower slot).
 	 */
 	private setExtensionWidget(
 		key: string,
@@ -2119,11 +2222,11 @@ export class InteractiveMode {
 	private static readonly MAX_WIDGET_LINES = 10;
 
 	/**
-	 * Render all extension widgets to the widget container.
+	 * Render all widgets into the lower extension area slots beneath the editor.
 	 */
 	private renderWidgets(): void {
 		if (!this.widgetContainerAbove || !this.widgetContainerBelow) return;
-		this.renderWidgetContainer(this.widgetContainerAbove, this.extensionWidgetsAbove, true, true);
+		this.renderWidgetContainer(this.widgetContainerAbove, this.extensionWidgetsAbove, false, true);
 		this.renderWidgetContainer(this.widgetContainerBelow, this.extensionWidgetsBelow, false, false);
 		this.ui.requestRender();
 	}
@@ -2159,26 +2262,29 @@ export class InteractiveMode {
 			| ((tui: TUI, thm: Theme, footerData: ReadonlyFooterDataProvider) => Component & { dispose?(): void })
 			| undefined,
 	): void {
+		if (!this.interactionAreaContainer) {
+			return;
+		}
+
 		// Dispose existing custom footer
 		if (this.customFooter?.dispose) {
 			this.customFooter.dispose();
 		}
 
-		// Remove current footer from UI
-		if (this.customFooter) {
-			this.ui.removeChild(this.customFooter);
-		} else {
-			this.ui.removeChild(this.footer);
+		const currentFooter = this.customFooter ?? this.footer;
+		const footerIndex = this.interactionAreaContainer.children.indexOf(currentFooter);
+		if (footerIndex === -1) {
+			return;
 		}
 
 		if (factory) {
-			// Create and add custom footer, passing the data provider
+			// Create and replace footer within the lower interaction area.
 			this.customFooter = factory(this.ui, theme, this.footerDataProvider);
-			this.ui.addChild(this.customFooter);
+			this.interactionAreaContainer.children[footerIndex] = this.customFooter;
 		} else {
-			// Restore built-in footer
+			// Restore built-in footer in-place.
 			this.customFooter = undefined;
-			this.ui.addChild(this.footer);
+			this.interactionAreaContainer.children[footerIndex] = this.footer;
 		}
 
 		this.ui.requestRender();
@@ -3002,9 +3108,7 @@ export class InteractiveMode {
 					this.spinnerCurrentToolLabel = undefined;
 					this.spinnerActiveToolCount = 0;
 					this.pendingTools.clear();
-					if (this.settingsManager.getShowTerminalProgress()) {
-						this.ui.terminal.setProgress(true);
-					}
+					this.setTerminalProgressActive(true);
 					// Restore main escape handler if retry handler is still active
 					// (retry success event fires later, but we need main handler now)
 					if (this.retryEscapeHandler) {
@@ -3387,9 +3491,7 @@ export class InteractiveMode {
 				}
 
 				case "agent_end":
-					if (this.settingsManager.getShowTerminalProgress()) {
-						this.ui.terminal.setProgress(false);
-					}
+					this.setTerminalProgressActive(false);
 					if (this.spinnerThinkingStartedAt === null) {
 						this.spinnerThinkingMinimumVisibleUntil = null;
 					}
@@ -3447,9 +3549,7 @@ export class InteractiveMode {
 									: "正在自动整理上下文",
 						detail: `${keyText("app.interrupt")} 可取消`,
 					});
-					if (this.settingsManager.getShowTerminalProgress()) {
-						this.ui.terminal.setProgress(true);
-					}
+					this.setTerminalProgressActive(true);
 					// Keep editor active; submissions are queued during compaction.
 					this.autoCompactionEscapeHandler = this.defaultEditor.onEscape;
 					this.defaultEditor.onEscape = () => {
@@ -3462,9 +3562,7 @@ export class InteractiveMode {
 				case "compaction_end": {
 					this.spinnerSystemOverrideMessage = undefined;
 					this.setSpinnerBanner(undefined);
-					if (this.settingsManager.getShowTerminalProgress()) {
-						this.ui.terminal.setProgress(false);
-					}
+					this.setTerminalProgressActive(false);
 					if (this.autoCompactionEscapeHandler) {
 						this.defaultEditor.onEscape = this.autoCompactionEscapeHandler;
 						this.autoCompactionEscapeHandler = undefined;
@@ -6187,13 +6285,22 @@ export class InteractiveMode {
 
 	stop(): void {
 		this.unregisterSignalHandlers();
+		if (this.inputActivityResumeTimer) {
+			clearTimeout(this.inputActivityResumeTimer);
+			this.inputActivityResumeTimer = undefined;
+		}
+		this.inputActivitySuppressedUntil = 0;
+		this.ui.shouldSuppressBackgroundRenderUpdates = undefined;
+		if (this.inputActivityListenerCleanup) {
+			this.inputActivityListenerCleanup();
+			this.inputActivityListenerCleanup = undefined;
+		}
 		if (this.progressSurfaceRefreshTimer) {
 			clearInterval(this.progressSurfaceRefreshTimer);
 			this.progressSurfaceRefreshTimer = undefined;
 		}
-		if (this.settingsManager.getShowTerminalProgress()) {
-			this.ui.terminal.setProgress(false);
-		}
+		this.terminalProgressActive = false;
+		this.syncTerminalProgressIndicator();
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
 			this.loadingAnimation = undefined;

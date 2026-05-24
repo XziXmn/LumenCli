@@ -718,7 +718,6 @@ export class SessionSelectorComponent extends Container implements Focusable {
 			this.renameInput.focused = true;
 		}
 	}
-
 	private buildBaseLayout(content: Component, options?: { showHeader?: boolean }): void {
 		this.clear();
 		this.addChild(new Spacer(1));

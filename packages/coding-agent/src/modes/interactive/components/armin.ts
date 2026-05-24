@@ -182,7 +182,9 @@ export class ArminComponent implements Component {
 		this.interval = setInterval(() => {
 			const done = this.tickEffect();
 			this.updateDisplay();
-			this.ui.requestRender();
+			if (!this.ui.shouldSuppressBackgroundRenderUpdates?.()) {
+				this.ui.requestRender();
+			}
 			if (done) {
 				this.stopAnimation();
 			}

@@ -36,8 +36,9 @@ Run from source:
 Lumen reads config from (in priority order):
 
 1. `.lumen/` in current directory (project-level)
-2. `.pi/` in current directory (legacy fallback)
-3. `~/.lumen/agent/` (user-level)
+2. `~/.lumen/agent/` (user-level)
+
+If you are migrating from Pi, copy the relevant files from your old `.lumen/` tree into `.lumen/` once and keep using `.lumen/` going forward.
 
 ### Basic Configuration
 
@@ -49,6 +50,8 @@ Create `.lumen/settings.json`:
   "defaultThinkingLevel": "medium"
 }
 ```
+
+说明：这里的 `mimo-v2.5-pro` 只是当前仓库为了方便联调与测试给出的临时默认示例，不代表 Lumen 绑定或写死在 `mimo` 模型上；你可以按需要替换成任意可用 provider / model。
 
 ### Model Presets
 
@@ -73,6 +76,8 @@ Create `.lumen/presets.json`:
 ```
 
 Activate at runtime: `/preset mimo`. See `docs/preset-routing.md` for details.
+
+`mimo` preset 同样只是当前便于测试的示例 preset，不代表唯一推荐路线。
 
 ### API Keys
 

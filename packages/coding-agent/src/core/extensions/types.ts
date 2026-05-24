@@ -98,7 +98,11 @@ export type WidgetPlacement = "aboveEditor" | "belowEditor";
 
 /** Options for extension widgets. */
 export interface ExtensionWidgetOptions {
-	/** Where the widget is rendered. Defaults to "aboveEditor". */
+	/**
+	 * Where the widget is rendered within the prompt-side extension area beneath the editor.
+	 * `aboveEditor` renders in the upper extension slot; `belowEditor` renders in the lower slot.
+	 * Defaults to "aboveEditor".
+	 */
 	placement?: WidgetPlacement;
 }
 
@@ -197,7 +201,11 @@ export interface ExtensionUIContext {
 	/** Set the label shown for hidden thinking blocks. Call with no argument to restore default. */
 	setHiddenThinkingLabel(label?: string): void;
 
-	/** Set a widget to display above or below the editor. Accepts string array or component factory. */
+	/**
+	 * Set a widget in the passive extension area beneath the editor.
+	 * `aboveEditor` selects the upper slot of that area; `belowEditor` selects the lower slot.
+	 * Accepts string array or component factory.
+	 */
 	setWidget(key: string, content: string[] | undefined, options?: ExtensionWidgetOptions): void;
 	setWidget(
 		key: string,

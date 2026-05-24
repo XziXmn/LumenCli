@@ -770,10 +770,10 @@ This only affects the normal streaming working indicator. Compaction and retry l
 Show persistent content above or below the input editor. Good for passive widgets, hints, and auxiliary state that should not take ownership of the core prompt-side progress surface.
 
 ```typescript
-// Simple string array (above editor by default)
+// Upper slot in the extension area below the editor (default)
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"]);
 
-// Render below the editor
+// Lower slot in the extension area below the editor
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"], { placement: "belowEditor" });
 
 // Or with theme

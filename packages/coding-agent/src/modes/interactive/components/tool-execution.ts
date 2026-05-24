@@ -192,7 +192,9 @@ export class ToolExecutionComponent extends Container {
 				if (converted) {
 					this.convertedImages.set(index, converted);
 					this.updateDisplay();
-					this.ui.requestRender();
+					if (!this.ui.shouldSuppressBackgroundRenderUpdates?.()) {
+						this.ui.requestRender();
+					}
 				}
 			});
 		}

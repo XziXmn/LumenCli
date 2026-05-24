@@ -79,6 +79,9 @@ export class Loader extends Text {
 		const renderedFrame = this.renderIndicatorVerbatim ? frame : this.spinnerColorFn(frame);
 		const indicator = frame.length > 0 ? `${renderedFrame} ` : "";
 		this.setText(`${indicator}${this.messageColorFn(this.message)}`);
+		if (this.ui?.shouldSuppressBackgroundRenderUpdates?.()) {
+			return;
+		}
 		if (this.ui) {
 			this.ui.requestRender();
 		}

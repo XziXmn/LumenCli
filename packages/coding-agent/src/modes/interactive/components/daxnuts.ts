@@ -81,7 +81,9 @@ export class DaxnutsComponent implements Component {
 				this.stopAnimation();
 			}
 			this.cachedWidth = 0;
-			this.ui.requestRender();
+			if (!this.ui.shouldSuppressBackgroundRenderUpdates?.()) {
+				this.ui.requestRender();
+			}
 		}, 80);
 	}
 
