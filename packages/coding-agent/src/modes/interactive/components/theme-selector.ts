@@ -1,6 +1,7 @@
 import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@earendil-works/pi-tui";
 import { getAvailableThemes, getSelectListTheme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
+import { TUI_COPY } from "./tui-copy.js";
 
 const THEME_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
 	minPrimaryColumnWidth: 12,
@@ -28,7 +29,7 @@ export class ThemeSelectorComponent extends Container {
 		const themeItems: SelectItem[] = themes.map((name) => ({
 			value: name,
 			label: name,
-			description: name === currentTheme ? "(current)" : undefined,
+			description: name === currentTheme ? TUI_COPY.themeSelector.current : undefined,
 		}));
 
 		// Add top border

@@ -2,6 +2,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@earendil-works/pi-tui";
 import { getSelectListTheme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
+import { TUI_COPY } from "./tui-copy.js";
 
 const THINKING_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
 	minPrimaryColumnWidth: 14,
@@ -21,12 +22,12 @@ const LEVEL_METADATA: Record<
 	ThinkingLevel,
 	{ description: string; tokens: number; tier: "off" | "min" | "low" | "med" | "high" | "max" }
 > = {
-	off: { description: "No reasoning", tokens: 0, tier: "off" },
-	minimal: { description: "Very brief reasoning (~1k tokens)", tokens: 1024, tier: "min" },
-	low: { description: "Light reasoning (~2k tokens)", tokens: 2048, tier: "low" },
-	medium: { description: "Moderate reasoning (~8k tokens)", tokens: 8192, tier: "med" },
-	high: { description: "Deep reasoning (~16k tokens)", tokens: 16384, tier: "high" },
-	xhigh: { description: "Maximum reasoning (~32k tokens)", tokens: 32768, tier: "max" },
+	off: { description: TUI_COPY.thinkingSelector.off, tokens: 0, tier: "off" },
+	minimal: { description: TUI_COPY.thinkingSelector.minimal, tokens: 1024, tier: "min" },
+	low: { description: TUI_COPY.thinkingSelector.low, tokens: 2048, tier: "low" },
+	medium: { description: TUI_COPY.thinkingSelector.medium, tokens: 8192, tier: "med" },
+	high: { description: TUI_COPY.thinkingSelector.high, tokens: 16384, tier: "high" },
+	xhigh: { description: TUI_COPY.thinkingSelector.xhigh, tokens: 32768, tier: "max" },
 };
 
 /** Visual tier dot. Colors are kept inside the label string with ANSI so the

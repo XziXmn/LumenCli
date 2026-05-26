@@ -21,14 +21,15 @@ import type { PackageSource, SettingsManager } from "../../../core/settings-mana
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { rawKeyHint } from "./keybinding-hints.js";
+import { TUI_COPY } from "./tui-copy.js";
 
 type ResourceType = "extensions" | "skills" | "prompts" | "themes";
 
 const RESOURCE_TYPE_LABELS: Record<ResourceType, string> = {
-	extensions: "Extensions",
-	skills: "Skills",
-	prompts: "Prompts",
-	themes: "Themes",
+	extensions: TUI_COPY.configSelector.extensions,
+	skills: TUI_COPY.configSelector.skills,
+	prompts: TUI_COPY.configSelector.prompts,
+	themes: TUI_COPY.configSelector.themes,
 };
 
 interface ResourceItem {
@@ -81,12 +82,14 @@ function getGroupLabel(metadata: PathMetadata): string {
 	if (metadata.source === "auto") {
 		if (metadata.baseDir) {
 			return metadata.scope === "user"
-				? `User (${formatBaseDir(metadata.baseDir)})`
-				: `Project (${formatBaseDir(metadata.baseDir)})`;
+				? TUI_COPY.configSelector.userDir(formatBaseDir(metadata.baseDir))
+				: TUI_COPY.configSelector.projectDir(formatBaseDir(metadata.baseDir));
 		}
-		return metadata.scope === "user" ? "User (~/.lumen/agent/)" : "Project (.lumen/)";
+		return metadata.scope === "user"
+			? TUI_COPY.configSelector.userDefaultDir
+			: TUI_COPY.configSelector.projectDefaultDir;
 	}
-	return metadata.scope === "user" ? "User settings" : "Project settings";
+	return metadata.scope === "user" ? TUI_COPY.configSelector.userSettings : TUI_COPY.configSelector.projectSettings;
 }
 
 function buildGroups(resolved: ResolvedPaths): ResourceGroup[] {
@@ -181,16 +184,17 @@ class ConfigSelectorHeader implements Component {
 	invalidate(): void {}
 
 	render(width: number): string[] {
-		const title = theme.bold("Resource Configuration");
+		const title = theme.bold(TUI_COPY.configSelector.resourceConfiguration);
 		const sep = theme.fg("muted", " · ");
-		const hint = rawKeyHint("space", "toggle") + sep + rawKeyHint("esc", "close");
+		const hint =
+			rawKeyHint("space", TUI_COPY.configSelector.toggle) + sep + rawKeyHint("esc", TUI_COPY.configSelector.close);
 		const hintWidth = visibleWidth(hint);
 		const titleWidth = visibleWidth(title);
 		const spacing = Math.max(1, width - titleWidth - hintWidth);
 
 		return [
 			truncateToWidth(`${title}${" ".repeat(spacing)}${hint}`, width, ""),
-			theme.fg("muted", "Type to filter resources"),
+			theme.fg("muted", TUI_COPY.configSelector.filterResources),
 		];
 	}
 }
@@ -336,7 +340,7 @@ class ResourceList implements Component, Focusable {
 		lines.push("");
 
 		if (this.filteredItems.length === 0) {
-			lines.push(theme.fg("muted", "  No resources found"));
+			lines.push(theme.fg("muted", TUI_COPY.configSelector.noResources));
 			return lines;
 		}
 

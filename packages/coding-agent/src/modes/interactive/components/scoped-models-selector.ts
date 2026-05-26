@@ -13,6 +13,7 @@ import {
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyText } from "./keybinding-hints.js";
+import { TUI_COPY } from "./tui-copy.js";
 
 // EnabledIds: null = all enabled (no filter), string[] = explicit ordered list
 type EnabledIds = string[] | null;
@@ -126,9 +127,9 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 		// Header
 		this.addChild(new DynamicBorder());
 		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.fg("accent", theme.bold("Model Configuration")), 0, 0));
+		this.addChild(new Text(theme.fg("accent", theme.bold(TUI_COPY.scopedModelsSelector.title)), 0, 0));
 		this.addChild(
-			new Text(theme.fg("muted", `Session-only. ${keyText("app.models.save")} to save to settings.`), 0, 0),
+			new Text(theme.fg("muted", TUI_COPY.scopedModelsSelector.sessionOnly(keyText("app.models.save"))), 0, 0),
 		);
 		this.addChild(new Spacer(1));
 
@@ -164,18 +165,20 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 	private getFooterText(): string {
 		const enabledCount = this.enabledIds?.length ?? this.allIds.length;
 		const allEnabled = this.enabledIds === null;
-		const countText = allEnabled ? "all enabled" : `${enabledCount}/${this.allIds.length} enabled`;
+		const countText = allEnabled
+			? TUI_COPY.scopedModelsSelector.allEnabled
+			: TUI_COPY.scopedModelsSelector.enabledCount(enabledCount, this.allIds.length);
 		const parts = [
-			`${keyText("tui.select.confirm")} toggle`,
-			`${keyText("app.models.enableAll")} all`,
-			`${keyText("app.models.clearAll")} clear`,
-			`${keyText("app.models.toggleProvider")} provider`,
-			`${keyText("app.models.reorderUp")}/${keyText("app.models.reorderDown")} reorder`,
-			`${keyText("app.models.save")} save`,
+			`${keyText("tui.select.confirm")} ${TUI_COPY.scopedModelsSelector.toggle}`,
+			`${keyText("app.models.enableAll")} ${TUI_COPY.scopedModelsSelector.enableAll}`,
+			`${keyText("app.models.clearAll")} ${TUI_COPY.scopedModelsSelector.clearAll}`,
+			`${keyText("app.models.toggleProvider")} ${TUI_COPY.scopedModelsSelector.provider}`,
+			`${keyText("app.models.reorderUp")}/${keyText("app.models.reorderDown")} ${TUI_COPY.scopedModelsSelector.reorder}`,
+			`${keyText("app.models.save")} ${TUI_COPY.scopedModelsSelector.save}`,
 			countText,
 		];
 		return this.isDirty
-			? theme.fg("dim", `  ${parts.join(" · ")} `) + theme.fg("warning", "(unsaved)")
+			? theme.fg("dim", `  ${parts.join(" · ")} `) + theme.fg("warning", TUI_COPY.scopedModelsSelector.unsaved)
 			: theme.fg("dim", `  ${parts.join(" · ")}`);
 	}
 
@@ -196,7 +199,7 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 		this.listContainer.clear();
 
 		if (this.filteredItems.length === 0) {
-			this.listContainer.addChild(new Text(theme.fg("muted", "  No matching models"), 0, 0));
+			this.listContainer.addChild(new Text(theme.fg("muted", TUI_COPY.scopedModelsSelector.noMatches), 0, 0));
 			return;
 		}
 
@@ -227,7 +230,9 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 		if (this.filteredItems.length > 0) {
 			const selected = this.filteredItems[this.selectedIndex];
 			this.listContainer.addChild(new Spacer(1));
-			this.listContainer.addChild(new Text(theme.fg("muted", `  Model Name: ${selected.model.name}`), 0, 0));
+			this.listContainer.addChild(
+				new Text(theme.fg("muted", TUI_COPY.scopedModelsSelector.modelName(selected.model.name)), 0, 0),
+			);
 		}
 	}
 

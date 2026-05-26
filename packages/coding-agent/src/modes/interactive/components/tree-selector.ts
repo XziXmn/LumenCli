@@ -13,6 +13,7 @@ import type { SessionTreeNode } from "../../../core/session-manager.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint, keyText } from "./keybinding-hints.js";
+import { TUI_COPY } from "./tui-copy.js";
 
 /** Gutter info: position (displayIndent where connector was) and whether to show │ */
 interface GutterInfo {
@@ -711,19 +712,23 @@ class TreeList implements Component {
 				if (role === "user") {
 					const msgWithContent = msg as { content?: unknown };
 					const content = normalize(this.extractContent(msgWithContent.content));
-					result = theme.fg("accent", "user: ") + content;
+					result = theme.fg("accent", TUI_COPY.treeSelector.userPrefix) + content;
 				} else if (role === "assistant") {
 					const msgWithContent = msg as { content?: unknown; stopReason?: string; errorMessage?: string };
 					const textContent = normalize(this.extractContent(msgWithContent.content));
 					if (textContent) {
-						result = theme.fg("success", "assistant: ") + textContent;
+						result = theme.fg("success", TUI_COPY.treeSelector.assistantPrefix) + textContent;
 					} else if (msgWithContent.stopReason === "aborted") {
-						result = theme.fg("success", "assistant: ") + theme.fg("muted", "(aborted)");
+						result =
+							theme.fg("success", TUI_COPY.treeSelector.assistantPrefix) +
+							theme.fg("muted", TUI_COPY.treeSelector.assistantAborted);
 					} else if (msgWithContent.errorMessage) {
 						const errMsg = normalize(msgWithContent.errorMessage).slice(0, 80);
-						result = theme.fg("success", "assistant: ") + theme.fg("error", errMsg);
+						result = theme.fg("success", TUI_COPY.treeSelector.assistantPrefix) + theme.fg("error", errMsg);
 					} else {
-						result = theme.fg("success", "assistant: ") + theme.fg("muted", "(no content)");
+						result =
+							theme.fg("success", TUI_COPY.treeSelector.assistantPrefix) +
+							theme.fg("muted", TUI_COPY.treeSelector.assistantNoContent);
 					}
 				} else if (role === "toolResult") {
 					const toolMsg = msg as { toolCallId?: string; toolName?: string };
@@ -754,28 +759,31 @@ class TreeList implements Component {
 			}
 			case "compaction": {
 				const tokens = Math.round(entry.tokensBefore / 1000);
-				result = theme.fg("borderAccent", `[compaction: ${tokens}k tokens]`);
+				result = theme.fg("borderAccent", TUI_COPY.treeSelector.compaction(tokens));
 				break;
 			}
 			case "branch_summary":
-				result = theme.fg("warning", `[branch summary]: `) + normalize(entry.summary);
+				result = theme.fg("warning", TUI_COPY.treeSelector.branchSummaryPrefix) + normalize(entry.summary);
 				break;
 			case "model_change":
-				result = theme.fg("dim", `[model: ${entry.modelId}]`);
+				result = theme.fg("dim", TUI_COPY.treeSelector.model(entry.modelId));
 				break;
 			case "thinking_level_change":
-				result = theme.fg("dim", `[thinking: ${entry.thinkingLevel}]`);
+				result = theme.fg("dim", TUI_COPY.treeSelector.thinking(entry.thinkingLevel));
 				break;
 			case "custom":
-				result = theme.fg("dim", `[custom: ${entry.customType}]`);
+				result = theme.fg("dim", TUI_COPY.treeSelector.custom(entry.customType));
 				break;
 			case "label":
-				result = theme.fg("dim", `[label: ${entry.label ?? "(cleared)"}]`);
+				result = theme.fg(
+					"dim",
+					entry.label ? TUI_COPY.treeSelector.labelEntry(entry.label) : TUI_COPY.treeSelector.labelCleared,
+				);
 				break;
 			case "session_info":
 				result = entry.name
-					? [theme.fg("dim", "[title: "), theme.fg("dim", entry.name), theme.fg("dim", "]")].join("")
-					: [theme.fg("dim", "[title: "), theme.italic(theme.fg("dim", "empty")), theme.fg("dim", "]")].join("");
+					? theme.fg("dim", TUI_COPY.treeSelector.titleEntry(entry.name))
+					: theme.italic(theme.fg("dim", TUI_COPY.treeSelector.titleEmpty));
 				break;
 			default:
 				result = "";
@@ -1063,9 +1071,14 @@ class SearchLine implements Component {
 	render(width: number): string[] {
 		const query = this.treeList.getSearchQuery();
 		if (query) {
-			return [truncateToWidth(`  ${theme.fg("muted", "Type to search:")} ${theme.fg("accent", query)}`, width)];
+			return [
+				truncateToWidth(
+					`  ${theme.fg("muted", TUI_COPY.treeSelector.searchPrompt)} ${theme.fg("accent", query)}`,
+					width,
+				),
+			];
 		}
-		return [truncateToWidth(`  ${theme.fg("muted", "Type to search:")}`, width)];
+		return [truncateToWidth(`  ${theme.fg("muted", TUI_COPY.treeSelector.searchPrompt)}`, width)];
 	}
 
 	handleInput(_keyData: string): void {}
@@ -1102,11 +1115,11 @@ class LabelInput implements Component, Focusable {
 		const lines: string[] = [];
 		const indent = "  ";
 		const availableWidth = width - indent.length;
-		lines.push(truncateToWidth(`${indent}${theme.fg("muted", "Label (empty to remove):")}`, width));
+		lines.push(truncateToWidth(`${indent}${theme.fg("muted", TUI_COPY.treeSelector.labelInput)}`, width));
 		lines.push(...this.input.render(availableWidth).map((line) => truncateToWidth(`${indent}${line}`, width)));
 		lines.push(
 			truncateToWidth(
-				`${indent}${keyHint("tui.select.confirm", "save")}  ${keyHint("tui.select.cancel", "cancel")}`,
+				`${indent}${keyHint("tui.select.confirm", TUI_COPY.treeSelector.save)}  ${keyHint("tui.select.cancel", TUI_COPY.treeSelector.cancel)}`,
 				width,
 			),
 		);
@@ -1175,7 +1188,7 @@ export class TreeSelectorComponent extends Container implements Focusable {
 
 		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder());
-		this.addChild(new Text(theme.bold("  Session Tree"), 1, 0));
+		this.addChild(new Text(theme.bold(`  ${TUI_COPY.treeSelector.title}`), 1, 0));
 		const filterKeys = [
 			keyText("app.tree.filter.default"),
 			keyText("app.tree.filter.noTools"),
@@ -1189,7 +1202,7 @@ export class TreeSelectorComponent extends Container implements Focusable {
 			new TruncatedText(
 				theme.fg(
 					"muted",
-					`  ↑/↓: move. ←/→: page. ${branchKeys}: fold/branch. ${keyText("app.tree.editLabel")}: label. ${filterKeys}: filters (${cycleKeys} cycle). ${keyText("app.tree.toggleLabelTimestamp")}: label time`,
+					`  ↑/↓: ${TUI_COPY.treeSelector.move}. ←/→: ${TUI_COPY.treeSelector.page}. ${branchKeys}: ${TUI_COPY.treeSelector.foldBranch}. ${keyText("app.tree.editLabel")}: ${TUI_COPY.treeSelector.label}. ${filterKeys}: ${TUI_COPY.treeSelector.filters}（${cycleKeys} ${TUI_COPY.treeSelector.cycle}）. ${keyText("app.tree.toggleLabelTimestamp")}: ${TUI_COPY.treeSelector.labelTime}`,
 				),
 				0,
 				0,

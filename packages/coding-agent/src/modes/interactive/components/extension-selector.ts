@@ -8,6 +8,7 @@ import { theme } from "../theme/theme.js";
 import { CountdownTimer } from "./countdown-timer.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint, rawKeyHint } from "./keybinding-hints.js";
+import { TUI_COPY } from "./tui-copy.js";
 
 export interface ExtensionSelectorOptions {
 	tui?: TUI;
@@ -62,11 +63,11 @@ export class ExtensionSelectorComponent extends Container {
 		this.addChild(new Spacer(1));
 		this.addChild(
 			new Text(
-				rawKeyHint("↑↓", "navigate") +
+				rawKeyHint("↑↓", TUI_COPY.extensionSelector.navigate) +
 					"  " +
-					keyHint("tui.select.confirm", "select") +
+					keyHint("tui.select.confirm", TUI_COPY.extensionSelector.select) +
 					"  " +
-					keyHint("tui.select.cancel", "cancel"),
+					keyHint("tui.select.cancel", TUI_COPY.extensionSelector.cancel),
 				1,
 				0,
 			),

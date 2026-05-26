@@ -13,6 +13,7 @@ import { stripAnsi } from "../../../utils/ansi.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint, keyText } from "./keybinding-hints.js";
+import { TUI_COPY } from "./tui-copy.js";
 import { truncateToVisualLines } from "./visual-truncate.js";
 
 // Preview line limit when not expanded (matches tool execution behavior)
@@ -56,7 +57,7 @@ export class BashExecutionComponent extends Container {
 			ui,
 			(spinner) => theme.fg(colorKey, spinner),
 			(text) => theme.fg("muted", text),
-			`Running... (${keyText("tui.select.cancel")} to cancel)`, // Plain text for loader
+			TUI_COPY.bashExecution.running(keyText("tui.select.cancel")),
 			undefined,
 			{ skipInitialRender: true },
 		);
@@ -178,16 +179,16 @@ export class BashExecutionComponent extends Container {
 			// Show how many lines are hidden (collapsed preview)
 			if (hiddenLineCount > 0) {
 				if (this.expanded) {
-					statusParts.push(`(${keyHint("app.tools.expand", "to collapse")})`);
+					statusParts.push(`(${keyHint("app.tools.expand", "收起")})`);
 				} else {
 					statusParts.push(
-						`${theme.fg("muted", `... ${hiddenLineCount} more lines`)} (${keyHint("app.tools.expand", "to expand")})`,
+						`${theme.fg("muted", TUI_COPY.bashExecution.moreLines(hiddenLineCount))} (${keyHint("app.tools.expand", "展开")})`,
 					);
 				}
 			}
 
 			if (this.status === "cancelled") {
-				statusParts.push(theme.fg("warning", "(cancelled)"));
+				statusParts.push(theme.fg("warning", TUI_COPY.bashExecution.cancelled));
 			} else if (this.status === "error") {
 				statusParts.push(theme.fg("error", `(exit ${this.exitCode})`));
 			}
@@ -195,7 +196,7 @@ export class BashExecutionComponent extends Container {
 			// Add truncation warning (context truncation, not preview truncation)
 			const wasTruncated = this.truncationResult?.truncated || contextTruncation.truncated;
 			if (wasTruncated && this.fullOutputPath) {
-				statusParts.push(theme.fg("warning", `Output truncated. Full output: ${this.fullOutputPath}`));
+				statusParts.push(theme.fg("warning", `输出已截断，完整输出见：${this.fullOutputPath}`));
 			}
 
 			if (statusParts.length > 0) {

@@ -20,6 +20,7 @@ import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint, keyText } from "./keybinding-hints.js";
 import { filterAndSortSessions, hasSessionName, type NameFilter, type SortMode } from "./session-selector-search.js";
+import { TUI_COPY } from "./tui-copy.js";
 
 type SessionScope = "current" | "all";
 
@@ -39,13 +40,13 @@ function formatSessionDate(date: Date): string {
 	const diffHours = Math.floor(diffMs / 3600000);
 	const diffDays = Math.floor(diffMs / 86400000);
 
-	if (diffMins < 1) return "now";
-	if (diffMins < 60) return `${diffMins}m`;
-	if (diffHours < 24) return `${diffHours}h`;
-	if (diffDays < 7) return `${diffDays}d`;
-	if (diffDays < 30) return `${Math.floor(diffDays / 7)}w`;
-	if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo`;
-	return `${Math.floor(diffDays / 365)}y`;
+	if (diffMins < 1) return TUI_COPY.sessionSelector.relativeNow;
+	if (diffMins < 60) return TUI_COPY.sessionSelector.relativeMinutes(diffMins);
+	if (diffHours < 24) return TUI_COPY.sessionSelector.relativeHours(diffHours);
+	if (diffDays < 7) return TUI_COPY.sessionSelector.relativeDays(diffDays);
+	if (diffDays < 30) return TUI_COPY.sessionSelector.relativeWeeks(Math.floor(diffDays / 7));
+	if (diffDays < 365) return TUI_COPY.sessionSelector.relativeMonths(Math.floor(diffDays / 30));
+	return TUI_COPY.sessionSelector.relativeYears(Math.floor(diffDays / 365));
 }
 
 function canonicalizePath(path: string | undefined): string | undefined {
@@ -128,23 +129,30 @@ class SessionSelectorHeader implements Component {
 	invalidate(): void {}
 
 	render(width: number): string[] {
-		const title = this.scope === "current" ? "Resume Session (Current Folder)" : "Resume Session (All)";
+		const title =
+			this.scope === "current" ? TUI_COPY.sessionSelector.titleCurrent : TUI_COPY.sessionSelector.titleAll;
 		const leftText = theme.bold(title);
 
-		const sortLabel = this.sortMode === "threaded" ? "Threaded" : this.sortMode === "recent" ? "Recent" : "Fuzzy";
-		const sortText = theme.fg("muted", "Sort: ") + theme.fg("accent", sortLabel);
+		const sortLabel =
+			this.sortMode === "threaded"
+				? TUI_COPY.sessionSelector.sortThreaded
+				: this.sortMode === "recent"
+					? TUI_COPY.sessionSelector.sortRecent
+					: TUI_COPY.sessionSelector.sortRelevance;
+		const sortText = theme.fg("muted", `${TUI_COPY.sessionSelector.sortLabel}: `) + theme.fg("accent", sortLabel);
 
-		const nameLabel = this.nameFilter === "all" ? "All" : "Named";
-		const nameText = theme.fg("muted", "Name: ") + theme.fg("accent", nameLabel);
+		const nameLabel =
+			this.nameFilter === "all" ? TUI_COPY.sessionSelector.nameAll : TUI_COPY.sessionSelector.nameNamed;
+		const nameText = theme.fg("muted", `${TUI_COPY.sessionSelector.nameLabel}: `) + theme.fg("accent", nameLabel);
 
 		let scopeText: string;
 		if (this.loading) {
 			const progressText = this.loadProgress ? `${this.loadProgress.loaded}/${this.loadProgress.total}` : "...";
-			scopeText = `${theme.fg("muted", "○ Current Folder | ")}${theme.fg("accent", `Loading ${progressText}`)}`;
+			scopeText = `${theme.fg("muted", `○ ${TUI_COPY.sessionSelector.scopeCurrent} | `)}${theme.fg("accent", TUI_COPY.sessionSelector.loading(progressText))}`;
 		} else if (this.scope === "current") {
-			scopeText = `${theme.fg("accent", "◉ Current Folder")}${theme.fg("muted", " | ○ All")}`;
+			scopeText = `${theme.fg("accent", `◉ ${TUI_COPY.sessionSelector.scopeCurrent}`)}${theme.fg("muted", ` | ○ ${TUI_COPY.sessionSelector.scopeAll}`)}`;
 		} else {
-			scopeText = `${theme.fg("muted", "○ Current Folder | ")}${theme.fg("accent", "◉ All")}`;
+			scopeText = `${theme.fg("muted", `○ ${TUI_COPY.sessionSelector.scopeCurrent} | `)}${theme.fg("accent", `◉ ${TUI_COPY.sessionSelector.scopeAll}`)}`;
 		}
 
 		const rightText = truncateToWidth(`${scopeText}  ${nameText}  ${sortText}`, width, "");
@@ -156,7 +164,7 @@ class SessionSelectorHeader implements Component {
 		let hintLine1: string;
 		let hintLine2: string;
 		if (this.confirmingDeletePath !== null) {
-			const confirmHint = `Delete session? ${keyHint("tui.select.confirm", "confirm")} · ${keyHint("tui.select.cancel", "cancel")}`;
+			const confirmHint = `${TUI_COPY.sessionSelector.deleteConfirm} ${keyHint("tui.select.confirm", "确认")} · ${keyHint("tui.select.cancel", "取消")}`;
 			hintLine1 = theme.fg("error", truncateToWidth(confirmHint, width, "…"));
 			hintLine2 = "";
 		} else if (this.statusMessage) {
@@ -164,18 +172,23 @@ class SessionSelectorHeader implements Component {
 			hintLine1 = theme.fg(color, truncateToWidth(this.statusMessage.message, width, "…"));
 			hintLine2 = "";
 		} else {
-			const pathState = this.showPath ? "(on)" : "(off)";
+			const pathState = this.showPath ? "开" : "关";
 			const sep = theme.fg("muted", " · ");
 			const hint1 =
-				keyHint("tui.input.tab", "scope") + sep + theme.fg("muted", 're:<pattern> regex · "phrase" exact');
+				keyHint("tui.input.tab", "切换范围") +
+				sep +
+				theme.fg(
+					"muted",
+					`${TUI_COPY.sessionSelector.searchRegexHint} · ${TUI_COPY.sessionSelector.searchExactHint}`,
+				);
 			const hint2Parts = [
-				keyHint("app.session.toggleSort", "sort"),
-				keyHint("app.session.toggleNamedFilter", "named"),
-				keyHint("app.session.delete", "delete"),
-				keyHint("app.session.togglePath", `path ${pathState}`),
+				keyHint("app.session.toggleSort", "切换排序"),
+				keyHint("app.session.toggleNamedFilter", "仅命名"),
+				keyHint("app.session.delete", "删除"),
+				keyHint("app.session.togglePath", `路径 ${pathState}`),
 			];
 			if (this.showRenameHint) {
-				hint2Parts.push(keyHint("app.session.rename", "rename"));
+				hint2Parts.push(keyHint("app.session.rename", "重命名"));
 			}
 			const hint2 = hint2Parts.join(sep);
 			hintLine1 = truncateToWidth(hint1, width, "…");
@@ -383,7 +396,7 @@ class SessionList implements Component, Focusable {
 
 		// Prevent deleting current session
 		if (this.isCurrentSessionPath(selected.session.path)) {
-			this.onError?.("Cannot delete the currently active session");
+			this.onError?.(TUI_COPY.sessionSelector.deleteCurrentError);
 			return;
 		}
 
@@ -409,16 +422,16 @@ class SessionList implements Component, Focusable {
 			if (this.nameFilter === "named") {
 				const toggleKey = keyText("app.session.toggleNamedFilter");
 				if (this.showCwd) {
-					emptyMessage = `  No named sessions found. Press ${toggleKey} to show all.`;
+					emptyMessage = TUI_COPY.sessionSelector.noNamedAll(toggleKey);
 				} else {
-					emptyMessage = `  No named sessions in current folder. Press ${toggleKey} to show all, or Tab to view all.`;
+					emptyMessage = TUI_COPY.sessionSelector.noNamedCurrent(toggleKey);
 				}
 			} else if (this.showCwd) {
 				// "All" scope - no sessions anywhere that match filter
-				emptyMessage = "  No sessions found";
+				emptyMessage = TUI_COPY.sessionSelector.noSessionsAll;
 			} else {
 				// "Current folder" scope - hint to try "all"
-				emptyMessage = "  No sessions in current folder. Press Tab to view all.";
+				emptyMessage = TUI_COPY.sessionSelector.noSessionsCurrent;
 			}
 			lines.push(theme.fg("muted", truncateToWidth(emptyMessage, width, "…")));
 			return lines;
@@ -831,7 +844,7 @@ export class SessionSelectorComponent extends Container implements Focusable {
 				const showCwd = this.scope === "all";
 				this.sessionList.setSessions(sessions, showCwd);
 
-				const msg = result.method === "trash" ? "Session moved to trash" : "Session deleted";
+				const msg = result.method === "trash" ? TUI_COPY.sessionSelector.trashed : TUI_COPY.sessionSelector.deleted;
 				this.header.setStatusMessage({ type: "info", message: msg }, 2000);
 				await this.refreshSessionsAfterMutation();
 			} else {
@@ -857,13 +870,16 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		this.renameInput.focused = true;
 
 		const panel = new Container();
-		panel.addChild(new Text(theme.bold("Rename Session"), 1, 0));
+		panel.addChild(new Text(theme.bold(TUI_COPY.sessionSelector.renameTitle), 1, 0));
 		panel.addChild(new Spacer(1));
 		panel.addChild(this.renameInput);
 		panel.addChild(new Spacer(1));
 		panel.addChild(
 			new Text(
-				theme.fg("muted", `${keyText("tui.select.confirm")} to save · ${keyText("tui.select.cancel")} to cancel`),
+				theme.fg(
+					"muted",
+					`${keyText("tui.select.confirm")} ${TUI_COPY.sessionSelector.renameSave} · ${keyText("tui.select.cancel")} ${TUI_COPY.sessionSelector.renameCancel}`,
+				),
 				1,
 				0,
 			),
@@ -963,7 +979,7 @@ export class SessionSelectorComponent extends Container implements Focusable {
 
 			const message = err instanceof Error ? err.message : String(err);
 			this.header.setLoading(false);
-			this.header.setStatusMessage({ type: "error", message: `Failed to load sessions: ${message}` }, 4000);
+			this.header.setStatusMessage({ type: "error", message: TUI_COPY.sessionSelector.failedLoad(message) }, 4000);
 
 			if (reason === "initial") {
 				this.sessionList.setSessions([], showCwd);

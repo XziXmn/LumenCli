@@ -27,8 +27,8 @@ describe("AssistantToolSummaryComponent", () => {
 		);
 
 		const rendered = render(component);
-		expect(rendered).toContain("Read(README.md)");
-		expect(rendered).toContain("⎿ Read 2 lines");
+		expect(rendered).toContain("读取(README.md)");
+		expect(rendered).toContain("⎿ 已读取 2 行");
 	});
 
 	it("shows full output when expanded", () => {
@@ -48,7 +48,7 @@ describe("AssistantToolSummaryComponent", () => {
 
 		const rendered = render(component);
 		expect(rendered).toContain("Bash(pwd)");
-		expect(rendered).toContain("⎿ Ran command");
+		expect(rendered).toContain("⎿ 命令已执行");
 		expect(rendered).toContain("/tmp/work");
 	});
 
@@ -61,8 +61,8 @@ describe("AssistantToolSummaryComponent", () => {
 		);
 
 		const pending = render(component);
-		expect(pending).toContain('Search(pattern: "todo", path: "src")');
-		expect(pending).toContain("⎿ Running…");
+		expect(pending).toContain('搜索(模式: "todo", 路径: "src")');
+		expect(pending).toContain("⎿ 运行中…");
 		expect(pending).not.toContain("to expand");
 
 		component.updateResult({
@@ -74,7 +74,7 @@ describe("AssistantToolSummaryComponent", () => {
 		} as any);
 
 		const completed = render(component);
-		expect(completed).toContain("⎿ Found 2 matches across 2 files");
+		expect(completed).toContain("⎿ 共找到 2 处匹配，涉及 2 个文件");
 		expect(completed).not.toContain("to expand");
 	});
 });

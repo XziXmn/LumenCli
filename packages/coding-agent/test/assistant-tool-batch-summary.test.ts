@@ -42,7 +42,7 @@ describe("AssistantToolBatchSummaryComponent", () => {
 		);
 
 		const rendered = render(component);
-		expect(rendered).toContain("Completed 1 read, 1 bash");
+		expect(rendered).toContain("已完成 1 read, 1 bash");
 		expect(rendered).toContain("⎿ pwd");
 	});
 
@@ -77,10 +77,10 @@ describe("AssistantToolBatchSummaryComponent", () => {
 		component.setExpanded(true);
 
 		const rendered = render(component);
-		expect(rendered).toContain('⎿ Search(pattern: "src/**/*.ts", path: ".")');
-		expect(rendered).toContain("Found 2 files");
-		expect(rendered).toContain("⎿ List(src)");
-		expect(rendered).toContain("Listed 2 items");
+		expect(rendered).toContain('⎿ 搜索(模式: "src/**/*.ts", 路径: ".")');
+		expect(rendered).toContain("共找到 2 个文件");
+		expect(rendered).toContain("⎿ 列出(src)");
+		expect(rendered).toContain("共列出 2 项");
 	});
 
 	it("supports streaming pending tools before results arrive", () => {
@@ -89,7 +89,7 @@ describe("AssistantToolBatchSummaryComponent", () => {
 		component.addOrUpdateToolCall("bash", { command: "pwd" }, "tool-bash-1");
 
 		const pending = render(component);
-		expect(pending).toContain("Running 1 read, 1 bash");
+		expect(pending).toContain("进行中 1 read, 1 bash");
 
 		component.updateResult(
 			"tool-read-1",
@@ -115,6 +115,6 @@ describe("AssistantToolBatchSummaryComponent", () => {
 		);
 
 		const completed = render(component);
-		expect(completed).toContain("Completed 1 read, 1 bash");
+		expect(completed).toContain("已完成 1 read, 1 bash");
 	});
 });

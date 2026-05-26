@@ -60,7 +60,7 @@ describe("OAuthSelectorComponent", () => {
 		const output = stripAnsi(selector.render(120).join("\n"));
 
 		expect(output).toContain("Anthropic");
-		expect(output).toContain("subscription configured");
+		expect(output).toContain("订阅已配置");
 	});
 
 	it("shows environment API key auth as configured", () => {
@@ -77,8 +77,8 @@ describe("OAuthSelectorComponent", () => {
 		const output = stripAnsi(selector.render(120).join("\n"));
 
 		expect(output).toContain("OpenAI");
-		expect(output).toContain("✓ env: OPENAI_API_KEY");
-		expect(output).not.toContain("unconfigured");
+		expect(output).toContain("✓ 环境变量: OPENAI_API_KEY");
+		expect(output).not.toContain("未配置");
 	});
 
 	it("shows custom provider environment API key auth from status resolver", () => {
@@ -95,8 +95,8 @@ describe("OAuthSelectorComponent", () => {
 		const output = stripAnsi(selector.render(120).join("\n"));
 
 		expect(output).toContain("ollama");
-		expect(output).toContain("✓ env: OLLAMA_API_KEY");
-		expect(output).not.toContain("unconfigured");
+		expect(output).toContain("✓ 环境变量: OLLAMA_API_KEY");
+		expect(output).not.toContain("未配置");
 	});
 
 	it("shows models.json API key auth as configured", () => {
@@ -113,8 +113,8 @@ describe("OAuthSelectorComponent", () => {
 		const output = stripAnsi(selector.render(120).join("\n"));
 
 		expect(output).toContain("local-proxy");
-		expect(output).toContain("✓ key in models.json");
-		expect(output).not.toContain("unconfigured");
+		expect(output).toContain("✓ models.json 中的 key");
+		expect(output).not.toContain("未配置");
 	});
 
 	it("shows models.json command auth as configured", () => {
@@ -131,7 +131,7 @@ describe("OAuthSelectorComponent", () => {
 		const output = stripAnsi(selector.render(120).join("\n"));
 
 		expect(output).toContain("op-proxy");
-		expect(output).toContain("✓ command in models.json");
-		expect(output).not.toContain("unconfigured");
+		expect(output).toContain("✓ models.json 中的命令");
+		expect(output).not.toContain("未配置");
 	});
 });

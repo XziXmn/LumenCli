@@ -4,6 +4,7 @@ import { getTextOutput } from "../../../core/tools/render-utils.js";
 import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.js";
 import { isCollapsibleToolName } from "../output-flow/collapse.js";
 import { theme } from "../theme/theme.js";
+import { TUI_COPY } from "./tui-copy.js";
 
 type ToolResultMessage = Extract<AgentMessage, { role: "toolResult" }>;
 type ToolRowStatus = "pending" | "success" | "error";
@@ -53,9 +54,9 @@ export function titleForTool(toolName: string, args: Record<string, unknown>, cw
 
 	switch (toolName) {
 		case "read":
-			return `Read(${path ?? "file"})`;
+			return `读取(${path ?? "文件"})`;
 		case "write":
-			return `Write(${path ?? "file"})`;
+			return `写入(${path ?? "文件"})`;
 		case "edit": {
 			const oldText = typeof args.oldText === "string" ? args.oldText : undefined;
 			const oldString = typeof args.old_string === "string" ? args.old_string : undefined;
@@ -74,16 +75,16 @@ export function titleForTool(toolName: string, args: Record<string, unknown>, cw
 				(typeof oldText === "string" && oldText.length === 0) ||
 				(typeof oldString === "string" && oldString.length === 0) ||
 				createFromEdits;
-			return `${isCreate ? "Create" : "Update"}(${path ?? "file"})`;
+			return `${isCreate ? "创建" : "更新"}(${path ?? "文件"})`;
 		}
 		case "grep":
 		case "find": {
 			const pattern = typeof args.pattern === "string" ? args.pattern : "";
 			const pathText = path ?? ".";
-			return `Search(pattern: "${pattern}", path: "${pathText}")`;
+			return `搜索(模式: "${pattern}", 路径: "${pathText}")`;
 		}
 		case "ls":
-			return `List(${path ?? "."})`;
+			return `列出(${path ?? "."})`;
 		case "bash": {
 			const command = typeof args.command === "string" ? args.command : "...";
 			return `Bash(${command})`;
@@ -99,36 +100,36 @@ export function summaryForTool(toolName: string, args: Record<string, unknown>, 
 
 	switch (toolName) {
 		case "todo":
-			return output === "Todo list cleared." ? output : "Updated todo list";
+			return output === "Todo list cleared." ? output : "已更新待办列表";
 		case "read":
-			if (hasImage) return "Read image";
-			return `Read ${lineCount(output)} ${lineCount(output) === 1 ? "line" : "lines"}`;
+			if (hasImage) return "已读取图片";
+			return `已读取 ${lineCount(output)} 行`;
 		case "write": {
 			const content = typeof args.content === "string" ? args.content : "";
 			const count = lineCount(content);
-			return `Wrote ${count} ${count === 1 ? "line" : "lines"}`;
+			return `已写入 ${count} 行`;
 		}
 		case "edit":
-			return "Updated file";
+			return "已更新文件";
 		case "grep": {
 			const matches = output ? output.split("\n").filter(Boolean) : [];
 			const fileCount = new Set(matches.map((line) => line.split(":")[0]).filter(Boolean)).size;
-			return `Found ${matches.length} ${matches.length === 1 ? "match" : "matches"} across ${fileCount} ${fileCount === 1 ? "file" : "files"}`;
+			return `共找到 ${matches.length} 处匹配，涉及 ${fileCount} 个文件`;
 		}
 		case "find": {
 			const count = output ? output.split("\n").filter(Boolean).length : 0;
-			return `Found ${count} ${count === 1 ? "file" : "files"}`;
+			return `共找到 ${count} 个文件`;
 		}
 		case "ls": {
 			const count = output ? output.split("\n").filter(Boolean).length : 0;
-			return `Listed ${count} ${count === 1 ? "item" : "items"}`;
+			return `共列出 ${count} 项`;
 		}
 		case "bash": {
 			const count = output ? output.split("\n").filter(Boolean).length : 0;
-			return `Ran command · ${count} ${count === 1 ? "line" : "lines"} of output`;
+			return `命令已执行 · 输出 ${count} 行`;
 		}
 		default:
-			return output.split("\n")[0] ?? "Done";
+			return output.split("\n")[0] ?? "已完成";
 	}
 }
 
@@ -176,7 +177,7 @@ export class AssistantToolSummaryComponent extends Container {
 		this.addChild(new Text(`${renderToolStatusDot(status)} ${theme.bold(title)}`, 1, 0));
 
 		if (!this.result) {
-			this.addChild(new Text(renderToolResponseLine("Running…", "muted"), 0, 0));
+			this.addChild(new Text(renderToolResponseLine(TUI_COPY.toolSummary.running, "muted"), 0, 0));
 			return;
 		}
 
@@ -196,7 +197,9 @@ export class AssistantToolSummaryComponent extends Container {
 				this.addChild(new Text(theme.fg("dim", preview), 2, 0));
 			}
 			if (lines.length > 5) {
-				this.addChild(new Text(renderToolResponseLine(`… ${lines.length - 5} more lines`, "muted"), 0, 0));
+				this.addChild(
+					new Text(renderToolResponseLine(TUI_COPY.bashExecution.moreLines(lines.length - 5), "muted"), 0, 0),
+				);
 			}
 		}
 	}

@@ -4,6 +4,7 @@ import { exec } from "child_process";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint } from "./keybinding-hints.js";
+import { TUI_COPY } from "./tui-copy.js";
 
 /**
  * Login dialog component - replaces editor during OAuth login flow
@@ -38,7 +39,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 
 		const providerInfo = getOAuthProviders().find((p) => p.id === providerId);
 		const providerName = providerNameOverride || providerInfo?.name || providerId;
-		const title = titleOverride ?? `Login to ${providerName}`;
+		const title = titleOverride ?? TUI_COPY.loginDialog.title(providerName);
 
 		// Top border
 		this.addChild(new DynamicBorder());
@@ -78,7 +79,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 			this.inputResolver = undefined;
 			this.inputRejecter = undefined;
 		}
-		this.onComplete(false, "Login cancelled");
+		this.onComplete(false, TUI_COPY.loginDialog.cancelled);
 	}
 
 	/**
@@ -90,8 +91,8 @@ export class LoginDialogComponent extends Container implements Focusable {
 		const linkedUrl = `\x1b]8;;${url}\x07${url}\x1b]8;;\x07`;
 		this.contentContainer.addChild(new Text(theme.fg("accent", linkedUrl), 1, 0));
 
-		const clickHint = process.platform === "darwin" ? "Cmd+click to open" : "Ctrl+click to open";
-		const hyperlink = `\x1b]8;;${url}\x07${clickHint}\x1b]8;;\x07`;
+		const clickHint = process.platform === "darwin" ? "Cmd" : "Ctrl";
+		const hyperlink = `\x1b]8;;${url}\x07${TUI_COPY.loginDialog.clickHint(clickHint)}\x1b]8;;\x07`;
 		this.contentContainer.addChild(new Text(theme.fg("dim", hyperlink), 1, 0));
 
 		if (instructions) {
@@ -113,7 +114,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 		this.contentContainer.addChild(new Spacer(1));
 		this.contentContainer.addChild(new Text(theme.fg("dim", prompt), 1, 0));
 		this.contentContainer.addChild(this.input);
-		this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", "to cancel")})`, 1, 0));
+		this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", TUI_COPY.loginDialog.cancel)})`, 1, 0));
 		this.tui.requestRender();
 
 		return new Promise((resolve, reject) => {
@@ -130,12 +131,12 @@ export class LoginDialogComponent extends Container implements Focusable {
 		this.contentContainer.addChild(new Spacer(1));
 		this.contentContainer.addChild(new Text(theme.fg("text", message), 1, 0));
 		if (placeholder) {
-			this.contentContainer.addChild(new Text(theme.fg("dim", `e.g., ${placeholder}`), 1, 0));
+			this.contentContainer.addChild(new Text(theme.fg("dim", TUI_COPY.loginDialog.example(placeholder)), 1, 0));
 		}
 		this.contentContainer.addChild(this.input);
 		this.contentContainer.addChild(
 			new Text(
-				`(${keyHint("tui.select.cancel", "to cancel,")} ${keyHint("tui.select.confirm", "to submit")})`,
+				`(${keyHint("tui.select.cancel", `${TUI_COPY.loginDialog.cancel}，`)} ${keyHint("tui.select.confirm", TUI_COPY.loginDialog.submit)})`,
 				1,
 				0,
 			),
@@ -160,7 +161,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 			this.contentContainer.addChild(new Text(line, 1, 0));
 		}
 		this.contentContainer.addChild(new Spacer(1));
-		this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", "to close")})`, 1, 0));
+		this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", TUI_COPY.loginDialog.close)})`, 1, 0));
 		this.tui.requestRender();
 	}
 
@@ -170,7 +171,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 	showWaiting(message: string): void {
 		this.contentContainer.addChild(new Spacer(1));
 		this.contentContainer.addChild(new Text(theme.fg("dim", message), 1, 0));
-		this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", "to cancel")})`, 1, 0));
+		this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", TUI_COPY.loginDialog.cancel)})`, 1, 0));
 		this.tui.requestRender();
 	}
 

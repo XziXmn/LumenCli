@@ -4,6 +4,7 @@ import { getTextOutput } from "../../../core/tools/render-utils.js";
 import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.js";
 import { theme } from "../theme/theme.js";
 import { renderToolResponseLine, renderToolStatusDot, summaryForTool, titleForTool } from "./assistant-tool-summary.js";
+import { TUI_COPY } from "./tui-copy.js";
 
 type ToolResultMessage = Extract<AgentMessage, { role: "toolResult" }>;
 
@@ -25,7 +26,9 @@ function formatBatchSummary(items: BatchItem[]): string {
 	for (const [name, count] of counts) {
 		parts.push(`${count} ${name}`);
 	}
-	return completedCount === items.length ? `Completed ${parts.join(", ")}` : `Running ${parts.join(", ")}`;
+	return completedCount === items.length
+		? TUI_COPY.toolSummary.completed(parts.join(", "))
+		: TUI_COPY.toolSummary.runningBatch(parts.join(", "));
 }
 
 function latestHint(items: BatchItem[], cwd: string): string | undefined {
@@ -134,7 +137,7 @@ export class AssistantToolBatchSummaryComponent extends Container {
 		for (const item of this.items) {
 			this.addChild(new Text(renderToolResponseLine(titleForTool(item.toolName, item.args, this.cwd)), 0, 0));
 			if (!item.result) {
-				this.addChild(new Text(renderToolResponseLine("Running…", "muted"), 0, 0));
+				this.addChild(new Text(renderToolResponseLine(TUI_COPY.toolSummary.running, "muted"), 0, 0));
 				continue;
 			}
 			this.addChild(new Text(renderToolResponseLine(summaryForTool(item.toolName, item.args, item.result)), 0, 0));

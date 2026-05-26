@@ -91,7 +91,7 @@ export class Loader extends Text {
 		if (this.ui?.shouldSuppressBackgroundRenderUpdates?.()) {
 			return;
 		}
-		if (this.ui) {
+		if (this.ui && typeof this.ui.requestRender === "function") {
 			this.ui.requestRender();
 		}
 	}

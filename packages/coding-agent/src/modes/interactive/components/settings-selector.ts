@@ -15,6 +15,7 @@ import type { WarningSettings } from "../../../core/settings-manager.js";
 import { getSelectListTheme, getSettingsListTheme, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyDisplayText } from "./keybinding-hints.js";
+import { TUI_COPY } from "./tui-copy.js";
 
 const SETTINGS_SUBMENU_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
 	minPrimaryColumnWidth: 12,
@@ -187,7 +188,16 @@ class SelectSubmenu extends Container {
 
 		// Hint
 		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.fg("dim", "  Enter 选择 · Esc 返回"), 0, 0));
+		this.addChild(
+			new Text(
+				theme.fg(
+					"dim",
+					`  Enter ${TUI_COPY.settingsSelector.submenuConfirm} · Esc ${TUI_COPY.settingsSelector.submenuCancel}`,
+				),
+				0,
+				0,
+			),
+		);
 	}
 
 	handleInput(data: string): void {
@@ -283,7 +293,7 @@ export class SettingsSelectorComponent extends Container {
 				id: "warnings",
 				label: "警告设置",
 				description: "启用或禁用各类警告",
-				currentValue: "configure",
+				currentValue: TUI_COPY.settingsSelector.warningsConfigure,
 				submenu: (_currentValue, done) =>
 					new WarningSettingsSubmenu(
 						currentWarnings,
