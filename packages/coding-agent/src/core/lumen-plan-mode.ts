@@ -9,7 +9,7 @@
  * [Provenance] 移植方式: 参考重写（简化版，通过 extension API 实现）
  */
 
-import type { ExtensionAPI } from "./extensions/types.js";
+import type { ExtensionAPI } from "./extensions/types.ts";
 
 let planModeActive = false;
 

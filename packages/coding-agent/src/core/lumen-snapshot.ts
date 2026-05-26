@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI } from "./extensions/types.js";
+import type { ExtensionAPI } from "./extensions/types.ts";
 
 const SNAPSHOT_BASE = join(homedir(), ".lumen", "agent", "snapshots");
 const MAX_SNAPSHOTS = 50;

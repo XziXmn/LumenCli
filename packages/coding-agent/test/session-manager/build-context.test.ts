@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createCompactionSummaryMessage } from "../../src/core/messages.js";
+import { createCompactionSummaryMessage } from "../../src/core/messages.ts";
 import {
 	type BranchSummaryEntry,
 	buildSessionContext,
@@ -8,7 +8,7 @@ import {
 	type SessionEntry,
 	type SessionMessageEntry,
 	type ThinkingLevelChangeEntry,
-} from "../../src/core/session-manager.js";
+} from "../../src/core/session-manager.ts";
 
 function msg(id: string, parentId: string | null, role: "user" | "assistant", text: string): SessionMessageEntry {
 	const base = { type: "message" as const, id, parentId, timestamp: "2025-01-01T00:00:00Z" };

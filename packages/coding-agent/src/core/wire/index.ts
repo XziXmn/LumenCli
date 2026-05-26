@@ -1,7 +1,7 @@
-export type { WireTraceWriter } from "./file.js";
-export { createWireTraceWriter, getWireTracePath, readWireTrace } from "./file.js";
-export type { WireHub, WireHubOptions, WireSubscriber } from "./protocol.js";
-export { createWireHub, wireEventBase } from "./protocol.js";
+export type { WireTraceWriter } from "./file.ts";
+export { createWireTraceWriter, getWireTracePath, readWireTrace } from "./file.ts";
+export type { WireHub, WireHubOptions, WireSubscriber } from "./protocol.ts";
+export { createWireHub, wireEventBase } from "./protocol.ts";
 export type {
 	WireApprovalRequest,
 	WireApprovalResponse,
@@ -21,5 +21,5 @@ export type {
 	WireTurnBegin,
 	WireTurnEnd,
 	WireTurnTrigger,
-} from "./types.js";
-export { WIRE_PROTOCOL_VERSION } from "./types.js";
+} from "./types.ts";
+export { WIRE_PROTOCOL_VERSION } from "./types.ts";

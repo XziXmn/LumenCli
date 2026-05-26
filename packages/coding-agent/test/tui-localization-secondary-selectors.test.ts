@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { ScopedModelsSelectorComponent } from "../src/modes/interactive/components/scoped-models-selector.js";
-import { UserMessageSelectorComponent } from "../src/modes/interactive/components/user-message-selector.js";
-import { initTheme } from "../src/modes/interactive/theme/theme.js";
-import { stripAnsi } from "../src/utils/ansi.js";
+import { ScopedModelsSelectorComponent } from "../src/modes/interactive/components/scoped-models-selector.ts";
+import { UserMessageSelectorComponent } from "../src/modes/interactive/components/user-message-selector.ts";
+import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { stripAnsi } from "../src/utils/ansi.ts";
 
 describe("TUI secondary selector localization", () => {
 	beforeAll(() => {

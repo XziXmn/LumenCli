@@ -1,7 +1,7 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { dirname, join } from "path";
-import { CONFIG_DIR_NAME, LEGACY_CONFIG_DIR_NAME } from "./config.js";
+import { CONFIG_DIR_NAME, LEGACY_CONFIG_DIR_NAME } from "./config.ts";
 
 const IMPORT_STATE_FILE = ".pi-import-state.json";
 

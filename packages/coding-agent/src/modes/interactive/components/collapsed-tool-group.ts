@@ -1,9 +1,9 @@
 import { Container, Spacer, Text } from "@earendil-works/pi-tui";
-import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.js";
-import type { RenderableCollapsedToolGroup } from "../output-flow/types.js";
-import { theme } from "../theme/theme.js";
-import { renderToolHintLine, renderToolResponseLine, renderToolStatusDot } from "./assistant-tool-summary.js";
-import { TUI_COPY } from "./tui-copy.js";
+import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.ts";
+import type { RenderableCollapsedToolGroup } from "../output-flow/types.ts";
+import { theme } from "../theme/theme.ts";
+import { renderToolHintLine, renderToolResponseLine, renderToolStatusDot } from "./assistant-tool-summary.ts";
+import { TUI_COPY } from "./tui-copy.ts";
 
 type CollapsedKind = "read" | "search" | "list";
 
@@ -91,12 +91,11 @@ function describeToolCallTarget(argumentsValue: Record<string, unknown>, cwd: st
 export class CollapsedToolGroupComponent extends Container {
 	private expanded = false;
 	private items: CollapsedRuntimeItem[] = [];
+	private readonly cwd: string;
 
-	constructor(
-		private readonly cwd: string,
-		group?: RenderableCollapsedToolGroup,
-	) {
+	constructor(cwd: string, group?: RenderableCollapsedToolGroup) {
 		super();
+		this.cwd = cwd;
 		if (group) {
 			this.items = group.items.map((item) => ({
 				id: item.toolCall.id,

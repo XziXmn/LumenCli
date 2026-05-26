@@ -6,7 +6,7 @@
  */
 
 import { execSync } from "node:child_process";
-import type { ExtensionAPI } from "./extensions/types.js";
+import type { ExtensionAPI } from "./extensions/types.ts";
 
 function runGit(args: string[], cwd: string): string {
 	try {

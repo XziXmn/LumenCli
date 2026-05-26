@@ -1,9 +1,9 @@
 import type { Text } from "@earendil-works/pi-tui";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import lumenTodoExtension from "../src/core/lumen-todo.js";
-import { initTheme } from "../src/modes/interactive/theme/theme.js";
-import { stripAnsi } from "../src/utils/ansi.js";
-import { createTestExtensionsResult } from "./utilities.js";
+import lumenTodoExtension from "../src/core/lumen-todo.ts";
+import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { stripAnsi } from "../src/utils/ansi.ts";
+import { createTestExtensionsResult } from "./utilities.ts";
 
 describe("lumenTodoExtension", () => {
 	const disposers: Array<() => void> = [];
@@ -55,7 +55,7 @@ describe("lumenTodoExtension", () => {
 		const rendered = todoTool!.renderResult!(
 			result as any,
 			{ expanded: false, isPartial: false },
-			(await import("../src/modes/interactive/theme/theme.js")).theme,
+			(await import("../src/modes/interactive/theme/theme.ts")).theme,
 			{} as any,
 		) as Text;
 		const text = stripAnsi(rendered.render(120).join("\n"));
@@ -78,7 +78,7 @@ describe("lumenTodoExtension", () => {
 					{ op: "start", task: "加固SQL注入防护" },
 				],
 			},
-			(await import("../src/modes/interactive/theme/theme.js")).theme,
+			(await import("../src/modes/interactive/theme/theme.ts")).theme,
 			{
 				args: {},
 				toolCallId: "tool-todo-2",
@@ -114,7 +114,7 @@ describe("lumenTodoExtension", () => {
 					},
 				],
 			},
-			(await import("../src/modes/interactive/theme/theme.js")).theme,
+			(await import("../src/modes/interactive/theme/theme.ts")).theme,
 			{
 				args: {},
 				toolCallId: "tool-todo-3",
@@ -147,7 +147,7 @@ describe("lumenTodoExtension", () => {
 				details: { phases: [], errors: [] },
 			} as any,
 			{ expanded: false, isPartial: false },
-			(await import("../src/modes/interactive/theme/theme.js")).theme,
+			(await import("../src/modes/interactive/theme/theme.ts")).theme,
 			{} as any,
 		) as Text;
 		const text = stripAnsi(rendered.render(120).join("\n"));
@@ -166,7 +166,7 @@ describe("lumenTodoExtension", () => {
 				details: { phases: [], errors: ['Task "不存在的任务" not found'] },
 			} as any,
 			{ expanded: false, isPartial: false },
-			(await import("../src/modes/interactive/theme/theme.js")).theme,
+			(await import("../src/modes/interactive/theme/theme.ts")).theme,
 			{} as any,
 		) as Text;
 		const text = stripAnsi(rendered.render(120).join("\n"));

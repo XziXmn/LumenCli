@@ -16,18 +16,18 @@
 
 import type { Terminal } from "@earendil-works/pi-tui";
 import { Container, Input, Key, matchesKey, ProcessTerminal, Spacer, Text, TUI } from "@earendil-works/pi-tui";
-import { BashExecutionComponent } from "../src/modes/interactive/components/bash-execution.js";
-import { BorderedLoader } from "../src/modes/interactive/components/bordered-loader.js";
-import { ExtensionInputComponent } from "../src/modes/interactive/components/extension-input.js";
-import { ExtensionSelectorComponent } from "../src/modes/interactive/components/extension-selector.js";
+import { BashExecutionComponent } from "../src/modes/interactive/components/bash-execution.ts";
+import { BorderedLoader } from "../src/modes/interactive/components/bordered-loader.ts";
+import { ExtensionInputComponent } from "../src/modes/interactive/components/extension-input.ts";
+import { ExtensionSelectorComponent } from "../src/modes/interactive/components/extension-selector.ts";
 import {
 	createProgressSurfaceWorkingState,
 	ProgressSurfaceComponent,
 	type ProgressSurfaceSnapshot,
 	shouldRenderProgressSurface,
-} from "../src/modes/interactive/components/progress-surface.js";
-import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.js";
-import { initTheme, theme } from "../src/modes/interactive/theme/theme.js";
+} from "../src/modes/interactive/components/progress-surface.ts";
+import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.ts";
+import { initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
 import {
 	createImeScenarioSnapshot,
 	filterImeScenariosByNames,
@@ -35,7 +35,7 @@ import {
 	type ImeScenario,
 	shouldImeHarnessAutoAnimate,
 	shouldImeHarnessShowTerminalProgress,
-} from "./ime-progress-surface-harness.js";
+} from "./ime-progress-surface-harness.ts";
 
 initTheme("dark");
 

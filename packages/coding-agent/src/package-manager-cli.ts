@@ -1,6 +1,5 @@
 import chalk from "chalk";
-import { spawn } from "child_process";
-import { selectConfig } from "./cli/config-selector.js";
+import { selectConfig } from "./cli/config-selector.ts";
 import {
 	APP_NAME,
 	getAgentDir,
@@ -9,12 +8,12 @@ import {
 	PACKAGE_NAME,
 	type SelfUpdateCommand,
 	VERSION,
-} from "./config.js";
-import type { PackageCompatibilityAudit } from "./core/package-manager.js";
-import { DefaultPackageManager } from "./core/package-manager.js";
-import { SettingsManager } from "./core/settings-manager.js";
-import { shouldUseWindowsShell } from "./utils/child-process.js";
-import { getLatestPiRelease, isNewerPackageVersion } from "./utils/version-check.js";
+} from "./config.ts";
+import type { PackageCompatibilityAudit } from "./core/package-manager.ts";
+import { DefaultPackageManager } from "./core/package-manager.ts";
+import { SettingsManager } from "./core/settings-manager.ts";
+import { spawnProcess } from "./utils/child-process.ts";
+import { getLatestPiRelease, isNewerPackageVersion } from "./utils/version-check.ts";
 
 export type PackageCommand = "install" | "remove" | "update" | "list";
 
@@ -348,10 +347,8 @@ async function runSelfUpdate(command: SelfUpdateCommand): Promise<void> {
 	console.log(chalk.dim(`Updating ${APP_NAME} with ${command.display}...`));
 	for (const step of command.steps ?? [command]) {
 		await new Promise<void>((resolve, reject) => {
-			// Windows package managers are commonly .cmd shims. Use the shell so Node can execute them.
-			const child = spawn(step.command, step.args, {
+			const child = spawnProcess(step.command, step.args, {
 				stdio: "inherit",
-				shell: shouldUseWindowsShell(step.command),
 			});
 			child.on("error", (error) => {
 				reject(error);

@@ -11,7 +11,7 @@
 
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import type { ExtensionAPI, ExtensionContext, ToolRenderResultOptions } from "./extensions/types.js";
+import type { ExtensionAPI, ExtensionContext, ToolRenderResultOptions } from "./extensions/types.ts";
 
 // ============================================================================
 // Types

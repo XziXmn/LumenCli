@@ -1,9 +1,9 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { FooterDataProvider } from "../src/core/footer-data-provider.js";
-import { FooterComponent } from "../src/modes/interactive/components/footer.js";
-import { initTheme } from "../src/modes/interactive/theme/theme.js";
-import { stripAnsi } from "../src/utils/ansi.js";
-import { createTestSession } from "./utilities.js";
+import { FooterDataProvider } from "../src/core/footer-data-provider.ts";
+import { FooterComponent } from "../src/modes/interactive/components/footer.ts";
+import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { stripAnsi } from "../src/utils/ansi.ts";
+import { createTestSession } from "./utilities.ts";
 
 describe("FooterComponent progress status filtering", () => {
 	let cleanup: (() => void) | undefined;

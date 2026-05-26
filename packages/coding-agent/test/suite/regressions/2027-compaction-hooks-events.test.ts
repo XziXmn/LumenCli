@@ -1,7 +1,7 @@
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import type { ExtensionAPI } from "../../../src/core/extensions/index.js";
-import { createHarness } from "../harness.js";
+import type { ExtensionAPI } from "../../../src/core/extensions/index.ts";
+import { createHarness } from "../harness.ts";
 
 describe("compaction hook lifecycle events", () => {
 	it("emits pre and post compaction hook events around extension-driven compaction", async () => {

@@ -25,8 +25,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { extname, relative, resolve } from "node:path";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { ensureTool } from "../utils/tools-manager.js";
-import type { ExtensionAPI, ExtensionContext, ToolRenderResultOptions } from "./extensions/types.js";
+import { ensureTool } from "../utils/tools-manager.ts";
+import type { ExtensionAPI, ExtensionContext, ToolRenderResultOptions } from "./extensions/types.ts";
 import {
 	disposeAllClients,
 	ensureFileOpen,
@@ -39,8 +39,8 @@ import {
 	syncContent,
 	uriToFile,
 	waitForDiagnostics,
-} from "./lumen-lsp-client.js";
-import { filterAvailableServers, getServersForFile, loadLspConfig } from "./lumen-lsp-config.js";
+} from "./lumen-lsp-client.ts";
+import { filterAvailableServers, getServersForFile, loadLspConfig } from "./lumen-lsp-config.ts";
 import type {
 	CodeAction,
 	Diagnostic,
@@ -51,8 +51,8 @@ import type {
 	Position,
 	SymbolInformation,
 	WorkspaceEdit,
-} from "./lumen-lsp-types.js";
-import { DIAGNOSTIC_SEVERITY_NAMES, SYMBOL_KIND_NAMES } from "./lumen-lsp-types.js";
+} from "./lumen-lsp-types.ts";
+import { DIAGNOSTIC_SEVERITY_NAMES, SYMBOL_KIND_NAMES } from "./lumen-lsp-types.ts";
 
 // ============================================================================
 // Position Helpers

@@ -12,7 +12,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { WireEvent } from "./types.js";
+import type { WireEvent } from "./types.ts";
 
 /** Trace 文件名 */
 const TRACE_FILENAME = "wire-trace.jsonl";

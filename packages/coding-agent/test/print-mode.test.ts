@@ -1,7 +1,7 @@
 import type { AssistantMessage, ImageContent } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SessionShutdownEvent } from "../src/index.js";
-import { runPrintMode } from "../src/modes/print-mode.js";
+import type { SessionShutdownEvent } from "../src/index.ts";
+import { runPrintMode } from "../src/modes/print-mode.ts";
 
 type EmitEvent = SessionShutdownEvent;
 
@@ -150,7 +150,7 @@ describe("runPrintMode", () => {
 		runtimeHost.session.state.messages = [previousAssistant, abortedAssistant];
 		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		const stdoutSpy = vi
-			.spyOn(await import("../src/core/output-guard.js"), "writeRawStdout")
+			.spyOn(await import("../src/core/output-guard.ts"), "writeRawStdout")
 			.mockImplementation(() => {});
 
 		const exitCode = await runPrintMode(runtimeHost as unknown as Parameters<typeof runPrintMode>[0], {
@@ -172,7 +172,7 @@ describe("runPrintMode", () => {
 		runtimeHost.session.state.messages = [previousAssistant, abortedAssistant];
 		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		const stdoutSpy = vi
-			.spyOn(await import("../src/core/output-guard.js"), "writeRawStdout")
+			.spyOn(await import("../src/core/output-guard.ts"), "writeRawStdout")
 			.mockImplementation(() => {});
 
 		const exitCode = await runPrintMode(runtimeHost as unknown as Parameters<typeof runPrintMode>[0], {

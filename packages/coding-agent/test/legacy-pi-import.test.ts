@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { declineLegacyPiImport, detectLegacyPiImport, importLegacyPiConfig } from "../src/legacy-pi-import.js";
+import { declineLegacyPiImport, detectLegacyPiImport, importLegacyPiConfig } from "../src/legacy-pi-import.ts";
 
 let mockedHome = "";
 

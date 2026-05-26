@@ -12,7 +12,7 @@
 
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import type { ExtensionAPI, ExtensionContext, ToolRenderResultOptions } from "./extensions/types.js";
+import type { ExtensionAPI, ExtensionContext, ToolRenderResultOptions } from "./extensions/types.ts";
 
 const MAX_FETCH_SIZE = 80000; // 80KB max content
 const EXA_MCP_URL = "https://mcp.exa.ai/mcp";

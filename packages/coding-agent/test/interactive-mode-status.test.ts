@@ -8,17 +8,17 @@ import {
 	Text,
 } from "@earendil-works/pi-tui";
 import { beforeAll, describe, expect, test, vi } from "vitest";
-import type { AutocompleteProviderFactory } from "../src/core/extensions/types.js";
-import type { ResourceDiagnostic } from "../src/core/resource-loader.js";
-import { BUILTIN_SLASH_COMMANDS } from "../src/core/slash-commands.js";
-import type { SourceInfo } from "../src/core/source-info.js";
+import type { AutocompleteProviderFactory } from "../src/core/extensions/types.ts";
+import type { ResourceDiagnostic } from "../src/core/resource-loader.ts";
+import { BUILTIN_SLASH_COMMANDS } from "../src/core/slash-commands.ts";
+import type { SourceInfo } from "../src/core/source-info.ts";
 import {
 	createProgressSurfaceWorkingState,
 	ProgressSurfaceComponent,
-} from "../src/modes/interactive/components/progress-surface.js";
-import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.js";
-import { InteractiveMode } from "../src/modes/interactive/interactive-mode.js";
-import { getMarkdownTheme, initTheme, theme } from "../src/modes/interactive/theme/theme.js";
+} from "../src/modes/interactive/components/progress-surface.ts";
+import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.ts";
+import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
+import { getMarkdownTheme, initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
 
 function renderLastLine(container: Container, width = 120): string {
 	const last = container.children[container.children.length - 1];

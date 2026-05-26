@@ -8,8 +8,8 @@
  * [Provenance] 移植方式: 重写 (用我们的 Theme API)
  */
 
-import type { Theme, ThemeColor } from "../theme/theme.js";
-import { SPINNER_FRAMES, STATUS_SYMBOLS, type State, type ToolUIStatus } from "./lumen-tui-utils.js";
+import type { Theme, ThemeColor } from "../theme/theme.ts";
+import { SPINNER_FRAMES, STATUS_SYMBOLS, type State, type ToolUIStatus } from "./lumen-tui-utils.ts";
 
 // ============================================================================
 // Status Icon Formatting

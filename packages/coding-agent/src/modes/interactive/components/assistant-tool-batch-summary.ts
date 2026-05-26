@@ -1,10 +1,10 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { Container, Spacer, Text } from "@earendil-works/pi-tui";
-import { getTextOutput } from "../../../core/tools/render-utils.js";
-import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.js";
-import { theme } from "../theme/theme.js";
-import { renderToolResponseLine, renderToolStatusDot, summaryForTool, titleForTool } from "./assistant-tool-summary.js";
-import { TUI_COPY } from "./tui-copy.js";
+import { getTextOutput } from "../../../core/tools/render-utils.ts";
+import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.ts";
+import { theme } from "../theme/theme.ts";
+import { renderToolResponseLine, renderToolStatusDot, summaryForTool, titleForTool } from "./assistant-tool-summary.ts";
+import { TUI_COPY } from "./tui-copy.ts";
 
 type ToolResultMessage = Extract<AgentMessage, { role: "toolResult" }>;
 
@@ -52,12 +52,13 @@ function latestHint(items: BatchItem[], cwd: string): string | undefined {
 
 export class AssistantToolBatchSummaryComponent extends Container {
 	private expanded = false;
+	private readonly items: BatchItem[];
+	private readonly cwd: string;
 
-	constructor(
-		private readonly items: BatchItem[],
-		private readonly cwd: string,
-	) {
+	constructor(items: BatchItem[], cwd: string) {
 		super();
+		this.items = items;
+		this.cwd = cwd;
 		this.updateDisplay();
 	}
 

@@ -1,7 +1,7 @@
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { collapseReadSearchGroups } from "../src/modes/interactive/output-flow/collapse.js";
-import { projectTranscript } from "../src/modes/interactive/output-flow/projector.js";
+import { collapseReadSearchGroups } from "../src/modes/interactive/output-flow/collapse.ts";
+import { projectTranscript } from "../src/modes/interactive/output-flow/projector.ts";
 
 describe("output-flow collapse", () => {
 	it("collapses consecutive read and search assistant turns into one semantic group", () => {

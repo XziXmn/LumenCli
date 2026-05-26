@@ -6,7 +6,7 @@
  */
 
 import { visibleWidth } from "@earendil-works/pi-tui";
-import type { ThemeBg } from "../theme/theme.js";
+import type { ThemeBg } from "../theme/theme.ts";
 
 // ============================================================================
 // Types

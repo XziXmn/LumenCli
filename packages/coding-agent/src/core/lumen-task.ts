@@ -21,9 +21,9 @@ import { Agent } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
-import { theme } from "../modes/interactive/theme/theme.js";
-import { createEventBus, type EventBus } from "./event-bus.js";
+import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
+import { theme } from "../modes/interactive/theme/theme.ts";
+import { createEventBus, type EventBus } from "./event-bus.ts";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
@@ -31,8 +31,8 @@ import type {
 	TaskUiSummary,
 	ToolDefinition,
 	ToolRenderResultOptions,
-} from "./extensions/types.js";
-import { createAllTools } from "./tools/index.js";
+} from "./extensions/types.ts";
+import { createAllTools } from "./tools/index.ts";
 
 // ============================================================================
 // Agent Discovery (moved from lumen-agents.ts)

@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { CollapsedToolGroupComponent } from "../src/modes/interactive/components/collapsed-tool-group.js";
-import type { RenderableCollapsedToolGroup } from "../src/modes/interactive/output-flow/types.js";
-import { initTheme } from "../src/modes/interactive/theme/theme.js";
-import { stripAnsi } from "../src/utils/ansi.js";
+import { CollapsedToolGroupComponent } from "../src/modes/interactive/components/collapsed-tool-group.ts";
+import type { RenderableCollapsedToolGroup } from "../src/modes/interactive/output-flow/types.ts";
+import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { stripAnsi } from "../src/utils/ansi.ts";
 
 function renderGroup(component: CollapsedToolGroupComponent, width = 100): string {
 	return stripAnsi(component.render(width).join("\n"));

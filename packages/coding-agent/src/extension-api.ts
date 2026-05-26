@@ -6,7 +6,7 @@
  * non-TUI tests and extension loading initialize terminal renderer dependencies.
  */
 
-export { getAgentDir, VERSION } from "./config.js";
+export { getAgentDir, VERSION } from "./config.ts";
 export {
 	AgentSession,
 	type AgentSessionConfig,
@@ -17,7 +17,7 @@ export {
 	type PromptOptions,
 	parseSkillBlock,
 	type SessionStats,
-} from "./core/agent-session.js";
+} from "./core/agent-session.ts";
 export {
 	type ApiKeyCredential,
 	type AuthCredential,
@@ -27,11 +27,11 @@ export {
 	FileAuthStorageBackend,
 	InMemoryAuthStorageBackend,
 	type OAuthCredential,
-} from "./core/auth-storage.js";
-export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.js";
-export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.js";
-export { convertToLlm } from "./core/messages.js";
-export { ModelRegistry } from "./core/model-registry.js";
+} from "./core/auth-storage.ts";
+export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.ts";
+export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.ts";
+export { convertToLlm } from "./core/messages.ts";
+export { ModelRegistry } from "./core/model-registry.ts";
 export type {
 	PackageManager,
 	PathMetadata,
@@ -39,11 +39,11 @@ export type {
 	ProgressEvent,
 	ResolvedPaths,
 	ResolvedResource,
-} from "./core/package-manager.js";
-export { DefaultPackageManager } from "./core/package-manager.js";
-export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.js";
-export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.js";
-export * from "./core/sdk.js";
+} from "./core/package-manager.ts";
+export { DefaultPackageManager } from "./core/package-manager.ts";
+export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.ts";
+export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.ts";
+export * from "./core/sdk.ts";
 export {
 	type BranchSummaryEntry,
 	buildSessionContext,
@@ -66,14 +66,14 @@ export {
 	SessionManager,
 	type SessionMessageEntry,
 	type ThinkingLevelChangeEntry,
-} from "./core/session-manager.js";
+} from "./core/session-manager.ts";
 export {
 	type CompactionSettings,
 	type ImageSettings,
 	type PackageSource,
 	type RetrySettings,
 	SettingsManager,
-} from "./core/settings-manager.js";
+} from "./core/settings-manager.ts";
 export {
 	formatSkillsForPrompt,
 	type LoadSkillsFromDirOptions,
@@ -82,8 +82,8 @@ export {
 	loadSkillsFromDir,
 	type Skill,
 	type SkillFrontmatter,
-} from "./core/skills.js";
-export { createSyntheticSourceInfo } from "./core/source-info.js";
+} from "./core/skills.ts";
+export { createSyntheticSourceInfo } from "./core/source-info.ts";
 export {
 	ArminComponent,
 	AssistantMessageComponent,
@@ -121,7 +121,7 @@ export {
 	UserMessageComponent,
 	UserMessageSelectorComponent,
 	type VisualTruncateResult,
-} from "./modes/interactive/components/index.js";
+} from "./modes/interactive/components/index.ts";
 export {
 	getLanguageFromPath,
 	getMarkdownTheme,
@@ -131,7 +131,7 @@ export {
 	initTheme,
 	Theme,
 	type ThemeColor,
-} from "./modes/interactive/theme/theme.js";
-export { copyToClipboard } from "./utils/clipboard.js";
-export { parseFrontmatter, stripFrontmatter } from "./utils/frontmatter.js";
-export { getShellConfig } from "./utils/shell.js";
+} from "./modes/interactive/theme/theme.ts";
+export { copyToClipboard } from "./utils/clipboard.ts";
+export { parseFrontmatter, stripFrontmatter } from "./utils/frontmatter.ts";
+export { getShellConfig } from "./utils/shell.ts";

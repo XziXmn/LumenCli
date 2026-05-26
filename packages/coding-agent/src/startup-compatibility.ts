@@ -1,4 +1,4 @@
-import type { PackageCompatibilityReevaluationResult } from "./core/package-manager.js";
+import type { PackageCompatibilityReevaluationResult } from "./core/package-manager.ts";
 
 export interface StartupCompatibilityNotice {
 	level: "status" | "warning";

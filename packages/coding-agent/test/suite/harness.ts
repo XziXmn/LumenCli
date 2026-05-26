@@ -9,20 +9,20 @@ import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import { Agent } from "@earendil-works/pi-agent-core";
 import type { FauxModelDefinition, FauxProviderRegistration, FauxResponseStep, Model } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai";
-import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.js";
-import { AuthStorage } from "../../src/core/auth-storage.js";
-import type { ExtensionFactory, ExtensionRunner } from "../../src/core/extensions/index.js";
-import { convertToLlm } from "../../src/core/messages.js";
-import { ModelRegistry } from "../../src/core/model-registry.js";
-import type { ResourceLoader } from "../../src/core/resource-loader.js";
-import { SessionManager } from "../../src/core/session-manager.js";
-import type { Settings } from "../../src/core/settings-manager.js";
-import { SettingsManager } from "../../src/core/settings-manager.js";
+import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.ts";
+import { AuthStorage } from "../../src/core/auth-storage.ts";
+import type { ExtensionRunner } from "../../src/core/extensions/index.ts";
+import { convertToLlm } from "../../src/core/messages.ts";
+import { ModelRegistry } from "../../src/core/model-registry.ts";
+import { SessionManager } from "../../src/core/session-manager.ts";
+import type { Settings } from "../../src/core/settings-manager.ts";
+import { SettingsManager } from "../../src/core/settings-manager.ts";
+import type { ExtensionFactory, ResourceLoader } from "../../src/index.ts";
 import {
 	type CreateTestExtensionsResultInput,
 	createTestExtensionsResult,
 	createTestResourceLoader,
-} from "../utilities.js";
+} from "../utilities.ts";
 
 type MessageTextPart = { type: "text"; text: string };
 
@@ -135,16 +135,12 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 			tools: [],
 		},
 		convertToLlm,
-		streamFn: fauxProvider.stream,
 		onPayload: async (payload) => {
-			session?.setSpinnerBudgetUsageFromPayload(payload);
 			const runner = extensionRunnerRef.current;
 			if (!runner?.hasHandlers("before_provider_request")) {
 				return payload;
 			}
-			const nextPayload = await runner.emitBeforeProviderRequest(payload);
-			session?.setSpinnerBudgetUsageFromPayload(nextPayload);
-			return nextPayload;
+			return runner.emitBeforeProviderRequest(payload);
 		},
 		onResponse: async (response) => {
 			const runner = extensionRunnerRef.current;

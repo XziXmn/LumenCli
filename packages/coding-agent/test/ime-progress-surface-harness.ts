@@ -1,5 +1,5 @@
-import type { SpinnerUiState, TaskUiItem } from "../src/core/extensions/types.js";
-import type { ProgressSurfaceSnapshot } from "../src/modes/interactive/components/progress-surface.js";
+import type { SpinnerUiState, TaskUiItem } from "../src/core/extensions/types.ts";
+import type { ProgressSurfaceSnapshot } from "../src/modes/interactive/components/progress-surface.ts";
 
 export type ImeScenario = {
 	name: string;

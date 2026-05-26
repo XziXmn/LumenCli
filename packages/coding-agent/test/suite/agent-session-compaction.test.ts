@@ -1,7 +1,7 @@
 import { type AssistantMessage, fauxAssistantMessage, type Model } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createCompactionSummaryMessage } from "../../src/core/messages.js";
-import { createHarness, type Harness } from "./harness.js";
+import { createCompactionSummaryMessage } from "../../src/core/messages.ts";
+import { createHarness, type Harness } from "./harness.ts";
 
 type SessionWithCompactionInternals = {
 	_checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<void>;

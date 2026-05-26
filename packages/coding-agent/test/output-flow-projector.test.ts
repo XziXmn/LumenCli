@@ -1,12 +1,12 @@
 import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { isCollapsibleToolName } from "../src/modes/interactive/output-flow/collapse.js";
+import { isCollapsibleToolName } from "../src/modes/interactive/output-flow/collapse.ts";
 import {
 	canUseSingleToolSummary,
 	collectSequentialToolResults,
 	projectAssistantTurn,
 	projectTranscript,
-} from "../src/modes/interactive/output-flow/projector.js";
+} from "../src/modes/interactive/output-flow/projector.ts";
 
 describe("output-flow projector", () => {
 	it("projects assistant content into ordered semantic blocks", () => {

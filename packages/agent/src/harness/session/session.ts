@@ -1,6 +1,6 @@
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
-import type { AgentMessage } from "../../types.js";
-import { createBranchSummaryMessage, createCompactionSummaryMessage, createCustomMessage } from "../messages.js";
+import type { AgentMessage } from "../../types.ts";
+import { createBranchSummaryMessage, createCompactionSummaryMessage, createCustomMessage } from "../messages.ts";
 import type {
 	BranchSummaryEntry,
 	CompactionEntry,
@@ -15,7 +15,8 @@ import type {
 	SessionStorage,
 	SessionTreeEntry,
 	ThinkingLevelChangeEntry,
-} from "../types.js";
+} from "../types.ts";
+import { SessionError } from "../types.ts";
 
 export function buildSessionContext(pathEntries: SessionTreeEntry[]): SessionContext {
 	let thinkingLevel = "off";
@@ -206,7 +207,7 @@ export class Session<TMetadata extends SessionMetadata = SessionMetadata> {
 
 	async appendLabel(targetId: string, label: string | undefined): Promise<string> {
 		if (!(await this.storage.getEntry(targetId))) {
-			throw new Error(`Entry ${targetId} not found`);
+			throw new SessionError("not_found", `Entry ${targetId} not found`);
 		}
 		return this.appendTypedEntry({
 			type: "label",
@@ -233,7 +234,7 @@ export class Session<TMetadata extends SessionMetadata = SessionMetadata> {
 		summary?: { summary: string; details?: unknown; fromHook?: boolean },
 	): Promise<string | undefined> {
 		if (entryId !== null && !(await this.storage.getEntry(entryId))) {
-			throw new Error(`Entry ${entryId} not found`);
+			throw new SessionError("not_found", `Entry ${entryId} not found`);
 		}
 		await this.storage.setLeafId(entryId);
 		if (!summary) return undefined;

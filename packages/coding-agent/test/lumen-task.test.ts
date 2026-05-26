@@ -6,10 +6,10 @@ import lumenTaskExtension, {
 	getSessionTaskUiItems,
 	type SubagentProgress,
 	type TaskToolDetails,
-} from "../src/core/lumen-task.js";
-import { initTheme } from "../src/modes/interactive/theme/theme.js";
-import { stripAnsi } from "../src/utils/ansi.js";
-import { createTestExtensionsResult } from "./utilities.js";
+} from "../src/core/lumen-task.ts";
+import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { stripAnsi } from "../src/utils/ansi.ts";
+import { createTestExtensionsResult } from "./utilities.ts";
 
 describe("lumen-task helpers", () => {
 	initTheme("dark");
@@ -325,7 +325,7 @@ describe("lumen-task helpers", () => {
 				} satisfies TaskToolDetails,
 			} as any,
 			{ expanded: false, isPartial: true },
-			(await import("../src/modes/interactive/theme/theme.js")).theme,
+			(await import("../src/modes/interactive/theme/theme.ts")).theme,
 			{ state: { progressMap: new Map() }, invalidate: () => {} } as any,
 		) as { render: () => string[] } | Text;
 
@@ -371,7 +371,7 @@ describe("lumen-task helpers", () => {
 				} satisfies TaskToolDetails,
 			} as any,
 			{ expanded: false, isPartial: false },
-			(await import("../src/modes/interactive/theme/theme.js")).theme,
+			(await import("../src/modes/interactive/theme/theme.ts")).theme,
 			{ state: { progressMap: new Map() }, invalidate: () => {} } as any,
 		) as { render: () => string[] } | Text;
 
@@ -408,7 +408,7 @@ describe("lumen-task helpers", () => {
 				} satisfies TaskToolDetails,
 			} as any,
 			{ expanded: false, isPartial: false },
-			(await import("../src/modes/interactive/theme/theme.js")).theme,
+			(await import("../src/modes/interactive/theme/theme.ts")).theme,
 			{ state: { progressMap: new Map() }, invalidate: () => {} } as any,
 		) as { render: () => string[] } | Text;
 
@@ -446,7 +446,7 @@ describe("lumen-task helpers", () => {
 				} satisfies TaskToolDetails,
 			} as any,
 			{ expanded: false, isPartial: false },
-			(await import("../src/modes/interactive/theme/theme.js")).theme,
+			(await import("../src/modes/interactive/theme/theme.ts")).theme,
 			{ state: { progressMap: new Map() }, invalidate: () => {} } as any,
 		) as { render: () => string[] } | Text;
 
@@ -467,7 +467,7 @@ describe("lumen-task helpers", () => {
 
 		const rendered = taskTool!.renderCall!(
 			{ agent: "explore", tasks: [{ id: "a", description: "Scan repo", assignment: "go" }] },
-			(await import("../src/modes/interactive/theme/theme.js")).theme,
+			(await import("../src/modes/interactive/theme/theme.ts")).theme,
 			{
 				state: { progressMap: new Map() },
 				lastComponent: undefined,

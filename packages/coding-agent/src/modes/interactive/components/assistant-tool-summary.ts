@@ -1,10 +1,10 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { Container, Spacer, Text } from "@earendil-works/pi-tui";
-import { getTextOutput } from "../../../core/tools/render-utils.js";
-import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.js";
-import { isCollapsibleToolName } from "../output-flow/collapse.js";
-import { theme } from "../theme/theme.js";
-import { TUI_COPY } from "./tui-copy.js";
+import { getTextOutput } from "../../../core/tools/render-utils.ts";
+import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.ts";
+import { isCollapsibleToolName } from "../output-flow/collapse.ts";
+import { theme } from "../theme/theme.ts";
+import { TUI_COPY } from "./tui-copy.ts";
 
 type ToolResultMessage = Extract<AgentMessage, { role: "toolResult" }>;
 type ToolRowStatus = "pending" | "success" | "error";
@@ -136,15 +136,16 @@ export function summaryForTool(toolName: string, args: Record<string, unknown>, 
 export class AssistantToolSummaryComponent extends Container {
 	private expanded = false;
 	private result: ToolResultMessage | undefined;
+	private readonly toolName: string;
+	private args: Record<string, unknown>;
+	private readonly cwd: string;
 
-	constructor(
-		private readonly toolName: string,
-		private args: Record<string, unknown>,
-		result: ToolResultMessage | undefined,
-		private readonly cwd: string,
-	) {
+	constructor(toolName: string, args: Record<string, unknown>, result: ToolResultMessage | undefined, cwd: string) {
 		super();
+		this.toolName = toolName;
+		this.args = args;
 		this.result = result;
+		this.cwd = cwd;
 		this.updateDisplay();
 	}
 

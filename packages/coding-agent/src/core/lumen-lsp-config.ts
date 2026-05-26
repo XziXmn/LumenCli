@@ -12,8 +12,8 @@
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
-import { CONFIG_DIR_NAME } from "../config.js";
-import type { ServerConfig } from "./lumen-lsp-types.js";
+import { CONFIG_DIR_NAME } from "../config.ts";
+import type { ServerConfig } from "./lumen-lsp-types.ts";
 
 // ============================================================================
 // Built-in Server Configs

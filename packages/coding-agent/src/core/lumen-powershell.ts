@@ -21,10 +21,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { CachedOutputBlock } from "../modes/interactive/components/lumen-output-block.js";
-import { renderStatusLine } from "../modes/interactive/components/lumen-status-line.js";
-import type { ExtensionAPI, ExtensionContext, ToolRenderResultOptions } from "./extensions/types.js";
-import { killProcessTree } from "./lumen-process-utils.js";
+import { CachedOutputBlock } from "../modes/interactive/components/lumen-output-block.ts";
+import { renderStatusLine } from "../modes/interactive/components/lumen-status-line.ts";
+import type { ExtensionAPI, ExtensionContext, ToolRenderResultOptions } from "./extensions/types.ts";
+import { killProcessTree } from "./lumen-process-utils.ts";
 
 // ============================================================================
 // Detection

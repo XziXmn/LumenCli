@@ -12,8 +12,8 @@
  */
 
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type { Theme, ThemeColor } from "../theme/theme.js";
-import { BOX_SHARP, Hasher, padding, padToWidth, type RenderCache, type State } from "./lumen-tui-utils.js";
+import type { Theme, ThemeColor } from "../theme/theme.ts";
+import { BOX_SHARP, Hasher, padding, padToWidth, type RenderCache, type State } from "./lumen-tui-utils.ts";
 
 // ============================================================================
 // Types
@@ -171,7 +171,7 @@ export class CachedOutputBlock {
 // Internal Helpers
 // ============================================================================
 
-import type { ThemeBg } from "../theme/theme.js";
+import type { ThemeBg } from "../theme/theme.ts";
 
 function getStateBgColorForBlock(state: State): ThemeBg {
 	if (state === "success") return "toolSuccessBg";

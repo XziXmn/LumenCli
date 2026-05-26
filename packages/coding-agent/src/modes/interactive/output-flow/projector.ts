@@ -8,7 +8,7 @@ import type {
 	RenderableThinkingBlock,
 	RenderableToolCallBlock,
 	RenderableTranscriptEntry,
-} from "./types.js";
+} from "./types.ts";
 
 function isRenderableText(value: unknown): value is { type: "text"; text: string } {
 	return (

@@ -7,7 +7,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ExtensionAPI } from "./extensions/types.js";
+import type { ExtensionAPI } from "./extensions/types.ts";
 
 export interface NovelProjectInfo {
 	/** Absolute path to the .novel directory. */

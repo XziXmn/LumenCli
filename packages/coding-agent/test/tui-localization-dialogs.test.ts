@@ -1,12 +1,12 @@
 import { setKeybindings, TUI } from "@earendil-works/pi-tui";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { VirtualTerminal } from "../../tui/test/virtual-terminal.js";
-import { KeybindingsManager } from "../src/core/keybindings.js";
-import type { SessionTreeNode } from "../src/core/session-manager.js";
-import { LoginDialogComponent } from "../src/modes/interactive/components/login-dialog.js";
-import { TreeSelectorComponent } from "../src/modes/interactive/components/tree-selector.js";
-import { initTheme } from "../src/modes/interactive/theme/theme.js";
-import { stripAnsi } from "../src/utils/ansi.js";
+import { VirtualTerminal } from "../../tui/test/virtual-terminal.ts";
+import { KeybindingsManager } from "../src/core/keybindings.ts";
+import type { SessionTreeNode } from "../src/core/session-manager.ts";
+import { LoginDialogComponent } from "../src/modes/interactive/components/login-dialog.ts";
+import { TreeSelectorComponent } from "../src/modes/interactive/components/tree-selector.ts";
+import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { stripAnsi } from "../src/utils/ansi.ts";
 
 function makeTree(): SessionTreeNode[] {
 	return [

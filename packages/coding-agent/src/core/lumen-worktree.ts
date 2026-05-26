@@ -26,7 +26,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI } from "./extensions/types.js";
+import type { ExtensionAPI } from "./extensions/types.ts";
 
 // ============================================================================
 // Types

@@ -8,7 +8,7 @@ import type {
 	RenderableProjectedEntry,
 	RenderableToolCallBlock,
 	RenderableTranscriptEntry,
-} from "./types.js";
+} from "./types.ts";
 
 const SEARCH_TOOL_NAMES = new Set(["grep", "find"]);
 const LIST_TOOL_NAMES = new Set(["ls"]);

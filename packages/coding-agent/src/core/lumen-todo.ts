@@ -24,7 +24,7 @@ import type {
 	TaskUiSummary,
 	ToolRenderContext,
 	ToolRenderResultOptions,
-} from "./extensions/types.js";
+} from "./extensions/types.ts";
 
 // ============================================================================
 // Types

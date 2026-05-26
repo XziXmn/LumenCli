@@ -1,8 +1,8 @@
 import type { Component } from "@earendil-works/pi-tui";
-import type { QueuedUiState, SpinnerUiState, TaskUiItem } from "../../../core/extensions/types.js";
-import { CLAUDE_SPINNER_VERBS } from "../spinner-verbs.js";
-import type { Theme } from "../theme/theme.js";
-import { TUI_COPY } from "./tui-copy.js";
+import type { QueuedUiState, SpinnerUiState, TaskUiItem } from "../../../core/extensions/types.ts";
+import { CLAUDE_SPINNER_VERBS } from "../spinner-verbs.ts";
+import type { Theme } from "../theme/theme.ts";
+import { TUI_COPY } from "./tui-copy.ts";
 
 export interface ProgressSurfaceSnapshot {
 	tasks: TaskUiItem[];
@@ -537,11 +537,15 @@ function renderProgressSurfaceLines(
 }
 
 export class ProgressSurfaceComponent implements Component {
-	constructor(
-		private readonly getSnapshot: () => ProgressSurfaceSnapshot,
-		private readonly theme: Theme,
-		private readonly working: ProgressSurfaceWorkingState,
-	) {}
+	private readonly getSnapshot: () => ProgressSurfaceSnapshot;
+	private readonly theme: Theme;
+	private readonly working: ProgressSurfaceWorkingState;
+
+	constructor(getSnapshot: () => ProgressSurfaceSnapshot, theme: Theme, working: ProgressSurfaceWorkingState) {
+		this.getSnapshot = getSnapshot;
+		this.theme = theme;
+		this.working = working;
+	}
 
 	render(_width: number): string[] {
 		const snapshot = this.getSnapshot();

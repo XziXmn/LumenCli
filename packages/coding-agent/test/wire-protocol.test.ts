@@ -9,14 +9,14 @@ import type {
 	WireToolResult,
 	WireTurnBegin,
 	WireTurnEnd,
-} from "../src/core/wire/index.js";
+} from "../src/core/wire/index.ts";
 import {
 	createWireHub,
 	createWireTraceWriter,
 	readWireTrace,
 	WIRE_PROTOCOL_VERSION,
 	wireEventBase,
-} from "../src/core/wire/index.js";
+} from "../src/core/wire/index.ts";
 
 describe("Wire Protocol", () => {
 	const tempDirs: string[] = [];

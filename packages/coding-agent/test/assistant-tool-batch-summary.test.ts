@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { AssistantToolBatchSummaryComponent } from "../src/modes/interactive/components/assistant-tool-batch-summary.js";
-import { initTheme } from "../src/modes/interactive/theme/theme.js";
-import { stripAnsi } from "../src/utils/ansi.js";
+import { AssistantToolBatchSummaryComponent } from "../src/modes/interactive/components/assistant-tool-batch-summary.ts";
+import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { stripAnsi } from "../src/utils/ansi.ts";
 
 function render(component: AssistantToolBatchSummaryComponent, width = 100): string {
 	return stripAnsi(component.render(width).join("\n"));

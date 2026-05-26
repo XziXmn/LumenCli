@@ -12,8 +12,8 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
-import type { ExtensionAPI } from "./extensions/types.js";
+import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
+import type { ExtensionAPI } from "./extensions/types.ts";
 
 // ============================================================================
 // Types

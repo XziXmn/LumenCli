@@ -28,7 +28,7 @@ import type {
 	PublishDiagnosticsParams,
 	ServerCapabilities,
 	ServerConfig,
-} from "./lumen-lsp-types.js";
+} from "./lumen-lsp-types.ts";
 
 // ============================================================================
 // URI Helpers

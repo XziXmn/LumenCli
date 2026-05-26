@@ -2,9 +2,9 @@ import { beforeAll, describe, expect, it } from "vitest";
 import {
 	__renderProgressSurfaceLinesForTest,
 	type ProgressSurfaceSnapshot,
-} from "../src/modes/interactive/components/progress-surface.js";
-import { initTheme, theme } from "../src/modes/interactive/theme/theme.js";
-import { stripAnsi } from "../src/utils/ansi.js";
+} from "../src/modes/interactive/components/progress-surface.ts";
+import { initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
+import { stripAnsi } from "../src/utils/ansi.ts";
 
 function render(snapshot: ProgressSurfaceSnapshot): string {
 	return stripAnsi(__renderProgressSurfaceLinesForTest(snapshot, theme).join("\n"));

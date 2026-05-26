@@ -1,6 +1,6 @@
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { createHarness } from "../harness.js";
+import { createHarness } from "../harness.ts";
 
 describe("spinner budget usage extraction", () => {
 	it("captures the real request max output tokens from provider payloads", async () => {

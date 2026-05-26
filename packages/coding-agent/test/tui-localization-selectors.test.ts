@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { ThemeSelectorComponent } from "../src/modes/interactive/components/theme-selector.js";
-import { ThinkingSelectorComponent } from "../src/modes/interactive/components/thinking-selector.js";
-import { initTheme } from "../src/modes/interactive/theme/theme.js";
-import { stripAnsi } from "../src/utils/ansi.js";
+import { ThemeSelectorComponent } from "../src/modes/interactive/components/theme-selector.ts";
+import { ThinkingSelectorComponent } from "../src/modes/interactive/components/thinking-selector.ts";
+import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { stripAnsi } from "../src/utils/ansi.ts";
 
 describe("TUI selector localization", () => {
 	beforeAll(() => {

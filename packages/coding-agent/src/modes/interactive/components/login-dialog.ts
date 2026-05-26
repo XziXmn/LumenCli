@@ -1,10 +1,10 @@
 import { getOAuthProviders } from "@earendil-works/pi-ai/oauth";
 import { Container, type Focusable, getKeybindings, Input, Spacer, Text, type TUI } from "@earendil-works/pi-tui";
 import { exec } from "child_process";
-import { theme } from "../theme/theme.js";
-import { DynamicBorder } from "./dynamic-border.js";
-import { keyHint } from "./keybinding-hints.js";
-import { TUI_COPY } from "./tui-copy.js";
+import { theme } from "../theme/theme.ts";
+import { DynamicBorder } from "./dynamic-border.ts";
+import { keyHint } from "./keybinding-hints.ts";
+import { TUI_COPY } from "./tui-copy.ts";
 
 /**
  * Login dialog component - replaces editor during OAuth login flow
@@ -16,6 +16,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 	private abortController = new AbortController();
 	private inputResolver?: (value: string) => void;
 	private inputRejecter?: (error: Error) => void;
+	private onComplete: (success: boolean, message?: string) => void;
 
 	// Focusable implementation - propagate to input for IME cursor positioning
 	private _focused = false;
@@ -30,12 +31,13 @@ export class LoginDialogComponent extends Container implements Focusable {
 	constructor(
 		tui: TUI,
 		providerId: string,
-		private onComplete: (success: boolean, message?: string) => void,
+		onComplete: (success: boolean, message?: string) => void,
 		providerNameOverride?: string,
 		titleOverride?: string,
 	) {
 		super();
 		this.tui = tui;
+		this.onComplete = onComplete;
 
 		const providerInfo = getOAuthProviders().find((p) => p.id === providerId);
 		const providerName = providerNameOverride || providerInfo?.name || providerId;
@@ -149,6 +151,20 @@ export class LoginDialogComponent extends Container implements Focusable {
 			this.inputResolver = resolve;
 			this.inputRejecter = reject;
 		});
+	}
+
+	showDeviceCode(info: { verificationUri: string; userCode: string; expiresInSeconds?: number }): void {
+		this.contentContainer.clear();
+		this.contentContainer.addChild(new Spacer(1));
+		this.contentContainer.addChild(new Text(theme.fg("accent", info.verificationUri), 1, 0));
+		this.contentContainer.addChild(new Spacer(1));
+		this.contentContainer.addChild(new Text(theme.fg("text", `验证码：${info.userCode}`), 1, 0));
+		if (typeof info.expiresInSeconds === "number" && info.expiresInSeconds > 0) {
+			this.contentContainer.addChild(new Text(theme.fg("dim", `请在 ${info.expiresInSeconds} 秒内完成认证`), 1, 0));
+		}
+		this.contentContainer.addChild(new Spacer(1));
+		this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", TUI_COPY.loginDialog.cancel)})`, 1, 0));
+		this.tui.requestRender();
 	}
 
 	/**

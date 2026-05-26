@@ -4,8 +4,8 @@
  * WireHub 是 Wire 事件的中央调度器，负责事件的发布、订阅和回放。
  */
 
-import type { WireEvent } from "./types.js";
-import { WIRE_PROTOCOL_VERSION } from "./types.js";
+import type { WireEvent } from "./types.ts";
+import { WIRE_PROTOCOL_VERSION } from "./types.ts";
 
 export type WireSubscriber = (event: WireEvent) => void;
 

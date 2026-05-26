@@ -1,9 +1,9 @@
 import type { TUI } from "@earendil-works/pi-tui";
 import { beforeAll, describe, expect, it } from "vitest";
-import { createAllToolDefinitions, type ToolName } from "../src/core/tools/index.js";
-import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.js";
-import { initTheme } from "../src/modes/interactive/theme/theme.js";
-import { stripAnsi } from "../src/utils/ansi.js";
+import { createAllToolDefinitions, type ToolName } from "../src/core/tools/index.ts";
+import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.ts";
+import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { stripAnsi } from "../src/utils/ansi.ts";
 
 function createFakeTui(): TUI {
 	return {

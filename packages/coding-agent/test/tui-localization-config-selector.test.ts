@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { ConfigSelectorComponent } from "../src/modes/interactive/components/config-selector.js";
-import { initTheme } from "../src/modes/interactive/theme/theme.js";
-import { stripAnsi } from "../src/utils/ansi.js";
+import { ConfigSelectorComponent } from "../src/modes/interactive/components/config-selector.ts";
+import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { stripAnsi } from "../src/utils/ansi.ts";
 
 describe("TUI config selector localization", () => {
 	beforeAll(() => {

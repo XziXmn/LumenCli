@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatAskUserFooterStatus, formatAskUserResultSummary } from "../src/core/lumen-askuser.js";
+import { formatAskUserFooterStatus, formatAskUserResultSummary } from "../src/core/lumen-askuser.ts";
 
 describe("lumenAskUser formatting", () => {
 	it("formats footer status as awaiting input", () => {

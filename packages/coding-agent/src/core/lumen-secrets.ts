@@ -8,7 +8,7 @@
  * [Provenance] 适配改动: Pi extension API 接口，纯正则实现
  */
 
-import type { ExtensionAPI } from "./extensions/types.js";
+import type { ExtensionAPI } from "./extensions/types.ts";
 
 export interface SecretPattern {
 	name: string;
