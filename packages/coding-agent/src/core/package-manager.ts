@@ -98,6 +98,8 @@ export interface PackageManager {
 	update(source?: string): Promise<void>;
 	listConfiguredPackages(): ConfiguredPackage[];
 	getLastCompatibilityAudits(): PackageCompatibilityAudit[];
+	auditConfiguredCompatibility(scope?: InstalledSourceScope): Promise<PackageCompatibilityAudit[]>;
+	reevaluatePendingCompatibility(scope?: InstalledSourceScope): Promise<PackageCompatibilityReevaluationResult>;
 	resolveExtensionSources(
 		sources: string[],
 		options?: { local?: boolean; temporary?: boolean },
@@ -160,6 +162,26 @@ export interface PackageCompatibilityAudit {
 	manifestType: PackageManifestType;
 	status: "direct" | "light-adapt" | "needs-ai-review";
 	reasons: string[];
+}
+
+interface PackageCompatibilityStateEntry {
+	source: string;
+	scope: InstalledSourceScope;
+	packageRoot: string;
+	packageJsonMtimeMs: number | null;
+	needsReevaluation: boolean;
+	lastCheckedAt?: string;
+	lastAudit?: PackageCompatibilityAudit;
+}
+
+interface PackageCompatibilityStateFile {
+	version: 1;
+	entries: PackageCompatibilityStateEntry[];
+}
+
+export interface PackageCompatibilityReevaluationResult {
+	audits: PackageCompatibilityAudit[];
+	updatedSources: string[];
 }
 
 interface ResourceAccumulator {
@@ -965,6 +987,57 @@ export class DefaultPackageManager implements PackageManager {
 		return [...this.lastCompatibilityAudits];
 	}
 
+	async auditConfiguredCompatibility(scope?: InstalledSourceScope): Promise<PackageCompatibilityAudit[]> {
+		const configuredPackages = this.listConfiguredPackages().filter((pkg) => (scope ? pkg.scope === scope : true));
+		const audits: PackageCompatibilityAudit[] = [];
+
+		for (const pkg of configuredPackages) {
+			const packageAudits = await this.auditInstalledSourceCompatibility(pkg.source, {
+				local: pkg.scope === "project",
+			});
+			audits.push(...packageAudits);
+		}
+
+		this.lastCompatibilityAudits = audits;
+		return audits;
+	}
+
+	async reevaluatePendingCompatibility(scope?: InstalledSourceScope): Promise<PackageCompatibilityReevaluationResult> {
+		const scopes = scope ? [scope] : (["user", "project"] as const);
+		const audits: PackageCompatibilityAudit[] = [];
+		const updatedSources: string[] = [];
+
+		for (const currentScope of scopes) {
+			const state = this.readCompatibilityState(currentScope);
+			let changed = false;
+			for (const entry of state.entries) {
+				const currentMtime = this.getPackageJsonMtimeMs(entry.packageRoot);
+				const shouldReevaluate = entry.needsReevaluation || entry.packageJsonMtimeMs !== currentMtime;
+				if (!shouldReevaluate) {
+					continue;
+				}
+
+				const audit = this.auditPackageCompatibility(entry.source, entry.packageRoot);
+				entry.packageJsonMtimeMs = currentMtime;
+				entry.needsReevaluation = false;
+				entry.lastCheckedAt = new Date().toISOString();
+				entry.lastAudit = audit;
+				updatedSources.push(entry.source);
+				if (audit) {
+					audits.push(audit);
+				}
+				changed = true;
+			}
+
+			if (changed) {
+				this.writeCompatibilityState(currentScope, state);
+			}
+		}
+
+		this.lastCompatibilityAudits = audits;
+		return { audits, updatedSources };
+	}
+
 	async install(source: string, options?: { local?: boolean }): Promise<void> {
 		const parsed = this.parseSource(source);
 		const scope: SourceScope = options?.local ? "project" : "user";
@@ -993,6 +1066,7 @@ export class DefaultPackageManager implements PackageManager {
 		await this.install(source, options);
 		this.addSourceToSettings(source, options);
 		this.lastCompatibilityAudits = await this.auditInstalledSourceCompatibility(source, options);
+		this.markCompatibilityForReevaluation(source, options);
 	}
 
 	async remove(source: string, options?: { local?: boolean }): Promise<void> {
@@ -2110,7 +2184,84 @@ export class DefaultPackageManager implements PackageManager {
 		return audit ? [audit] : [];
 	}
 
+	private markCompatibilityForReevaluation(source: string, options?: { local?: boolean }): void {
+		const parsed = this.parseSource(source);
+		const scope: InstalledSourceScope = options?.local ? "project" : "user";
+		const packageRoot =
+			parsed.type === "local"
+				? this.resolvePathFromBase(parsed.path, this.getBaseDirForScope(scope))
+				: this.getInstalledPath(source, scope);
+		if (!packageRoot || !existsSync(packageRoot)) {
+			return;
+		}
+
+		const state = this.readCompatibilityState(scope);
+		const existing = state.entries.find((entry) => entry.source === source);
+		const packageJsonMtimeMs = this.getPackageJsonMtimeMs(packageRoot);
+		if (existing) {
+			existing.packageRoot = packageRoot;
+			existing.packageJsonMtimeMs = packageJsonMtimeMs;
+			existing.needsReevaluation = true;
+			existing.lastAudit = this.lastCompatibilityAudits[0];
+		} else {
+			state.entries.push({
+				source,
+				scope,
+				packageRoot,
+				packageJsonMtimeMs,
+				needsReevaluation: true,
+				lastAudit: this.lastCompatibilityAudits[0],
+			});
+		}
+		this.writeCompatibilityState(scope, state);
+	}
+
+	private getCompatibilityStatePath(scope: InstalledSourceScope): string {
+		if (scope === "project") {
+			return join(this.cwd, CONFIG_DIR_NAME, "plugin-compat-state.json");
+		}
+		return join(this.agentDir, "plugin-compat-state.json");
+	}
+
+	private readCompatibilityState(scope: InstalledSourceScope): PackageCompatibilityStateFile {
+		const statePath = this.getCompatibilityStatePath(scope);
+		if (!existsSync(statePath)) {
+			return { version: 1, entries: [] };
+		}
+		try {
+			const parsed = JSON.parse(readFileSync(statePath, "utf-8")) as PackageCompatibilityStateFile;
+			if (parsed.version !== 1 || !Array.isArray(parsed.entries)) {
+				return { version: 1, entries: [] };
+			}
+			return parsed;
+		} catch {
+			return { version: 1, entries: [] };
+		}
+	}
+
+	private writeCompatibilityState(scope: InstalledSourceScope, state: PackageCompatibilityStateFile): void {
+		const statePath = this.getCompatibilityStatePath(scope);
+		mkdirSync(dirname(statePath), { recursive: true });
+		writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf-8");
+	}
+
+	private getPackageJsonMtimeMs(packageRoot: string): number | null {
+		const packageJsonPath = join(packageRoot, "package.json");
+		if (!existsSync(packageJsonPath)) {
+			return null;
+		}
+		try {
+			return statSync(packageJsonPath).mtimeMs;
+		} catch {
+			return null;
+		}
+	}
+
 	private auditPackageCompatibility(source: string, packageRoot: string): PackageCompatibilityAudit | undefined {
+		if (!existsSync(packageRoot)) {
+			return undefined;
+		}
+
 		const manifestRecord = this.readResourceManifestWithType(packageRoot);
 		const manifestType = manifestRecord?.manifestType ?? "none";
 
@@ -2154,7 +2305,7 @@ export class DefaultPackageManager implements PackageManager {
 		}
 
 		if (reasons.length === 0) {
-			return undefined;
+			reasons.push("compatible with Lumen as-is.");
 		}
 
 		return {

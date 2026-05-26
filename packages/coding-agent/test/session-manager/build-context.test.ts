@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createCompactionSummaryMessage } from "../../src/core/messages.js";
 import {
 	type BranchSummaryEntry,
 	buildSessionContext,
@@ -45,6 +46,19 @@ function compaction(id: string, parentId: string | null, summary: string, firstK
 		summary,
 		firstKeptEntryId,
 		tokensBefore: 1000,
+	};
+}
+
+function compactionWithPlacement(
+	id: string,
+	parentId: string | null,
+	summary: string,
+	firstKeptEntryId: string,
+	summaryPlacement: "before-kept" | "after-kept",
+): CompactionEntry {
+	return {
+		...compaction(id, parentId, summary, firstKeptEntryId),
+		summaryPlacement,
 	};
 }
 
@@ -168,6 +182,51 @@ describe("buildSessionContext", () => {
 			// Should use second summary, keep from 4
 			expect(ctx.messages).toHaveLength(4);
 			expect((ctx.messages[0] as any).summary).toContain("Second summary");
+		});
+
+		it("can place summary after kept messages when requested", () => {
+			const entries: SessionEntry[] = [
+				msg("1", null, "user", "first"),
+				msg("2", "1", "assistant", "response1"),
+				msg("3", "2", "user", "second"),
+				msg("4", "3", "assistant", "response2"),
+				compactionWithPlacement("5", "4", "Summary after kept", "3", "after-kept"),
+				msg("6", "5", "user", "third"),
+			];
+			const ctx = buildSessionContext(entries);
+
+			expect(ctx.messages).toHaveLength(4);
+			expect((ctx.messages[0] as any).content).toBe("second");
+			expect((ctx.messages[1] as any).content[0].text).toBe("response2");
+			expect((ctx.messages[2] as any).summary).toContain("Summary after kept");
+			expect((ctx.messages[3] as any).content).toBe("third");
+		});
+
+		it("uses replacementMessages when compaction provides an explicit replacement history", () => {
+			const entries: SessionEntry[] = [
+				msg("1", null, "user", "first"),
+				msg("2", "1", "assistant", "response1"),
+				msg("3", "2", "user", "second"),
+				msg("4", "3", "assistant", "response2"),
+				{
+					...compaction("5", "4", "ignored summary", "3"),
+					replacementMessages: [
+						{
+							role: "user",
+							content: "recent request",
+							timestamp: 1,
+						},
+						createCompactionSummaryMessage("replacement summary", 1000, "2025-01-01T00:00:00Z"),
+					],
+				},
+				msg("6", "5", "user", "third"),
+			];
+			const ctx = buildSessionContext(entries);
+
+			expect(ctx.messages).toHaveLength(3);
+			expect((ctx.messages[0] as any).content).toBe("recent request");
+			expect((ctx.messages[1] as any).summary).toContain("replacement summary");
+			expect((ctx.messages[2] as any).content).toBe("third");
 		});
 	});
 

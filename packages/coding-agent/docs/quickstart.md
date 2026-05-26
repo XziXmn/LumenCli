@@ -80,6 +80,8 @@ Pi loads:
 
 Restart pi, or run `/reload`, after changing context files.
 
+If pi warns at startup that a package, extension, or skill may be incompatible, run `/compat` to inspect the current diagnostics. After applying fixes, run `/reload`. If the item still fails, remove the package or delete the skill.
+
 ## Common things to try
 
 ### Reference files

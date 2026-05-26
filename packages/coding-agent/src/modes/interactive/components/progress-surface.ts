@@ -17,6 +17,7 @@ export interface ProgressSurfaceWorkingState {
 	isIdle: boolean;
 	isStalled: boolean;
 	displayedTokens: number;
+	executionActivityCache: Map<string, string>;
 	tipState: TipState;
 	shimmerOffset: number;
 }
@@ -83,6 +84,7 @@ export function createProgressSurfaceWorkingState(seed = Date.now()): ProgressSu
 		isIdle: false,
 		isStalled: false,
 		displayedTokens: 0,
+		executionActivityCache: new Map(),
 		tipState: { shownIds: new Set(), lastTipId: undefined, lastTipCycleStart: 0 },
 		shimmerOffset: 0,
 	};
@@ -305,11 +307,35 @@ function renderBannerLines(snapshot: ProgressSurfaceSnapshot, theme: Theme): str
 	return lines;
 }
 
-function renderExecutionLines(items: TaskUiItem[], expanded: boolean, theme: Theme): string[] {
+function buildExecutionActivity(item: TaskUiItem, working: ProgressSurfaceWorkingState): string {
+	const fallback = item.subject ?? item.content ?? (item.status === "pending" ? "pending" : "working");
+	const nextActivity = item.meta ?? working.executionActivityCache.get(item.id) ?? fallback;
+	if (item.meta && item.meta.trim().length > 0) {
+		working.executionActivityCache.set(item.id, item.meta);
+	}
+	return nextActivity;
+}
+
+function pruneExecutionActivityCache(items: TaskUiItem[], working: ProgressSurfaceWorkingState): void {
+	const liveIds = new Set(items.map((item) => item.id));
+	for (const key of working.executionActivityCache.keys()) {
+		if (!liveIds.has(key)) {
+			working.executionActivityCache.delete(key);
+		}
+	}
+}
+
+function renderExecutionLines(
+	items: TaskUiItem[],
+	expanded: boolean,
+	theme: Theme,
+	working: ProgressSurfaceWorkingState,
+): string[] {
 	const liveItems = items.filter(
 		(item) => item.status === "running" || item.status === "in_progress" || item.status === "pending",
 	);
 	if (liveItems.length === 0) return [];
+	pruneExecutionActivityCache(liveItems, working);
 
 	const runningCount = liveItems.filter((item) => item.status === "running" || item.status === "in_progress").length;
 	const header = runningCount <= 1 ? `${runningCount} running task` : `${runningCount} running tasks`;
@@ -319,12 +345,7 @@ function renderExecutionLines(items: TaskUiItem[], expanded: boolean, theme: The
 	for (const item of capped) {
 		const prefix = item.status === "pending" && capped.length === 1 ? "└─" : item.status === "pending" ? "├─" : "├─";
 		const agent = item.group ? `@${item.group}` : item.id;
-		const activity =
-			item.meta ??
-			item.activeForm ??
-			item.subject ??
-			item.content ??
-			(item.status === "pending" ? "pending" : "working");
+		const activity = buildExecutionActivity(item, working);
 		const stats: string[] = [];
 		if (item.toolCount) stats.push(`${item.toolCount} uses`);
 		if (item.tokens) stats.push(`${formatTokens(item.tokens)} tokens`);
@@ -477,7 +498,7 @@ function renderProgressSurfaceLines(
 		}
 	}
 
-	for (const line of renderExecutionLines(execution, snapshot.expanded, theme)) {
+	for (const line of renderExecutionLines(execution, snapshot.expanded, theme, working)) {
 		lines.push(line);
 	}
 

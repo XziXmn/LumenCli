@@ -14,6 +14,45 @@
 .\ime-progress-surface-debug.ps1 --no-log
 ```
 
+直接从某个关键场景启动：
+
+```powershell
+.\ime-progress-surface-debug.ps1 --scenario approval
+.\ime-progress-surface-debug.ps1 --scenario retry
+.\ime-progress-surface-debug.ps1 --scenario bash
+.\ime-progress-surface-debug.ps1 --scenario branch-summary
+.\ime-progress-surface-debug.ps1 --scenario complete
+```
+
+做一个自动退出的短时 smoke：
+
+```powershell
+.\ime-progress-surface-debug.ps1 --scenario complete --exit-after-ms 1500
+```
+
+做一轮自动切场景的半自动观察：
+
+```powershell
+.\ime-progress-surface-debug.ps1 --scenario approval --auto-cycle-ms 2500
+```
+
+只轮播关键场景集合：
+
+```powershell
+.\ime-progress-surface-debug.ps1 --scenario-list critical --auto-cycle-ms 2500
+```
+
+`critical` 当前等价于：
+
+- `approval`
+- `ask-user`
+- `retry`
+- `reconnect`
+- `parallel`
+- `bash`
+- `branch-summary`
+- `complete`
+
 说明：
 
 - 脚本会启动真实 `ProcessTerminal` 场景，不是虚拟终端
@@ -24,6 +63,12 @@
   - `suppress=on/off`
   - `progress=on/off`
   - `ops=<终端写入操作计数>`
+
+如果 PowerShell 被执行策略拦住，可以直接临时绕过执行策略：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\ime-progress-surface-debug.ps1 --scenario-list critical --auto-cycle-ms 2500
+```
 
 ## 操作
 
@@ -36,6 +81,8 @@
    - `retry`
    - `reconnect`
    - `parallel`
+   - `bash`
+   - `branch-summary`
    - `complete`
 4. 每个场景里都重复输入拼音，观察任务栏、待发送区、正文区、footer
 5. 额外快捷键：
@@ -50,8 +97,12 @@
 - footer 不闪出拼音
 - 输入位置不跑偏
 - `complete` 场景下任务栏可靠消失
+- `complete` 场景下 terminal progress 也应关闭，不再继续写终端 keepalive
 - 输入拼音过程中，`ops` 不应持续快速增长
 - 输入拼音过程中，`progress` 应在 suppress 窗口内切到 `off`
+- `bash` 场景下，bash transcript 流式输出不应把拼音候选窗抢到正文区
+- `branch-summary` 场景下，branch summary loader 出现时不应把拼音候选窗抢到任务栏或 footer
+- 使用 `--auto-cycle-ms` 时，仍要在自动切场景期间持续输入拼音，观察切场景瞬间候选窗是否跑偏
 
 ## 失败时记录
 
@@ -65,4 +116,8 @@
   - 待发送区
   - footer
 - 是否伴随光标跳动
+- 如果是 `bash` 或 `branch-summary` 场景，说明是在：
+  - transcript 流式输出阶段
+  - loader 首帧出现阶段
+  - 完成收尾阶段
 - 如果有需要，可附带 `.tmp/ime-progress-surface-debug-ansi.log`

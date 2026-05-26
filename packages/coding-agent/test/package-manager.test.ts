@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { PassThrough } from "node:stream";
@@ -914,6 +914,99 @@ Content`,
 			expect(audits).toHaveLength(1);
 			expect(audits[0]?.manifestType).toBe("legacy-pi");
 			expect(audits[0]?.status).toBe("light-adapt");
+		});
+
+		it("should persist reevaluation state and clear it after startup reevaluation", async () => {
+			const pkgDir = join(tempDir, "reeval-plugin");
+			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
+			writeFileSync(join(pkgDir, "extensions", "main.ts"), "export default function() {}");
+			writeFileSync(
+				join(pkgDir, "package.json"),
+				JSON.stringify({
+					name: "reeval-plugin",
+					pi: {
+						extensions: ["./extensions/main.ts"],
+					},
+				}),
+			);
+
+			await packageManager.installAndPersist(pkgDir, { local: true });
+
+			const statePath = join(tempDir, ".lumen", "plugin-compat-state.json");
+			const savedState = JSON.parse(readFileSync(statePath, "utf-8"));
+			expect(savedState.entries).toHaveLength(1);
+			expect(savedState.entries[0]?.needsReevaluation).toBe(true);
+
+			const result = await packageManager.reevaluatePendingCompatibility("project");
+			expect(result.audits).toHaveLength(1);
+			expect(result.updatedSources).toEqual([pkgDir]);
+
+			const reevaluatedState = JSON.parse(readFileSync(statePath, "utf-8"));
+			expect(reevaluatedState.entries[0]?.needsReevaluation).toBe(false);
+			expect(reevaluatedState.entries[0]?.lastAudit?.status).toBe("light-adapt");
+		});
+
+		it("should keep directly compatible packages visible in install and startup reevaluation audits", async () => {
+			const pkgDir = join(tempDir, "direct-plugin");
+			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
+			writeFileSync(join(pkgDir, "extensions", "main.ts"), "export default function() {}");
+			writeFileSync(
+				join(pkgDir, "package.json"),
+				JSON.stringify({
+					name: "direct-plugin",
+					lumen: {
+						extensions: ["./extensions/main.ts"],
+					},
+				}),
+			);
+
+			await packageManager.installAndPersist(pkgDir, { local: true });
+
+			const installAudits = packageManager.getLastCompatibilityAudits();
+			expect(installAudits).toHaveLength(1);
+			expect(installAudits[0]?.status).toBe("direct");
+			expect(installAudits[0]?.reasons).toContain("compatible with Lumen as-is.");
+
+			const reevaluation = await packageManager.reevaluatePendingCompatibility("project");
+			expect(reevaluation.updatedSources).toEqual([pkgDir]);
+			expect(reevaluation.audits).toHaveLength(1);
+			expect(reevaluation.audits[0]?.status).toBe("direct");
+		});
+
+		it("should audit all configured packages on demand for compatibility diagnostics", async () => {
+			const directPkgDir = join(tempDir, "direct-plugin");
+			mkdirSync(join(directPkgDir, "extensions"), { recursive: true });
+			writeFileSync(join(directPkgDir, "extensions", "main.ts"), "export default function() {}");
+			writeFileSync(
+				join(directPkgDir, "package.json"),
+				JSON.stringify({
+					name: "direct-plugin",
+					lumen: {
+						extensions: ["./extensions/main.ts"],
+					},
+				}),
+			);
+
+			const legacyPkgDir = join(tempDir, "legacy-plugin");
+			mkdirSync(join(legacyPkgDir, "extensions"), { recursive: true });
+			writeFileSync(join(legacyPkgDir, "extensions", "main.ts"), "export default function() {}");
+			writeFileSync(
+				join(legacyPkgDir, "package.json"),
+				JSON.stringify({
+					name: "legacy-plugin",
+					pi: {
+						extensions: ["./extensions/main.ts"],
+					},
+				}),
+			);
+
+			await packageManager.installAndPersist(directPkgDir, { local: true });
+			await packageManager.installAndPersist(legacyPkgDir, { local: true });
+
+			const audits = await packageManager.auditConfiguredCompatibility("project");
+			expect(audits).toHaveLength(2);
+			expect(audits.some((audit) => audit.status === "direct")).toBe(true);
+			expect(audits.some((audit) => audit.status === "light-adapt")).toBe(true);
 		});
 
 		it("should flag oh-my-pi dependencies for AI-assisted adaptation", async () => {

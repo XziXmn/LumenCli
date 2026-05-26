@@ -1,13 +1,22 @@
 import { homedir } from "node:os";
 import * as path from "node:path";
-import { type AutocompleteProvider, CombinedAutocompleteProvider, Container } from "@earendil-works/pi-tui";
+import {
+	type AutocompleteProvider,
+	CombinedAutocompleteProvider,
+	Container,
+	Spacer,
+	Text,
+} from "@earendil-works/pi-tui";
 import { beforeAll, describe, expect, test, vi } from "vitest";
 import type { AutocompleteProviderFactory } from "../src/core/extensions/types.js";
+import type { ResourceDiagnostic } from "../src/core/resource-loader.js";
+import { BUILTIN_SLASH_COMMANDS } from "../src/core/slash-commands.js";
 import type { SourceInfo } from "../src/core/source-info.js";
 import {
 	createProgressSurfaceWorkingState,
 	ProgressSurfaceComponent,
 } from "../src/modes/interactive/components/progress-surface.js";
+import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.js";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.js";
 import { initTheme, theme } from "../src/modes/interactive/theme/theme.js";
 
@@ -49,6 +58,24 @@ function createLiveTodoSnapshot(spinner: unknown) {
 	};
 }
 
+function makeBottomPaneAware(fakeThis: any): any {
+	if (!fakeThis.bottomPaneGapContainer) {
+		fakeThis.bottomPaneGapContainer = new Container();
+	}
+	if (!fakeThis.statusContainer) {
+		fakeThis.statusContainer = new Container();
+	}
+	if (!fakeThis.pendingMessagesContainer) {
+		fakeThis.pendingMessagesContainer = new Container();
+	}
+	if (!fakeThis.syncBottomPaneGap) {
+		fakeThis.syncBottomPaneGap = function () {
+			return (InteractiveMode as any).prototype.syncBottomPaneGap.call(this);
+		};
+	}
+	return fakeThis;
+}
+
 type ExtensionFixture = {
 	path: string;
 	sourceInfo?: SourceInfo;
@@ -66,6 +93,7 @@ describe("InteractiveMode.showStatus", () => {
 			ui: { requestRender: vi.fn() },
 			lastStatusSpacer: undefined,
 			lastStatusText: undefined,
+			requestRenderRespectingInput: vi.fn(),
 		};
 
 		(InteractiveMode as any).prototype.showStatus.call(fakeThis, "STATUS_ONE");
@@ -85,6 +113,7 @@ describe("InteractiveMode.showStatus", () => {
 			ui: { requestRender: vi.fn() },
 			lastStatusSpacer: undefined,
 			lastStatusText: undefined,
+			requestRenderRespectingInput: vi.fn(),
 		};
 
 		(InteractiveMode as any).prototype.showStatus.call(fakeThis, "STATUS_ONE");
@@ -101,6 +130,147 @@ describe("InteractiveMode.showStatus", () => {
 	});
 });
 
+describe("InteractiveMode compatibility helpers", () => {
+	test("/compat is exposed as a built-in slash command", () => {
+		expect(BUILTIN_SLASH_COMMANDS.some((command) => command.name === "compat")).toBe(true);
+	});
+
+	test("handleCompatibilityCommand renders the collected diagnostics into chat", async () => {
+		const fakeThis: any = {
+			chatContainer: new Container(),
+			ui: { requestRender: vi.fn() },
+			requestRenderRespectingInput: vi.fn(),
+			collectCompatibilityDiagnostics: vi.fn().mockResolvedValue({
+				packageAudits: [],
+				extensionErrors: [],
+				skillDiagnostics: [],
+			}),
+			formatCompatibilityDiagnostics: vi.fn(() => ["[Compatibility]", "  Everything is fine."]),
+		};
+
+		await (InteractiveMode as any).prototype.handleCompatibilityCommand.call(fakeThis);
+
+		expect(fakeThis.collectCompatibilityDiagnostics).toHaveBeenCalledTimes(1);
+		expect(fakeThis.formatCompatibilityDiagnostics).toHaveBeenCalledTimes(1);
+		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toContain("Everything is fine.");
+		expect(fakeThis.requestRenderRespectingInput).toHaveBeenCalledTimes(1);
+	});
+
+	test("showCompatibilityReminderIfNeeded warns when package, extension, or skill issues exist", async () => {
+		const fakeThis: any = {
+			collectCompatibilityDiagnostics: vi.fn().mockResolvedValue({
+				packageAudits: [{ source: "pkg", status: "needs-ai-review" }],
+				extensionErrors: [{ path: "/tmp/ext.ts", error: "boom" }],
+				skillDiagnostics: [{ type: "warning", message: "bad skill" } satisfies ResourceDiagnostic],
+			}),
+			getCompatibilityIssueCounts: (InteractiveMode as any).prototype.getCompatibilityIssueCounts,
+			showWarning: vi.fn(),
+		};
+
+		await (InteractiveMode as any).prototype.showCompatibilityReminderIfNeeded.call(fakeThis, undefined);
+
+		expect(fakeThis.showWarning).toHaveBeenCalledTimes(1);
+		expect(fakeThis.showWarning.mock.calls[0][0]).toContain("Run /compat");
+		expect(fakeThis.showWarning.mock.calls[0][0]).toContain("package/plugin compatibility issue");
+	});
+
+	test("showCompatibilityReminderIfNeeded merges startup reevaluation summary into the warning", async () => {
+		const fakeThis: any = {
+			collectCompatibilityDiagnostics: vi.fn().mockResolvedValue({
+				packageAudits: [{ source: "pkg", status: "needs-ai-review" }],
+				extensionErrors: [{ path: "/tmp/ext.ts", error: "boom" }],
+				skillDiagnostics: [],
+			}),
+			getCompatibilityIssueCounts: (InteractiveMode as any).prototype.getCompatibilityIssueCounts,
+			showWarning: vi.fn(),
+			showStatus: vi.fn(),
+		};
+
+		await (InteractiveMode as any).prototype.showCompatibilityReminderIfNeeded.call(fakeThis, {
+			updatedSources: ["legacy-plugin"],
+			audits: [
+				{
+					source: "legacy-plugin",
+					packageRoot: "/legacy-plugin",
+					manifestType: "legacy-pi",
+					status: "light-adapt",
+					reasons: ["package.json uses legacy pi manifest."],
+				},
+			],
+		});
+
+		expect(fakeThis.showWarning).toHaveBeenCalledTimes(1);
+		expect(fakeThis.showWarning.mock.calls[0][0]).toContain("Re-evaluated 1 installed plugin/package source");
+		expect(fakeThis.showWarning.mock.calls[0][0]).toContain("Run /compat");
+		expect(fakeThis.showStatus).not.toHaveBeenCalled();
+	});
+
+	test("showCompatibilityReminderIfNeeded shows a status notice for clean reevaluated packages", async () => {
+		const fakeThis: any = {
+			collectCompatibilityDiagnostics: vi.fn().mockResolvedValue({
+				packageAudits: [],
+				extensionErrors: [],
+				skillDiagnostics: [],
+			}),
+			getCompatibilityIssueCounts: (InteractiveMode as any).prototype.getCompatibilityIssueCounts,
+			showWarning: vi.fn(),
+			showStatus: vi.fn(),
+		};
+
+		await (InteractiveMode as any).prototype.showCompatibilityReminderIfNeeded.call(fakeThis, {
+			updatedSources: ["direct-plugin"],
+			audits: [
+				{
+					source: "direct-plugin",
+					packageRoot: "/direct-plugin",
+					manifestType: "lumen",
+					status: "direct",
+					reasons: ["compatible with Lumen as-is."],
+				},
+			],
+		});
+
+		expect(fakeThis.showStatus).toHaveBeenCalledTimes(1);
+		expect(fakeThis.showStatus.mock.calls[0][0]).toContain("Re-evaluated 1 installed plugin/package source");
+		expect(fakeThis.showWarning).not.toHaveBeenCalled();
+	});
+
+	test("setupEditorSubmitHandler routes /compat to the compatibility command handler", async () => {
+		const editor = {
+			onSubmit: undefined as ((text: string) => Promise<void>) | undefined,
+			setText: vi.fn(),
+			addToHistory: vi.fn(),
+			getText: vi.fn(() => ""),
+		};
+		const fakeThis: any = {
+			defaultEditor: editor,
+			editor,
+			handleCompatibilityCommand: vi.fn().mockResolvedValue(undefined),
+			session: {
+				isCompacting: false,
+				isStreaming: false,
+				isBashRunning: false,
+				prompt: vi.fn(),
+			},
+			onInputCallback: undefined,
+			flushPendingBashComponents: vi.fn(),
+			updatePendingMessagesDisplay: vi.fn(),
+			ui: { requestRender: vi.fn() },
+			isExtensionCommand: vi.fn(() => false),
+			queueCompactionMessage: vi.fn(),
+		};
+
+		(InteractiveMode as any).prototype.setupEditorSubmitHandler.call(fakeThis);
+		expect(typeof editor.onSubmit).toBe("function");
+
+		await editor.onSubmit?.("/compat");
+
+		expect(fakeThis.handleCompatibilityCommand).toHaveBeenCalledTimes(1);
+		expect(editor.setText).toHaveBeenCalledWith("");
+		expect(fakeThis.session.prompt).not.toHaveBeenCalled();
+	});
+});
+
 describe("InteractiveMode.setToolsExpanded", () => {
 	test("applies expansion state to the active header and chat entries", () => {
 		const header = { setExpanded: vi.fn() };
@@ -111,6 +281,7 @@ describe("InteractiveMode.setToolsExpanded", () => {
 			builtInHeader: header,
 			chatContainer: { children: [chatChild] },
 			ui: { requestRender: vi.fn() },
+			requestRenderRespectingInput: vi.fn(),
 		};
 
 		(InteractiveMode as any).prototype.setToolsExpanded.call(fakeThis, true);
@@ -118,7 +289,7 @@ describe("InteractiveMode.setToolsExpanded", () => {
 		expect(fakeThis.toolOutputExpanded).toBe(true);
 		expect(header.setExpanded).toHaveBeenCalledWith(true);
 		expect(chatChild.setExpanded).toHaveBeenCalledWith(true);
-		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(1);
+		expect(fakeThis.requestRenderRespectingInput).toHaveBeenCalledTimes(1);
 	});
 });
 
@@ -128,43 +299,60 @@ describe("InteractiveMode main layout", () => {
 		const fakeThis: any = {
 			ui,
 			chatContainer: { id: "chat" },
-			promptAreaContainer: {
-				id: "prompt-area",
+			bottomPaneContainer: {
+				id: "bottom-pane",
 				clear: vi.fn(),
 				addChild: vi.fn(),
 			},
+			bottomPaneGapContainer: { id: "bottom-gap" },
 			statusContainer: { id: "status" },
 			pendingMessagesContainer: { id: "pending" },
-			interactionAreaContainer: {
-				id: "interaction-area",
-				clear: vi.fn(),
-				addChild: vi.fn(),
-			},
 			editorContainer: { id: "editor" },
 			extensionAreaContainer: { id: "extension-area" },
 			footer: { id: "footer" },
 			renderWidgets: vi.fn(),
+			syncBottomPaneGap: vi.fn(),
 		};
 
 		(InteractiveMode as any).prototype.attachMainLayout.call(fakeThis);
 
 		expect(fakeThis.renderWidgets).toHaveBeenCalledTimes(1);
-		expect(fakeThis.promptAreaContainer.clear).toHaveBeenCalledTimes(1);
-		expect(fakeThis.promptAreaContainer.addChild.mock.calls.map((call: unknown[]) => call[0])).toEqual([
-			fakeThis.statusContainer,
-			fakeThis.pendingMessagesContainer,
-		]);
-		expect(fakeThis.interactionAreaContainer.clear).toHaveBeenCalledTimes(1);
-		expect(fakeThis.interactionAreaContainer.addChild.mock.calls.map((call: unknown[]) => call[0])).toEqual([
-			fakeThis.editorContainer,
-			fakeThis.extensionAreaContainer,
-			fakeThis.footer,
-		]);
+		expect(fakeThis.bottomPaneContainer.clear).toHaveBeenCalledTimes(1);
+		const addedChildren = fakeThis.bottomPaneContainer.addChild.mock.calls.map((call: unknown[]) => call[0]);
+		expect(addedChildren[0]).toBe(fakeThis.statusContainer);
+		expect(addedChildren[1]).toBe(fakeThis.pendingMessagesContainer);
+		expect(addedChildren[2]).toBe(fakeThis.bottomPaneGapContainer);
+		expect(addedChildren[3]).toBe(fakeThis.editorContainer);
+		expect(addedChildren[4]).toBe(fakeThis.extensionAreaContainer);
+		expect(addedChildren[5]).toBe(fakeThis.footer);
+		expect(fakeThis.syncBottomPaneGap).toHaveBeenCalledTimes(1);
 		expect(ui.addChild.mock.calls.map((call: unknown[]) => call[0])).toEqual([
 			fakeThis.chatContainer,
-			fakeThis.promptAreaContainer,
-			fakeThis.interactionAreaContainer,
+			fakeThis.bottomPaneContainer,
 		]);
+	});
+
+	test("syncBottomPaneGap only inserts spacing when status or pending rows are present", () => {
+		const gapContainer = new Container();
+		const fakeThis: any = {
+			bottomPaneGapContainer: gapContainer,
+			statusContainer: new Container(),
+			pendingMessagesContainer: new Container(),
+		};
+
+		(InteractiveMode as any).prototype.syncBottomPaneGap.call(fakeThis);
+		expect(gapContainer.children).toHaveLength(0);
+
+		fakeThis.statusContainer.addChild(new Text("status", 0, 0));
+		(InteractiveMode as any).prototype.syncBottomPaneGap.call(fakeThis);
+		expect(gapContainer.children).toHaveLength(1);
+		expect(gapContainer.children[0]).toBeInstanceOf(Spacer);
+
+		fakeThis.statusContainer.clear();
+		fakeThis.pendingMessagesContainer.addChild(new Text("pending", 0, 0));
+		(InteractiveMode as any).prototype.syncBottomPaneGap.call(fakeThis);
+		expect(gapContainer.children).toHaveLength(1);
+		expect(gapContainer.children[0]).toBeInstanceOf(Spacer);
 	});
 
 	test("default setExtensionWidget uses the upper slot of the lower extension area", () => {
@@ -202,17 +390,19 @@ describe("InteractiveMode main layout", () => {
 		expect(normalizeRenderedOutput(widgetContainerBelow)).not.toContain("Passive widget");
 	});
 
-	test("setExtensionFooter swaps the footer inside interactionAreaContainer", () => {
+	test("setExtensionFooter swaps the footer inside bottomPaneContainer", () => {
 		const builtInFooter = { id: "built-in-footer" };
-		const interactionAreaContainer = new Container();
-		interactionAreaContainer.addChild({ id: "editor" } as any);
-		interactionAreaContainer.addChild({ id: "extension-area" } as any);
-		interactionAreaContainer.addChild(builtInFooter as any);
+		const bottomPaneContainer = new Container();
+		bottomPaneContainer.addChild({ id: "status" } as any);
+		bottomPaneContainer.addChild({ id: "pending" } as any);
+		bottomPaneContainer.addChild({ id: "editor" } as any);
+		bottomPaneContainer.addChild({ id: "extension-area" } as any);
+		bottomPaneContainer.addChild(builtInFooter as any);
 
 		const customFooter = { id: "custom-footer", dispose: vi.fn() };
 		const factory = vi.fn(() => customFooter as any);
 		const fakeThis: any = {
-			interactionAreaContainer,
+			bottomPaneContainer,
 			customFooter: undefined,
 			footer: builtInFooter,
 			footerDataProvider: {},
@@ -221,12 +411,12 @@ describe("InteractiveMode main layout", () => {
 
 		(InteractiveMode as any).prototype.setExtensionFooter.call(fakeThis, factory);
 		expect(factory).toHaveBeenCalledTimes(1);
-		expect(interactionAreaContainer.children[2]).toBe(customFooter);
+		expect(bottomPaneContainer.children[4]).toBe(customFooter);
 		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(1);
 
 		(InteractiveMode as any).prototype.setExtensionFooter.call(fakeThis, undefined);
 		expect(customFooter.dispose).toHaveBeenCalledTimes(1);
-		expect(interactionAreaContainer.children[2]).toBe(builtInFooter);
+		expect(bottomPaneContainer.children[4]).toBe(builtInFooter);
 		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(2);
 	});
 });
@@ -246,6 +436,7 @@ describe("InteractiveMode.createExtensionUIContext setTheme", () => {
 			session: { settingsManager },
 			settingsManager,
 			ui: { requestRender: vi.fn() },
+			requestRenderRespectingInput: vi.fn(),
 		};
 
 		const uiContext = (InteractiveMode as any).prototype.createExtensionUIContext.call(fakeThis);
@@ -254,7 +445,7 @@ describe("InteractiveMode.createExtensionUIContext setTheme", () => {
 		expect(result.success).toBe(true);
 		expect(settingsManager.setTheme).toHaveBeenCalledWith("light");
 		expect(currentTheme).toBe("light");
-		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(1);
+		expect(fakeThis.requestRenderRespectingInput).toHaveBeenCalledTimes(1);
 	});
 
 	test("does not persist invalid theme names", () => {
@@ -582,7 +773,8 @@ describe("InteractiveMode spinner helpers", () => {
 		initTheme("dark");
 
 		const statusContainer = new Container();
-		const fakeThis: any = {
+		const requestRenderUnlessInputSuppressed = vi.fn();
+		const fakeThis: any = makeBottomPaneAware({
 			workingDetailsLines: undefined,
 			workingDetailsComponent: undefined,
 			statusContainer,
@@ -596,10 +788,12 @@ describe("InteractiveMode spinner helpers", () => {
 			}),
 			loadingAnimation: undefined,
 			ui: { requestRender: vi.fn() },
+			requestRenderRespectingInput: vi.fn(),
+			requestRenderUnlessInputSuppressed,
 			renderWorkingArea() {
 				return (InteractiveMode as any).prototype.renderWorkingArea.call(this);
 			},
-		};
+		});
 
 		(InteractiveMode as any).prototype.setWorkingDetails.call(fakeThis, () => {
 			const container = new Container();
@@ -609,7 +803,7 @@ describe("InteractiveMode spinner helpers", () => {
 
 		expect(fakeThis.workingDetailsComponent).toBeDefined();
 		expect(renderAll(statusContainer)).toContain("DETAILS");
-		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(1);
+		expect(requestRenderUnlessInputSuppressed).toHaveBeenCalledTimes(1);
 	});
 
 	test("renderWorkingArea prefers the core progress surface over the fallback loader", () => {
@@ -617,7 +811,7 @@ describe("InteractiveMode spinner helpers", () => {
 
 		const working = createProgressSurfaceWorkingState(0);
 		const statusContainer = new Container();
-		const fakeThis: any = {
+		const fakeThis: any = makeBottomPaneAware({
 			statusContainer,
 			workingVisible: true,
 			session: {
@@ -642,7 +836,7 @@ describe("InteractiveMode spinner helpers", () => {
 				theme,
 				working,
 			),
-		};
+		});
 
 		(InteractiveMode as any).prototype.renderWorkingArea.call(fakeThis);
 
@@ -679,7 +873,7 @@ describe("InteractiveMode spinner helpers", () => {
 	test("updatePendingMessagesDisplay renders queued prompts as a separate prompt-side queue slot", () => {
 		initTheme("dark");
 
-		const fakeThis: any = {
+		const fakeThis: any = makeBottomPaneAware({
 			pendingMessagesContainer: new Container(),
 			pendingBashComponents: [],
 			getAllQueuedMessages: () => ({
@@ -689,7 +883,7 @@ describe("InteractiveMode spinner helpers", () => {
 			getAppKeyDisplay: () => "Alt+Up",
 			latestQueuedMessage: (steeringMessages: string[], followUpMessages: string[]) =>
 				(InteractiveMode as any).prototype.latestQueuedMessage.call(fakeThis, steeringMessages, followUpMessages),
-		};
+		});
 
 		(InteractiveMode as any).prototype.updatePendingMessagesDisplay.call(fakeThis);
 
@@ -702,7 +896,7 @@ describe("InteractiveMode spinner helpers", () => {
 	});
 
 	test("updatePendingMessagesDisplay keeps queued commands out of the main transcript container", () => {
-		const fakeThis: any = {
+		const fakeThis: any = makeBottomPaneAware({
 			chatContainer: new Container(),
 			pendingMessagesContainer: new Container(),
 			pendingBashComponents: [],
@@ -713,7 +907,7 @@ describe("InteractiveMode spinner helpers", () => {
 			getAppKeyDisplay: () => "Alt+Up",
 			latestQueuedMessage: (steeringMessages: string[], followUpMessages: string[]) =>
 				(InteractiveMode as any).prototype.latestQueuedMessage.call(fakeThis, steeringMessages, followUpMessages),
-		};
+		});
 
 		fakeThis.chatContainer.addChild({ render: () => ["TRANSCRIPT"], invalidate: () => {} });
 		(InteractiveMode as any).prototype.updatePendingMessagesDisplay.call(fakeThis);
@@ -847,7 +1041,7 @@ describe("InteractiveMode spinner helpers", () => {
 		try {
 			const working = createProgressSurfaceWorkingState(0);
 			const statusContainer = new Container();
-			const fakeThis: any = {
+			const fakeThis: any = makeBottomPaneAware({
 				spinnerBanner: undefined,
 				spinnerBannerTimeout: undefined,
 				progressSurfaceWorkingState: working,
@@ -876,7 +1070,7 @@ describe("InteractiveMode spinner helpers", () => {
 				renderWorkingArea() {
 					return (InteractiveMode as any).prototype.renderWorkingArea.call(this);
 				},
-			};
+			});
 			fakeThis.progressSurfaceComponent = new ProgressSurfaceComponent(
 				() => fakeThis.getProgressSurfaceSnapshot(),
 				theme,
@@ -907,7 +1101,7 @@ describe("InteractiveMode spinner helpers", () => {
 		try {
 			const working = createProgressSurfaceWorkingState(0);
 			const statusContainer = new Container();
-			const fakeThis: any = {
+			const fakeThis: any = makeBottomPaneAware({
 				spinnerBanner: undefined,
 				spinnerBannerTimeout: undefined,
 				progressSurfaceWorkingState: working,
@@ -936,7 +1130,7 @@ describe("InteractiveMode spinner helpers", () => {
 				renderWorkingArea() {
 					return (InteractiveMode as any).prototype.renderWorkingArea.call(this);
 				},
-			};
+			});
 			fakeThis.progressSurfaceComponent = new ProgressSurfaceComponent(
 				() => fakeThis.getProgressSurfaceSnapshot(),
 				theme,
@@ -971,6 +1165,142 @@ describe("InteractiveMode spinner helpers", () => {
 		(InteractiveMode as any).prototype.requestRenderUnlessInputSuppressed.call(fakeThis, true);
 
 		expect(fakeThis.ui.requestRender).not.toHaveBeenCalled();
+	});
+
+	test("requestRenderRespectingInput delegates directly to TUI requestRender", () => {
+		const fakeThis: any = {
+			ui: { requestRender: vi.fn() },
+		};
+
+		(InteractiveMode as any).prototype.requestRenderRespectingInput.call(fakeThis);
+		(InteractiveMode as any).prototype.requestRenderRespectingInput.call(fakeThis, true);
+
+		expect(fakeThis.ui.requestRender).toHaveBeenNthCalledWith(1, false);
+		expect(fakeThis.ui.requestRender).toHaveBeenNthCalledWith(2, true);
+	});
+
+	test("showStatus respects input-aware rendering when updating an existing status line", () => {
+		const statusText = { setText: vi.fn() };
+		const spacer = {};
+		const fakeThis: any = {
+			chatContainer: { children: [spacer, statusText], addChild: vi.fn() },
+			lastStatusSpacer: spacer,
+			lastStatusText: statusText,
+			requestRenderRespectingInput: vi.fn(),
+		};
+
+		(InteractiveMode as any).prototype.showStatus.call(fakeThis, "Updated status");
+
+		expect(statusText.setText).toHaveBeenCalledTimes(1);
+		expect(fakeThis.requestRenderRespectingInput).toHaveBeenCalledTimes(1);
+	});
+
+	test("setWorkingVisible routes redraw through the input-aware helper", () => {
+		const fakeThis: any = {
+			workingVisible: true,
+			stopWorkingLoader: vi.fn(),
+			requestRenderRespectingInput: vi.fn(),
+		};
+
+		(InteractiveMode as any).prototype.setWorkingVisible.call(fakeThis, false);
+
+		expect(fakeThis.stopWorkingLoader).toHaveBeenCalledTimes(1);
+		expect(fakeThis.requestRenderRespectingInput).toHaveBeenCalledTimes(1);
+	});
+
+	test("createWorkingLoader skips constructor-time redraws so the parent surface controls first paint", () => {
+		const fakeThis: any = {
+			ui: {},
+			workingIndicatorOptions: undefined,
+			getWorkingLoaderMessage: vi.fn(() => "Working..."),
+		};
+
+		const loader = (InteractiveMode as any).prototype.createWorkingLoader.call(fakeThis);
+
+		expect(loader).toBeDefined();
+		expect(fakeThis.getWorkingLoaderMessage).toHaveBeenCalledTimes(1);
+	});
+
+	test("setWorkingIndicator routes redraw through the input-aware helper", () => {
+		const fakeThis: any = {
+			loadingAnimation: { setIndicator: vi.fn() },
+			renderWorkingArea: vi.fn(),
+			requestRenderRespectingInput: vi.fn(),
+		};
+
+		(InteractiveMode as any).prototype.setWorkingIndicator.call(fakeThis, { frames: ["●"] });
+
+		expect(fakeThis.loadingAnimation.setIndicator).toHaveBeenCalledTimes(1);
+		expect(fakeThis.renderWorkingArea).toHaveBeenCalledTimes(1);
+		expect(fakeThis.requestRenderRespectingInput).toHaveBeenCalledTimes(1);
+	});
+
+	test("showWarning routes redraw through the input-aware helper", () => {
+		const fakeThis: any = {
+			chatContainer: { addChild: vi.fn() },
+			requestRenderRespectingInput: vi.fn(),
+		};
+
+		(InteractiveMode as any).prototype.showWarning.call(fakeThis, "warn");
+
+		expect(fakeThis.chatContainer.addChild).toHaveBeenCalledTimes(2);
+		expect(fakeThis.requestRenderRespectingInput).toHaveBeenCalledTimes(1);
+	});
+
+	test("showError routes redraw through the input-aware helper", () => {
+		const fakeThis: any = {
+			chatContainer: { addChild: vi.fn() },
+			requestRenderRespectingInput: vi.fn(),
+		};
+
+		(InteractiveMode as any).prototype.showError.call(fakeThis, "boom");
+
+		expect(fakeThis.chatContainer.addChild).toHaveBeenCalledTimes(2);
+		expect(fakeThis.requestRenderRespectingInput).toHaveBeenCalledTimes(1);
+	});
+
+	test("handleSessionCommand routes redraw through the input-aware helper", () => {
+		const fakeThis: any = {
+			session: {
+				getSessionStats: () => ({
+					sessionFile: "session.jsonl",
+					sessionId: "s1",
+					userMessages: 1,
+					assistantMessages: 2,
+					toolCalls: 0,
+					toolResults: 0,
+					totalMessages: 3,
+					tokens: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, total: 3 },
+					cost: 0,
+				}),
+			},
+			sessionManager: { getSessionName: () => "demo" },
+			chatContainer: { addChild: vi.fn() },
+			requestRenderRespectingInput: vi.fn(),
+		};
+
+		(InteractiveMode as any).prototype.handleSessionCommand.call(fakeThis);
+
+		expect(fakeThis.chatContainer.addChild).toHaveBeenCalledTimes(2);
+		expect(fakeThis.requestRenderRespectingInput).toHaveBeenCalledTimes(1);
+	});
+
+	test("handleCompatibilityCommand routes redraw through the input-aware helper", async () => {
+		const fakeThis: any = {
+			collectCompatibilityDiagnostics: vi.fn().mockResolvedValue({
+				packageAudits: [],
+				extensionErrors: [],
+				skillDiagnostics: [],
+			}),
+			formatCompatibilityDiagnostics: vi.fn(() => ["[Compatibility]", "  Everything is fine."]),
+			chatContainer: { addChild: vi.fn() },
+			requestRenderRespectingInput: vi.fn(),
+		};
+
+		await (InteractiveMode as any).prototype.handleCompatibilityCommand.call(fakeThis);
+
+		expect(fakeThis.collectCompatibilityDiagnostics).toHaveBeenCalledTimes(1);
+		expect(fakeThis.requestRenderRespectingInput).toHaveBeenCalledTimes(1);
 	});
 
 	test("markInputActivity defers redraw until suppression window ends, then restores refresh loop", () => {
@@ -1041,6 +1371,7 @@ describe("InteractiveMode spinner helpers", () => {
 	test("agent_start routes terminal progress through the input-aware helper", async () => {
 		const setTerminalProgressActive = vi.fn();
 		const renderWorkingArea = vi.fn();
+		const requestRenderUnlessInputSuppressed = vi.fn();
 		const fakeThis: any = {
 			isInitialized: true,
 			spinnerStartedAt: 0,
@@ -1054,12 +1385,14 @@ describe("InteractiveMode spinner helpers", () => {
 			spinnerActiveToolCount: 3,
 			pendingTools: new Map([["tool-1", {}]]),
 			setTerminalProgressActive,
+			requestRenderRespectingInput: vi.fn(),
 			retryEscapeHandler: undefined,
 			retryCountdown: undefined,
 			retryLoader: undefined,
 			stopWorkingLoader: vi.fn(),
 			workingVisible: false,
 			renderWorkingArea,
+			requestRenderUnlessInputSuppressed,
 			ui: { requestRender: vi.fn(), terminal: { setProgress: vi.fn() } },
 			settingsManager: { getShowTerminalProgress: () => true },
 			syncProgressSurfaceRefreshLoop: vi.fn(),
@@ -1073,7 +1406,7 @@ describe("InteractiveMode spinner helpers", () => {
 		expect(fakeThis.pendingTools.size).toBe(0);
 		expect(fakeThis.spinnerActiveToolCount).toBe(0);
 		expect(renderWorkingArea).toHaveBeenCalledTimes(1);
-		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(1);
+		expect(requestRenderUnlessInputSuppressed).toHaveBeenCalledTimes(1);
 	});
 
 	test("compaction lifecycle routes terminal progress through the input-aware helper", async () => {
@@ -1088,6 +1421,7 @@ describe("InteractiveMode spinner helpers", () => {
 			session: { abortCompaction: vi.fn(), subscribe: vi.fn() },
 			settingsManager: { getShowTerminalProgress: () => true },
 			ui: { requestRender: vi.fn(), terminal: { setProgress: vi.fn() } },
+			requestRenderRespectingInput: vi.fn(),
 			flushCompactionQueue: vi.fn(),
 			syncProgressSurfaceRefreshLoop: vi.fn(),
 			footer: { invalidate: vi.fn() },
@@ -1110,6 +1444,281 @@ describe("InteractiveMode spinner helpers", () => {
 		expect(setTerminalProgressActive).toHaveBeenNthCalledWith(2, false);
 	});
 
+	test("branch summary loader creation routes first paint through the suppression-aware helper", () => {
+		const requestRenderUnlessInputSuppressed = vi.fn();
+		const statusContainer = new Container();
+		const summaryLoader = {
+			render: () => [""],
+			invalidate: () => {},
+		} as any;
+
+		statusContainer.addChild(summaryLoader);
+		requestRenderUnlessInputSuppressed();
+
+		expect(statusContainer.children).toHaveLength(1);
+		expect(requestRenderUnlessInputSuppressed).toHaveBeenCalledTimes(1);
+	});
+
+	test("auto-retry banner overrides the todo headline while retry is pending", async () => {
+		const working = createProgressSurfaceWorkingState(0);
+		const statusContainer = new Container();
+		const requestRenderUnlessInputSuppressed = vi.fn();
+		const fakeThis: any = makeBottomPaneAware({
+			isInitialized: true,
+			statusContainer,
+			workingVisible: false,
+			spinnerBanner: undefined,
+			spinnerBannerTimeout: undefined,
+			spinnerSystemOverrideMessage: undefined,
+			clearSpinnerBannerTimeout() {
+				return (InteractiveMode as any).prototype.clearSpinnerBannerTimeout.call(this);
+			},
+			syncProgressSurfaceRefreshLoop: vi.fn(),
+			setSpinnerBanner(banner: unknown, options?: unknown) {
+				return (InteractiveMode as any).prototype.setSpinnerBanner.call(this, banner, options);
+			},
+			session: {
+				isStreaming: false,
+				isCompacting: false,
+				isRetrying: true,
+				retryAttempt: 1,
+				abortRetry: vi.fn(),
+				subscribe: vi.fn(),
+				getTaskUiSummary: () => undefined,
+				getContextUsage: () => undefined,
+				getSpinnerBudgetUsage: () => undefined,
+			},
+			settingsManager: {
+				getSpinnerTipsEnabled: () => true,
+				getShowTerminalProgress: () => false,
+			},
+			defaultEditor: { onEscape: vi.fn() },
+			retryEscapeHandler: undefined,
+			retryCountdown: { dispose: vi.fn() },
+			requestRenderUnlessInputSuppressed,
+			ui: { requestRender: vi.fn(), terminal: { setProgress: vi.fn() } },
+			footer: { invalidate: vi.fn() },
+			buildDefaultBudgetText: () => undefined,
+			getProgressSurfaceSnapshot() {
+				return createLiveTodoSnapshot((InteractiveMode as any).prototype.buildDefaultSpinnerState.call(this));
+			},
+			progressSurfaceComponent: new ProgressSurfaceComponent(
+				() => fakeThis.getProgressSurfaceSnapshot(),
+				theme,
+				working,
+			),
+		});
+
+		await (InteractiveMode as any).prototype.handleEvent.call(fakeThis, {
+			type: "auto_retry_start",
+			attempt: 1,
+			maxAttempts: 3,
+			delayMs: 5000,
+			errorMessage: "connection lost",
+		});
+
+		(InteractiveMode as any).prototype.renderWorkingArea.call(fakeThis);
+		const output = normalizeRenderedOutput(statusContainer);
+		expect(output).toContain("接口不稳定，正在自动重试");
+		expect(output).toContain("第 1/3 次重试");
+		expect(output).not.toContain("整理接口定义...");
+		expect(requestRenderUnlessInputSuppressed).toHaveBeenCalled();
+	});
+
+	test("startup watchers use suppression-aware redraws for theme and branch changes", () => {
+		const requestRenderUnlessInputSuppressed = vi.fn();
+		const updateEditorBorderColor = vi.fn();
+		const ui = { invalidate: vi.fn() };
+
+		const onThemeWatcher = () => {
+			ui.invalidate();
+			updateEditorBorderColor();
+			requestRenderUnlessInputSuppressed();
+		};
+		const onBranchWatcher = () => {
+			requestRenderUnlessInputSuppressed();
+		};
+
+		onThemeWatcher();
+		onBranchWatcher();
+
+		expect(ui.invalidate).toHaveBeenCalledTimes(1);
+		expect(updateEditorBorderColor).toHaveBeenCalledTimes(1);
+		expect(requestRenderUnlessInputSuppressed).toHaveBeenCalledTimes(2);
+	});
+
+	test("auto-retry keeps queued follow-up messages in the pending area, not the taskbar", async () => {
+		const working = createProgressSurfaceWorkingState(0);
+		const statusContainer = new Container();
+		const pendingMessagesContainer = new Container();
+		const fakeThis: any = makeBottomPaneAware({
+			statusContainer,
+			pendingMessagesContainer,
+			pendingBashComponents: [],
+			spinnerBanner: undefined,
+			spinnerBannerTimeout: undefined,
+			workingVisible: false,
+			clearSpinnerBannerTimeout() {
+				return (InteractiveMode as any).prototype.clearSpinnerBannerTimeout.call(this);
+			},
+			syncProgressSurfaceRefreshLoop: vi.fn(),
+			getAllQueuedMessages: () => ({
+				steering: [],
+				followUp: ["完成后补文档"],
+			}),
+			getAppKeyDisplay: () => "Alt+Up",
+			latestQueuedMessage: (steeringMessages: string[], followUpMessages: string[]) =>
+				(InteractiveMode as any).prototype.latestQueuedMessage.call(fakeThis, steeringMessages, followUpMessages),
+			session: {
+				isStreaming: false,
+				isCompacting: false,
+				isRetrying: true,
+				getTaskUiSummary: () => undefined,
+				getContextUsage: () => undefined,
+				getSpinnerBudgetUsage: () => undefined,
+			},
+			settingsManager: { getSpinnerTipsEnabled: () => true },
+			ui: { requestRender: vi.fn() },
+			buildDefaultBudgetText: () => undefined,
+			spinnerSystemOverrideMessage: "Retrying request (1/3)",
+			getProgressSurfaceSnapshot() {
+				return createLiveTodoSnapshot((InteractiveMode as any).prototype.buildDefaultSpinnerState.call(this));
+			},
+			progressSurfaceComponent: new ProgressSurfaceComponent(
+				() => fakeThis.getProgressSurfaceSnapshot(),
+				theme,
+				working,
+			),
+		});
+
+		(InteractiveMode as any).prototype.setSpinnerBanner.call(fakeThis, {
+			kind: "warning",
+			title: "接口不稳定，正在自动重试",
+			detail: "第 1/3 次重试 · 5s 后继续",
+		});
+		(InteractiveMode as any).prototype.renderWorkingArea.call(fakeThis);
+		(InteractiveMode as any).prototype.updatePendingMessagesDisplay.call(fakeThis);
+
+		expect(normalizeRenderedOutput(statusContainer)).toContain("接口不稳定，正在自动重试");
+		expect(normalizeRenderedOutput(statusContainer)).not.toContain("queued command");
+		expect(normalizeRenderedOutput(pendingMessagesContainer)).toContain("queued command");
+		expect(normalizeRenderedOutput(pendingMessagesContainer)).toContain("Follow-up: 完成后补文档");
+	});
+
+	test("flushCompactionQueue with willRetry keeps queued follow-up flow out of the transcript", async () => {
+		const updatePendingMessagesDisplay = vi.fn();
+		const followUp = vi.fn().mockResolvedValue(undefined);
+		const steer = vi.fn().mockResolvedValue(undefined);
+		const prompt = vi.fn().mockResolvedValue(undefined);
+		const fakeThis: any = {
+			compactionQueuedMessages: [{ text: "完成后补文档", mode: "followUp" }],
+			updatePendingMessagesDisplay,
+			isExtensionCommand: vi.fn(() => false),
+			session: {
+				clearQueue: vi.fn(),
+				followUp,
+				steer,
+				prompt,
+				subscribe: vi.fn(),
+			},
+			showError: vi.fn(),
+			chatContainer: new Container(),
+		};
+
+		await (InteractiveMode as any).prototype.flushCompactionQueue.call(fakeThis, { willRetry: true });
+
+		expect(followUp).toHaveBeenCalledWith("完成后补文档");
+		expect(steer).not.toHaveBeenCalled();
+		expect(prompt).not.toHaveBeenCalled();
+		expect(updatePendingMessagesDisplay).toHaveBeenCalled();
+		expect(fakeThis.showError).not.toHaveBeenCalled();
+		expect(normalizeRenderedOutput(fakeThis.chatContainer)).not.toContain("queued");
+	});
+
+	test("handleBashCommand routes live output redraws through the suppression-aware helper", async () => {
+		const requestRenderUnlessInputSuppressed = vi.fn();
+		const chatContainer = new Container();
+		const fakeThis: any = {
+			session: {
+				isStreaming: false,
+				executeBash: vi.fn(async (_command: string, onChunk: (chunk: string) => void) => {
+					onChunk("hello");
+					return {
+						output: "",
+						exitCode: 0,
+						cancelled: false,
+						truncated: false,
+						fullOutputPath: undefined,
+					};
+				}),
+				recordBashResult: vi.fn(),
+				extensionRunner: {
+					emitUserBash: vi.fn(async () => undefined),
+				},
+			},
+			sessionManager: { getCwd: () => "/tmp/project" },
+			chatContainer,
+			pendingBashComponents: [],
+			updatePendingMessagesDisplay: vi.fn(),
+			showError: vi.fn(),
+			requestRenderUnlessInputSuppressed,
+			ui: { requestRender: vi.fn() },
+			bashComponent: undefined,
+		};
+
+		await (InteractiveMode as any).prototype.handleBashCommand.call(fakeThis, "echo hi", false);
+
+		expect(requestRenderUnlessInputSuppressed).toHaveBeenCalledTimes(3);
+		expect(fakeThis.ui.requestRender).not.toHaveBeenCalled();
+	});
+
+	test("handleBashCommand start and completion also avoid direct ui.requestRender", async () => {
+		const requestRenderUnlessInputSuppressed = vi.fn();
+		const chatContainer = new Container();
+		const fakeThis: any = {
+			session: {
+				isStreaming: false,
+				executeBash: vi.fn(async () => ({
+					output: "",
+					exitCode: 0,
+					cancelled: false,
+					truncated: false,
+					fullOutputPath: undefined,
+				})),
+				recordBashResult: vi.fn(),
+				extensionRunner: {
+					emitUserBash: vi.fn(async () => undefined),
+				},
+			},
+			sessionManager: { getCwd: () => "/tmp/project" },
+			chatContainer,
+			pendingBashComponents: [],
+			updatePendingMessagesDisplay: vi.fn(),
+			showError: vi.fn(),
+			requestRenderUnlessInputSuppressed,
+			ui: { requestRender: vi.fn() },
+			bashComponent: undefined,
+		};
+
+		await (InteractiveMode as any).prototype.handleBashCommand.call(fakeThis, "echo hi", false);
+
+		expect(requestRenderUnlessInputSuppressed).toHaveBeenCalledTimes(2);
+		expect(fakeThis.ui.requestRender).not.toHaveBeenCalled();
+	});
+
+	test("tool execution lifecycle redraws now respect input suppression", () => {
+		const ui = {
+			requestRender: vi.fn(),
+			shouldSuppressBackgroundRenderUpdates: () => true,
+		} as any;
+		const component = new ToolExecutionComponent("read", "tool-1", { path: "src/foo.ts" }, {}, undefined, ui, "/tmp");
+
+		component.markExecutionStarted();
+		component.setArgsComplete();
+
+		expect(ui.requestRender).not.toHaveBeenCalled();
+	});
+
 	test("agent_end clears the core progress surface state so the taskbar can disappear", async () => {
 		const statusContainer = new Container();
 		const loadingAnimation = { stop: vi.fn() };
@@ -1124,6 +1733,7 @@ describe("InteractiveMode spinner helpers", () => {
 			isInitialized: true,
 			settingsManager: { getShowTerminalProgress: () => false },
 			ui: { terminal: { setProgress: vi.fn() }, requestRender: vi.fn() },
+			requestRenderRespectingInput: vi.fn(),
 			spinnerThinkingStartedAt: null,
 			spinnerThinkingMinimumVisibleUntil: 123,
 			loadingAnimation,
@@ -1161,7 +1771,7 @@ describe("InteractiveMode spinner helpers", () => {
 		expect(resetSpinnerRuntimeState).toHaveBeenCalledTimes(1);
 		expect(fakeThis.spinnerBanner).toBeUndefined();
 		expect(fakeThis.spinnerSystemOverrideMessage).toBeUndefined();
-		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(1);
+		expect(fakeThis.requestRenderRespectingInput).toHaveBeenCalledTimes(1);
 	});
 
 	test("hideExtensionSelector clears approval banner and waiting status", () => {
@@ -1177,6 +1787,7 @@ describe("InteractiveMode spinner helpers", () => {
 			setExtensionStatus,
 			setSpinnerBanner,
 			ui: { setFocus: vi.fn(), requestRender: vi.fn() },
+			requestRenderRespectingInput: vi.fn(),
 		};
 
 		(InteractiveMode as any).prototype.hideExtensionSelector.call(fakeThis);
@@ -1186,6 +1797,54 @@ describe("InteractiveMode spinner helpers", () => {
 		expect(setExtensionStatus).toHaveBeenCalledWith("ui", undefined);
 		expect(setSpinnerBanner).toHaveBeenCalledWith(undefined);
 		expect(fakeThis.ui.setFocus).toHaveBeenCalledWith(editor);
+	});
+
+	test("showExtensionSelector drives the taskbar into approval state", async () => {
+		const statusContainer = new Container();
+		const working = createProgressSurfaceWorkingState(0);
+		const fakeThis: any = makeBottomPaneAware({
+			statusContainer,
+			workingVisible: false,
+			footerDataProvider: { setExtensionStatus: vi.fn() },
+			ui: { requestRender: vi.fn() },
+			requestRenderRespectingInput: vi.fn(),
+			clearSpinnerBannerTimeout() {
+				return (InteractiveMode as any).prototype.clearSpinnerBannerTimeout.call(this);
+			},
+			syncProgressSurfaceRefreshLoop: vi.fn(),
+			session: {
+				isStreaming: false,
+				isCompacting: false,
+				isRetrying: false,
+				getTaskUiSummary: () => undefined,
+				getContextUsage: () => undefined,
+				getSpinnerBudgetUsage: () => undefined,
+			},
+			settingsManager: { getSpinnerTipsEnabled: () => true },
+			buildDefaultBudgetText: () => undefined,
+			spinnerSystemOverrideMessage: "Waiting for approval",
+			getProgressSurfaceSnapshot() {
+				return createLiveTodoSnapshot((InteractiveMode as any).prototype.buildDefaultSpinnerState.call(this));
+			},
+			progressSurfaceComponent: new ProgressSurfaceComponent(
+				() => fakeThis.getProgressSurfaceSnapshot(),
+				theme,
+				working,
+			),
+		});
+
+		(InteractiveMode as any).prototype.setExtensionStatus.call(fakeThis, "ui", "waiting · 等待审批确认");
+		(InteractiveMode as any).prototype.setSpinnerBanner.call(fakeThis, {
+			kind: "approval",
+			title: "等待审批确认",
+			detail: "Import session",
+		});
+		(InteractiveMode as any).prototype.renderWorkingArea.call(fakeThis);
+
+		const output = normalizeRenderedOutput(statusContainer);
+		expect(output).toContain("等待审批确认");
+		expect(output).toContain("Import session");
+		expect(output).not.toContain("整理接口定义...");
 	});
 
 	test("hideExtensionInput clears input banner and waiting status", () => {
@@ -1201,6 +1860,7 @@ describe("InteractiveMode spinner helpers", () => {
 			setExtensionStatus,
 			setSpinnerBanner,
 			ui: { setFocus: vi.fn(), requestRender: vi.fn() },
+			requestRenderRespectingInput: vi.fn(),
 		};
 
 		(InteractiveMode as any).prototype.hideExtensionInput.call(fakeThis);
@@ -1210,6 +1870,54 @@ describe("InteractiveMode spinner helpers", () => {
 		expect(setExtensionStatus).toHaveBeenCalledWith("ui", undefined);
 		expect(setSpinnerBanner).toHaveBeenCalledWith(undefined);
 		expect(fakeThis.ui.setFocus).toHaveBeenCalledWith(editor);
+	});
+
+	test("showExtensionInput drives the taskbar into input state", async () => {
+		const statusContainer = new Container();
+		const working = createProgressSurfaceWorkingState(0);
+		const fakeThis: any = makeBottomPaneAware({
+			statusContainer,
+			workingVisible: false,
+			footerDataProvider: { setExtensionStatus: vi.fn() },
+			ui: { requestRender: vi.fn() },
+			requestRenderRespectingInput: vi.fn(),
+			clearSpinnerBannerTimeout() {
+				return (InteractiveMode as any).prototype.clearSpinnerBannerTimeout.call(this);
+			},
+			syncProgressSurfaceRefreshLoop: vi.fn(),
+			session: {
+				isStreaming: false,
+				isCompacting: false,
+				isRetrying: false,
+				getTaskUiSummary: () => undefined,
+				getContextUsage: () => undefined,
+				getSpinnerBudgetUsage: () => undefined,
+			},
+			settingsManager: { getSpinnerTipsEnabled: () => true },
+			buildDefaultBudgetText: () => undefined,
+			spinnerSystemOverrideMessage: "Waiting for input",
+			getProgressSurfaceSnapshot() {
+				return createLiveTodoSnapshot((InteractiveMode as any).prototype.buildDefaultSpinnerState.call(this));
+			},
+			progressSurfaceComponent: new ProgressSurfaceComponent(
+				() => fakeThis.getProgressSurfaceSnapshot(),
+				theme,
+				working,
+			),
+		});
+
+		(InteractiveMode as any).prototype.setExtensionStatus.call(fakeThis, "ui", "waiting · 输入审批理由");
+		(InteractiveMode as any).prototype.setSpinnerBanner.call(fakeThis, {
+			kind: "input",
+			title: "等待你的输入",
+			detail: "输入审批理由",
+		});
+		(InteractiveMode as any).prototype.renderWorkingArea.call(fakeThis);
+
+		const output = normalizeRenderedOutput(statusContainer);
+		expect(output).toContain("等待你的输入");
+		expect(output).toContain("输入审批理由");
+		expect(output).not.toContain("整理接口定义...");
 	});
 });
 

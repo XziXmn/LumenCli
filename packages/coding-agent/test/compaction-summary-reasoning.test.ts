@@ -121,6 +121,7 @@ describe("generateSummary reasoning options", () => {
 			firstKeptEntryId: "entry-keep",
 			messagesToSummarize: messages,
 			turnPrefixMessages: messages,
+			keptMessages: messages,
 			isSplitTurn: true,
 			tokensBefore: 600000,
 			fileOps: { read: new Set(), written: new Set(), edited: new Set() },

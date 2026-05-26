@@ -1,5 +1,6 @@
 import { type AssistantMessage, fauxAssistantMessage, type Model } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createCompactionSummaryMessage } from "../../src/core/messages.js";
 import { createHarness, type Harness } from "./harness.js";
 
 type SessionWithCompactionInternals = {
@@ -61,6 +62,7 @@ describe("AgentSession compaction characterization", () => {
 							summary: "summary from extension",
 							firstKeptEntryId: event.preparation.firstKeptEntryId,
 							tokensBefore: event.preparation.tokensBefore,
+							summaryPlacement: "after-kept",
 							details: { source: "extension" },
 						},
 					}));
@@ -77,7 +79,147 @@ describe("AgentSession compaction characterization", () => {
 
 		expect(result.summary).toBe("summary from extension");
 		expect(compactionEntries).toHaveLength(1);
-		expect(harness.session.messages[0]?.role).toBe("compactionSummary");
+		expect((compactionEntries[0] as any).summaryPlacement).toBe("after-kept");
+		expect(harness.session.messages.some((message) => message.role === "compactionSummary")).toBe(true);
+		expect(harness.session.messages.at(-1)?.role).toBe("compactionSummary");
+	});
+
+	it("manually compacts using an extension-provided replacement history", async () => {
+		const harness = await createHarness({
+			extensionFactories: [
+				(pi) => {
+					pi.on("session_before_compact", async (event) => ({
+						compaction: {
+							summary: "summary from extension",
+							firstKeptEntryId: event.preparation.firstKeptEntryId,
+							tokensBefore: event.preparation.tokensBefore,
+							replacementMessages: [
+								{
+									role: "user",
+									content: "preserved latest request",
+									timestamp: Date.now(),
+								},
+								createCompactionSummaryMessage(
+									"replacement summary",
+									event.preparation.tokensBefore,
+									new Date().toISOString(),
+								),
+							],
+						},
+					}));
+				},
+			],
+		});
+		harnesses.push(harness);
+
+		await harness.session.prompt("one");
+		await harness.session.prompt("two");
+
+		await harness.session.compact();
+
+		const compactionEntries = harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction");
+		expect(compactionEntries).toHaveLength(1);
+		expect((compactionEntries[0] as any).replacementMessages).toHaveLength(2);
+		expect((harness.session.messages[0] as any).content).toBe("preserved latest request");
+		expect(harness.session.messages[1]?.role).toBe("compactionSummary");
+	});
+
+	it("compaction replacement history can keep recent user messages ahead of the summary bridge", async () => {
+		const harness = await createHarness({
+			extensionFactories: [
+				(pi) => {
+					pi.on("session_before_compact", async (event) => ({
+						compaction: {
+							summary: "summary bridge",
+							firstKeptEntryId: event.preparation.firstKeptEntryId,
+							tokensBefore: event.preparation.tokensBefore,
+							replacementMessages: [
+								{
+									role: "user",
+									content: "latest user intent",
+									timestamp: Date.now(),
+								},
+								createCompactionSummaryMessage(
+									"summary bridge",
+									event.preparation.tokensBefore,
+									new Date().toISOString(),
+								),
+							],
+						},
+					}));
+				},
+			],
+		});
+		harnesses.push(harness);
+
+		await harness.session.prompt("one");
+		await harness.session.prompt("two");
+		await harness.session.compact();
+
+		expect((harness.session.messages[0] as any).content).toBe("latest user intent");
+		expect(harness.session.messages[1]?.role).toBe("compactionSummary");
+		expect((harness.session.messages[1] as any).summary).toContain("summary bridge");
+	});
+
+	it("passes manual compaction reason to session_before_compact handlers", async () => {
+		const seenReasons: string[] = [];
+		const seenKeptCounts: number[] = [];
+		const harness = await createHarness({
+			extensionFactories: [
+				(pi) => {
+					pi.on("session_before_compact", async (event) => {
+						seenReasons.push(event.reason);
+						seenKeptCounts.push(event.preparation.keptMessages.length);
+						return {
+							compaction: {
+								summary: "manual summary",
+								firstKeptEntryId: event.preparation.firstKeptEntryId,
+								tokensBefore: event.preparation.tokensBefore,
+							},
+						};
+					});
+				},
+			],
+		});
+		harnesses.push(harness);
+
+		await harness.session.prompt("one");
+		await harness.session.prompt("two");
+		await harness.session.compact();
+
+		expect(seenReasons).toEqual(["manual"]);
+		expect(seenKeptCounts[0]).toBeGreaterThan(0);
+	});
+
+	it("passes threshold compaction reason to session_before_compact handlers", async () => {
+		const seenReasons: string[] = [];
+		const harness = await createHarness({
+			settings: { compaction: { keepRecentTokens: 1 } },
+			extensionFactories: [
+				(pi) => {
+					pi.on("session_before_compact", async (event) => {
+						seenReasons.push(event.reason);
+						return {
+							compaction: {
+								summary: "threshold summary",
+								firstKeptEntryId: event.preparation.firstKeptEntryId,
+								tokensBefore: event.preparation.tokensBefore,
+							},
+						};
+					});
+				},
+			],
+		});
+		harnesses.push(harness);
+
+		harness.setResponses([fauxAssistantMessage("one"), fauxAssistantMessage("two")]);
+		await harness.session.prompt("first");
+		await harness.session.prompt("second");
+
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		await sessionInternals._runAutoCompaction("threshold", false);
+
+		expect(seenReasons).toEqual(["threshold"]);
 	});
 
 	it("throws when compacting without a model", async () => {
@@ -85,14 +227,14 @@ describe("AgentSession compaction characterization", () => {
 		harnesses.push(harness);
 		harness.session.agent.state.model = undefined as unknown as Model<any>;
 
-		await expect(harness.session.compact()).rejects.toThrow("No model selected");
+		await expect(harness.session.compact()).rejects.toThrow("未选择模型");
 	});
 
 	it("throws when compacting without configured auth", async () => {
 		const harness = await createHarness({ withConfiguredAuth: false });
 		harnesses.push(harness);
 
-		await expect(harness.session.compact()).rejects.toThrow(`No API key found for ${harness.getModel().provider}.`);
+		await expect(harness.session.compact()).rejects.toThrow(`未找到 ${harness.getModel().provider} 的 API key`);
 	});
 
 	it("cancels in-progress manual compaction when abortCompaction is called", async () => {
@@ -202,13 +344,9 @@ describe("AgentSession compaction characterization", () => {
 		});
 		harness.sessionManager.appendMessage(staleAssistant);
 		const firstKeptEntryId = harness.sessionManager.getEntries()[0]!.id;
-		harness.sessionManager.appendCompaction(
-			"summary",
-			firstKeptEntryId,
-			staleAssistant.usage.totalTokens,
-			undefined,
-			false,
-		);
+		harness.sessionManager.appendCompaction("summary", firstKeptEntryId, staleAssistant.usage.totalTokens, {
+			fromHook: false,
+		});
 		harness.sessionManager.appendMessage({
 			role: "user",
 			content: [{ type: "text", text: "after compaction" }],
@@ -289,13 +427,9 @@ describe("AgentSession compaction characterization", () => {
 		});
 		harness.sessionManager.appendMessage(keptAssistant);
 		const firstKeptEntryId = harness.sessionManager.getEntries()[0]!.id;
-		harness.sessionManager.appendCompaction(
-			"summary",
-			firstKeptEntryId,
-			keptAssistant.usage.totalTokens,
-			undefined,
-			false,
-		);
+		harness.sessionManager.appendCompaction("summary", firstKeptEntryId, keptAssistant.usage.totalTokens, {
+			fromHook: false,
+		});
 
 		const errorAssistant = createAssistant(harness, {
 			stopReason: "error",

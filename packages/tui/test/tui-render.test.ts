@@ -595,6 +595,34 @@ describe("TUI differential rendering", () => {
 });
 
 describe("TUI background render suppression", () => {
+	it("can skip loader constructor redraw until the parent surface decides to render", async () => {
+		const terminal = new LoggingVirtualTerminal(40, 10);
+		const tui = new TUI(terminal);
+
+		const loader = new Loader(
+			tui,
+			(text) => text,
+			(text) => text,
+			"Working...",
+			undefined,
+			{ skipInitialRender: true },
+		);
+		tui.addChild(loader);
+
+		assert.strictEqual(
+			terminal.getWrites(),
+			"",
+			"loader constructor should not immediately write when skipInitialRender is set",
+		);
+
+		tui.start();
+		await terminal.waitForRender();
+		assert.notStrictEqual(terminal.getWrites(), "", "parent-controlled render should still draw the loader");
+
+		loader.stop();
+		tui.stop();
+	});
+
 	it("skips loader-driven redraws while background updates are suppressed", async () => {
 		const terminal = new LoggingVirtualTerminal(40, 10);
 		const tui = new TUI(terminal);

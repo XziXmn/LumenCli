@@ -1,6 +1,6 @@
 # LumenCli
 
-基于 [Pi](https://github.com/earendil-works/pi-mono) 的个人增强版 LLM coding agent，并选择性融合 [oh-my-pi](https://github.com/can1357/oh-my-pi) 的补充功能。
+基于 [Pi](https://github.com/earendil-works/pi-mono) 的个人增强版 agent runtime / terminal harness，并选择性融合 [oh-my-pi](https://github.com/can1357/oh-my-pi) 的补充功能。
 
 ## 当前状态
 
@@ -8,6 +8,22 @@
 - 输入框上方任务栏是唯一主动进度面，`todo` / `task` 在 transcript 中只保留语义痕迹
 - `.lumen/` 是首选配置目录，`.pi/` 仅作为旧配置迁移来源
 - 功能策略上以 `pi` 兼容为基础，按需吸收 `oh-my-pi` 的增强能力，但避免偏离 `pi` 主线过远，确保后续仍能相对顺畅地同步上游更新
+
+## 新定位
+
+Lumen 当前不再把自己定义为“未来最终产品界面”，而是更明确地收口为：
+
+- **runtime / adapter**：承载模型接入、tools、skills、memory、session、宿主适配与本地工作流能力
+- **临时启动界面**：当前保留的 `TUI` 用于启动、调试、验证能力和日常终端使用，不承担最终产品形态
+- **前台能力来源**：后续写作辅助、陪伴型助手和其他产品前台应复用 Lumen runtime，而不是继续把终端界面当最终主战场
+
+按这个定位，Lumen 的终端界面后续重点会收口到：
+
+- 当前 `interactive-mode` 主线继续稳定化
+- 更彻底的中文化
+- 输入框底部状态栏与被动状态信息优化
+
+而更具体的产品能力，尤其是 `Obsidian` 写作辅助，应当在独立宿主 / 前台中生长。
 
 ## 特性
 
@@ -20,6 +36,7 @@
 ## 文档导航
 
 - [docs/README.md](docs/README.md)：Lumen 根文档索引，包含当前计划、分析报告、历史归档的入口
+- [docs/FEATURE_OVERVIEW.md](docs/FEATURE_OVERVIEW.md)：白话版功能总览，适合快速看“已经做了什么、还缺什么”
 - [packages/coding-agent/docs/index.md](packages/coding-agent/docs/index.md)：Pi/package 级正式手册，侧重 CLI、providers、settings、extensions
 - [CUSTOMIZATION_MANIFEST.md](CUSTOMIZATION_MANIFEST.md)：fork 定制面的高层 merge-intent 清单
 
@@ -61,6 +78,8 @@ npx tsx packages/coding-agent/src/cli.ts
 
 手工验证说明见 [docs/ime-manual-check.md](docs/ime-manual-check.md)。
 
+如果启动时提示插件、扩展或 skill 兼容性问题，可以在交互模式里运行 `/compat` 查看当前诊断；修完后运行 `/reload` 重新检查。如果仍不兼容，再移除对应插件或 skill。
+
 `--tui` 已移除。现在直接启动就是唯一保留的 `pi-tui` 交互界面。
 
 ## 配置
@@ -96,7 +115,7 @@ cp .lumen/default-models.json ~/.lumen/agent/models.json
 
 | 包 | 说明 |
 |---|---|
-| [packages/coding-agent](packages/coding-agent) | 交互式编程 agent CLI |
+| [packages/coding-agent](packages/coding-agent) | 当前运行时主入口与临时终端启动界面 |
 | [packages/agent](packages/agent) | Agent 运行时（tool calling、状态管理） |
 | [packages/ai](packages/ai) | 统一多 provider LLM API |
 | [packages/tui](packages/tui) | 终端 UI 库（差分渲染） |
@@ -128,6 +147,7 @@ git push origin main
 - `interactive-mode` 核心进度面与 transcript 分层继续收口
 - `todo` / `task` / `queue` / `banner` 语义继续统一
 - `.lumen/` 配置面与本地模型工作流继续稳定化
+- 将 `LumenAgent = runtime + adapter`、`TUI = 临时启动界面` 这条定位持续收口到文档和代码边界
 
 ## 上游
 

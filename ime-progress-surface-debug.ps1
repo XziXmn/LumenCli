@@ -7,9 +7,36 @@ if (-not (Test-Path -LiteralPath $tsxBin)) {
 }
 
 $noLog = $false
+$scenario = $null
+$scenarioList = $null
+$exitAfterMs = $null
+$autoCycleMs = $null
 foreach ($arg in $args) {
 	if ($arg -eq "--no-log") {
 		$noLog = $true
+	}
+}
+
+for ($index = 0; $index -lt $args.Count; $index++) {
+	$arg = $args[$index]
+	if ($arg -eq "--scenario" -and $index + 1 -lt $args.Count) {
+		$scenario = $args[$index + 1]
+		$index++
+		continue
+	}
+	if ($arg -eq "--scenario-list" -and $index + 1 -lt $args.Count) {
+		$scenarioList = $args[$index + 1]
+		$index++
+		continue
+	}
+	if ($arg -eq "--exit-after-ms" -and $index + 1 -lt $args.Count) {
+		$exitAfterMs = $args[$index + 1]
+		$index++
+		continue
+	}
+	if ($arg -eq "--auto-cycle-ms" -and $index + 1 -lt $args.Count) {
+		$autoCycleMs = $args[$index + 1]
+		$index++
 	}
 }
 
@@ -30,11 +57,40 @@ if ($noLog) {
 } else {
 	Write-Host "ANSI write log: $logPath"
 }
+if ($scenario) {
+	Write-Host "Initial scenario: $scenario"
+}
+if ($scenarioList) {
+	Write-Host "Scenario list: $scenarioList"
+	if ($scenarioList -eq "critical") {
+		Write-Host "Scenario alias 'critical' => approval,ask-user,retry,reconnect,parallel,bash,branch-summary,complete"
+	}
+}
+if ($exitAfterMs) {
+	Write-Host "Auto exit after: $exitAfterMs ms"
+}
+if ($autoCycleMs) {
+	Write-Host "Auto cycle every: $autoCycleMs ms"
+}
 Write-Host "Tips:"
 Write-Host "  - 切到中文输入法后，在不同场景里输入拼音观察候选窗是否闪到正文/任务栏/footer"
 Write-Host "  - Ctrl+N 切换场景，Ctrl+P 暂停/恢复动画，Ctrl+R 清零终端写入计数，Ctrl+C 退出"
 
-& $tsxBin (Join-Path $scriptDir "packages/coding-agent/test/ime-progress-surface-debug.ts")
+$tsxArgs = @((Join-Path $scriptDir "packages/coding-agent/test/ime-progress-surface-debug.ts"))
+if ($scenario) {
+	$tsxArgs += @("--scenario", $scenario)
+}
+if ($scenarioList) {
+	$tsxArgs += @("--scenario-list", $scenarioList)
+}
+if ($exitAfterMs) {
+	$tsxArgs += @("--exit-after-ms", $exitAfterMs)
+}
+if ($autoCycleMs) {
+	$tsxArgs += @("--auto-cycle-ms", $autoCycleMs)
+}
+
+& $tsxBin @tsxArgs
 $exitCode = $LASTEXITCODE
 if (-not $noLog) {
 	Write-Host "ANSI write log saved at: $logPath"

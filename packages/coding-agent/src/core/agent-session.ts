@@ -1888,6 +1888,7 @@ export class AgentSession {
 				this._emit({ type: "compaction_hooks_start", phase: "pre", reason: "manual" });
 				const result = (await this._extensionRunner.emit({
 					type: "session_before_compact",
+					reason: "manual",
 					preparation,
 					branchEntries: pathEntries,
 					customInstructions,
@@ -1908,6 +1909,7 @@ export class AgentSession {
 			let summary: string;
 			let firstKeptEntryId: string;
 			let tokensBefore: number;
+			let summaryPlacement: "before-kept" | "after-kept" | undefined;
 			let details: unknown;
 
 			if (extensionCompaction) {
@@ -1915,6 +1917,7 @@ export class AgentSession {
 				summary = extensionCompaction.summary;
 				firstKeptEntryId = extensionCompaction.firstKeptEntryId;
 				tokensBefore = extensionCompaction.tokensBefore;
+				summaryPlacement = extensionCompaction.summaryPlacement;
 				details = extensionCompaction.details;
 			} else {
 				// Generate compaction result
@@ -1930,6 +1933,7 @@ export class AgentSession {
 				summary = result.summary;
 				firstKeptEntryId = result.firstKeptEntryId;
 				tokensBefore = result.tokensBefore;
+				summaryPlacement = result.summaryPlacement;
 				details = result.details;
 			}
 
@@ -1941,7 +1945,12 @@ export class AgentSession {
 				this._emit({ type: "compaction_hooks_start", phase: "post", reason: "manual" });
 			}
 
-			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
+			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, {
+				summaryPlacement,
+				details,
+				fromHook: fromExtension,
+				replacementMessages: extensionCompaction?.replacementMessages,
+			});
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.state.messages = sessionContext.messages;
@@ -2156,6 +2165,7 @@ export class AgentSession {
 				this._emit({ type: "compaction_hooks_start", phase: "pre", reason });
 				const extensionResult = (await this._extensionRunner.emit({
 					type: "session_before_compact",
+					reason,
 					preparation,
 					branchEntries: pathEntries,
 					customInstructions: undefined,
@@ -2183,6 +2193,7 @@ export class AgentSession {
 			let summary: string;
 			let firstKeptEntryId: string;
 			let tokensBefore: number;
+			let summaryPlacement: "before-kept" | "after-kept" | undefined;
 			let details: unknown;
 
 			if (extensionCompaction) {
@@ -2190,6 +2201,7 @@ export class AgentSession {
 				summary = extensionCompaction.summary;
 				firstKeptEntryId = extensionCompaction.firstKeptEntryId;
 				tokensBefore = extensionCompaction.tokensBefore;
+				summaryPlacement = extensionCompaction.summaryPlacement;
 				details = extensionCompaction.details;
 			} else {
 				// Generate compaction result
@@ -2205,6 +2217,7 @@ export class AgentSession {
 				summary = compactResult.summary;
 				firstKeptEntryId = compactResult.firstKeptEntryId;
 				tokensBefore = compactResult.tokensBefore;
+				summaryPlacement = compactResult.summaryPlacement;
 				details = compactResult.details;
 			}
 
@@ -2223,7 +2236,12 @@ export class AgentSession {
 				this._emit({ type: "compaction_hooks_start", phase: "post", reason });
 			}
 
-			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
+			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, {
+				summaryPlacement,
+				details,
+				fromHook: fromExtension,
+				replacementMessages: extensionCompaction?.replacementMessages,
+			});
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.state.messages = sessionContext.messages;

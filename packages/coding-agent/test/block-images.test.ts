@@ -40,6 +40,17 @@ describe("blockImages setting", () => {
 			expect(manager.getImageAutoResize()).toBe(true);
 			expect(manager.getBlockImages()).toBe(true);
 		});
+
+		it("should surface compactPrompt through getCompactionSettings", () => {
+			const manager = SettingsManager.inMemory({
+				compaction: {
+					compactPrompt: "  使用 Codex 风格压缩提示词  ",
+				},
+			});
+
+			expect(manager.getCompactionPrompt()).toBe("使用 Codex 风格压缩提示词");
+			expect(manager.getCompactionSettings().compactPrompt).toBe("使用 Codex 风格压缩提示词");
+		});
 	});
 
 	describe("Read tool", () => {

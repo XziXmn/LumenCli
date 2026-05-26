@@ -25,6 +25,39 @@ export interface PrintModeOptions {
 	initialImages?: ImageContent[];
 }
 
+function getRenderableAssistantText(message: AssistantMessage): string | undefined {
+	const text = message.content
+		.filter((content): content is { type: "text"; text: string } => content.type === "text")
+		.map((content) => content.text)
+		.join("\n")
+		.trim();
+	return text || undefined;
+}
+
+function findPrintableAssistantMessage(
+	messages: AssistantMessage[],
+	options?: { allowAbortedFallback?: boolean },
+): AssistantMessage | undefined {
+	const lastAssistant = messages[messages.length - 1];
+	if (!lastAssistant) {
+		return undefined;
+	}
+
+	const lastText = getRenderableAssistantText(lastAssistant);
+	if (lastAssistant.stopReason !== "aborted" || lastText) {
+		return lastAssistant;
+	}
+
+	if (!options?.allowAbortedFallback) {
+		return lastAssistant;
+	}
+
+	return messages
+		.slice(0, -1)
+		.reverse()
+		.find((message) => Boolean(getRenderableAssistantText(message)));
+}
+
 /**
  * Run in print (single-shot) mode.
  * Sends prompts to the agent and outputs the result.
@@ -126,19 +159,21 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 		}
 
 		if (mode === "text") {
-			const state = session.state;
-			const lastMessage = state.messages[state.messages.length - 1];
+			const allowAbortedFallback = !initialMessage && messages.length === 0;
+			const assistantMessages = session.state.messages.filter(
+				(message): message is AssistantMessage => message.role === "assistant",
+			);
+			const lastMessage = findPrintableAssistantMessage(assistantMessages, { allowAbortedFallback });
 
-			if (lastMessage?.role === "assistant") {
-				const assistantMsg = lastMessage as AssistantMessage;
+			if (lastMessage) {
+				const assistantMsg = lastMessage;
 				if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
 					console.error(assistantMsg.errorMessage || `Request ${assistantMsg.stopReason}`);
 					exitCode = 1;
 				} else {
-					for (const content of assistantMsg.content) {
-						if (content.type === "text") {
-							writeRawStdout(`${content.text}\n`);
-						}
+					const text = getRenderableAssistantText(assistantMsg);
+					if (text) {
+						writeRawStdout(`${text}\n`);
 					}
 				}
 			}

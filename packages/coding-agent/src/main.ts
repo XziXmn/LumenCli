@@ -30,6 +30,7 @@ import { KeybindingsManager } from "./core/keybindings.js";
 import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.js";
+import { DefaultPackageManager } from "./core/package-manager.js";
 import type { CreateAgentSessionOptions } from "./core/sdk.js";
 import {
 	formatMissingSessionCwdPrompt,
@@ -513,6 +514,12 @@ export async function main(args: string[], options?: MainOptions) {
 	const legacyImportMessage = await maybeImportLegacyPiConfig(cwd, agentDir, appMode);
 	const startupSettingsManager = SettingsManager.create(cwd, agentDir);
 	reportDiagnostics(collectSettingsDiagnostics(startupSettingsManager, "startup session lookup"));
+	const startupPackageManager = new DefaultPackageManager({
+		cwd,
+		agentDir,
+		settingsManager: startupSettingsManager,
+	});
+	const compatibilityReevaluation = await startupPackageManager.reevaluatePendingCompatibility();
 
 	// Decide the final runtime cwd before creating cwd-bound runtime services.
 	// --session and --resume may select a session from another project, so project-local
@@ -713,6 +720,7 @@ export async function main(args: string[], options?: MainOptions) {
 		const interactiveMode = new InteractiveMode(runtime, {
 			migratedProviders,
 			legacyImportMessage,
+			compatibilityReevaluation,
 			modelFallbackMessage,
 			initialMessage,
 			initialImages,

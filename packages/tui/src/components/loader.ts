@@ -8,6 +8,11 @@ export interface LoaderIndicatorOptions {
 	intervalMs?: number;
 }
 
+export interface LoaderStartOptions {
+	/** If true, update internal text and animation state without immediately requesting a render. */
+	skipInitialRender?: boolean;
+}
+
 const DEFAULT_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const DEFAULT_INTERVAL_MS = 80;
 
@@ -28,18 +33,19 @@ export class Loader extends Text {
 		private messageColorFn: (str: string) => string,
 		private message: string = "Loading...",
 		indicator?: LoaderIndicatorOptions,
+		options?: LoaderStartOptions,
 	) {
 		super("", 1, 0);
 		this.ui = ui;
-		this.setIndicator(indicator);
+		this.setIndicator(indicator, options);
 	}
 
 	render(width: number): string[] {
 		return ["", ...super.render(width)];
 	}
 
-	start(): void {
-		this.updateDisplay();
+	start(options?: LoaderStartOptions): void {
+		this.updateDisplay(options);
 		this.restartAnimation();
 	}
 
@@ -55,12 +61,12 @@ export class Loader extends Text {
 		this.updateDisplay();
 	}
 
-	setIndicator(indicator?: LoaderIndicatorOptions): void {
+	setIndicator(indicator?: LoaderIndicatorOptions, options?: LoaderStartOptions): void {
 		this.renderIndicatorVerbatim = indicator !== undefined;
 		this.frames = indicator?.frames !== undefined ? [...indicator.frames] : [...DEFAULT_FRAMES];
 		this.intervalMs = indicator?.intervalMs && indicator.intervalMs > 0 ? indicator.intervalMs : DEFAULT_INTERVAL_MS;
 		this.currentFrame = 0;
-		this.start();
+		this.start(options);
 	}
 
 	private restartAnimation(): void {
@@ -74,11 +80,14 @@ export class Loader extends Text {
 		}, this.intervalMs);
 	}
 
-	private updateDisplay(): void {
+	private updateDisplay(options?: LoaderStartOptions): void {
 		const frame = this.frames[this.currentFrame] ?? "";
 		const renderedFrame = this.renderIndicatorVerbatim ? frame : this.spinnerColorFn(frame);
 		const indicator = frame.length > 0 ? `${renderedFrame} ` : "";
 		this.setText(`${indicator}${this.messageColorFn(this.message)}`);
+		if (options?.skipInitialRender) {
+			return;
+		}
 		if (this.ui?.shouldSuppressBackgroundRenderUpdates?.()) {
 			return;
 		}

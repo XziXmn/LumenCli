@@ -12,6 +12,7 @@ describe("Documentation example", () => {
 			pi.on("session_before_compact", async (event: SessionBeforeCompactEvent, ctx) => {
 				// All these should be accessible on the event
 				const { preparation, branchEntries } = event;
+				const { reason } = event;
 				// sessionManager, modelRegistry, and model come from ctx
 				const { sessionManager, modelRegistry } = ctx;
 				const { messagesToSummarize, turnPrefixMessages, tokensBefore, firstKeptEntryId, isSplitTurn } =
@@ -26,6 +27,7 @@ describe("Documentation example", () => {
 				expect(typeof modelRegistry.getApiKeyAndHeaders).toBe("function");
 				expect(typeof firstKeptEntryId).toBe("string");
 				expect(Array.isArray(branchEntries)).toBe(true);
+				expect(["manual", "threshold", "overflow"]).toContain(reason);
 
 				const summary = messagesToSummarize
 					.filter((m) => m.role === "user")

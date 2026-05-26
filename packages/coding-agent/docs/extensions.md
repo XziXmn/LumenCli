@@ -417,7 +417,10 @@ Fired on compaction. See [compaction.md](compaction.md) for details.
 
 ```typescript
 pi.on("session_before_compact", async (event, ctx) => {
-  const { preparation, branchEntries, customInstructions, signal } = event;
+  const { reason, preparation, branchEntries, customInstructions, signal } = event;
+
+  // event.reason - "manual" | "threshold" | "overflow"
+  // preparation.keptMessages - messages the default compaction path would keep
 
   // Cancel:
   return { cancel: true };
@@ -428,6 +431,10 @@ pi.on("session_before_compact", async (event, ctx) => {
       summary: "...",
       firstKeptEntryId: preparation.firstKeptEntryId,
       tokensBefore: preparation.tokensBefore,
+      summaryPlacement: "after-kept", // optional
+      replacementMessages: [
+        // optional: explicit replacement history for the compacted prefix
+      ],
     }
   };
 });

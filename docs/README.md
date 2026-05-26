@@ -16,6 +16,7 @@
 
 如果你想知道“项目现在往哪走、已经有什么能力、下一步做什么”，先看这三份：
 
+- [FEATURE_OVERVIEW.md](FEATURE_OVERVIEW.md)：白话版功能总览，适合快速看“已经做了什么、还缺什么”
 - [ROADMAP.md](ROADMAP.md)：唯一总路线图，解释项目定位、阶段路线、近期焦点和中长期方向
 - [CAPABILITY_MATRIX.md](CAPABILITY_MATRIX.md)：能力账本，统一登记已完成、进行中、已规划、暂缓、已放弃的功能
 - [PLANNING_RULES.md](PLANNING_RULES.md)：规划治理规则，定义什么内容属于 roadmap、matrix 或专题计划
@@ -26,6 +27,23 @@
 
 - [superpowers/plans/2026-05-20-core-progress-surface-plan.md](superpowers/plans/2026-05-20-core-progress-surface-plan.md)
 - [superpowers/plans/2026-05-20-claude-aligned-progress-workflow-plan.md](superpowers/plans/2026-05-20-claude-aligned-progress-workflow-plan.md)
+- [superpowers/plans/2026-05-26-lumen-next-phase-plan.md](superpowers/plans/2026-05-26-lumen-next-phase-plan.md)
+- [superpowers/plans/2026-05-26-bottom-pane-unification-plan.md](superpowers/plans/2026-05-26-bottom-pane-unification-plan.md)
+- [superpowers/plans/2026-05-26-compaction-core-plan.md](superpowers/plans/2026-05-26-compaction-core-plan.md)
+- [superpowers/plans/2026-05-26-tui-localization-plan.md](superpowers/plans/2026-05-26-tui-localization-plan.md)
+- [superpowers/plans/2026-05-26-system-prompt-governance-plan.md](superpowers/plans/2026-05-26-system-prompt-governance-plan.md)
+
+## 当前设计稿
+
+这些文档用于在进入实现前固定设计边界，不直接承担施工图职责：
+
+- [superpowers/specs/2026-05-26-lumen-next-phase-design.md](superpowers/specs/2026-05-26-lumen-next-phase-design.md)
+
+## 当前调研与方案判断
+
+- [2026-05-24-codex-compaction-plugin-feasibility.md](2026-05-24-codex-compaction-plugin-feasibility.md)：Codex 压缩方案为什么更优、哪些可以先插件化、哪些最终需要 core 补位
+- [2026-05-24-lumen-plugin-reevaluation-plan.md](2026-05-24-lumen-plugin-reevaluation-plan.md)：新插件安装后，下次启动自动复评估的方案与验收标准
+- [2026-05-25-goal-handoff.md](2026-05-25-goal-handoff.md)：本轮三项主线的当前落地状态、证据和剩余人工验证项
 
 ## 使用与配置入口
 
@@ -43,6 +61,7 @@
 - [2026-05-19-claude-task-ui-handoff.md](2026-05-19-claude-task-ui-handoff.md)
 - [status-region-vs-claude.md](status-region-vs-claude.md)
 - [tui-progress-regression-checklist.md](tui-progress-regression-checklist.md)
+- [ime-manual-check.md](ime-manual-check.md)：中文输入法与 progress surface 手工回归步骤
 
 ## 报告与调研
 

@@ -58,6 +58,19 @@ function reportCompatibilityAudits(audits: PackageCompatibilityAudit[]): void {
 		if (audit.status === "needs-ai-review") {
 			console.error(chalk.dim("  Use the pi-config-migration skill to adapt this plugin safely."));
 		}
+		if (audit.status !== "direct") {
+			console.error(
+				chalk.dim(`  If it still fails after adaptation, remove it with "${APP_NAME} remove ${audit.source}".`),
+			);
+		}
+	}
+
+	if (audits.length > 0) {
+		console.error(
+			chalk.dim(
+				`Pi will re-check installed package compatibility on the next startup. In interactive mode, use /compat to inspect current diagnostics and /reload after fixes.`,
+			),
+		);
 	}
 }
 

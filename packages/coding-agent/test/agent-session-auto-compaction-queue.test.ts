@@ -207,7 +207,9 @@ describe("AgentSession auto-compaction queue resume", () => {
 		sessionManager.appendMessage(staleAssistant);
 
 		const firstKeptEntryId = sessionManager.getEntries()[0]!.id;
-		sessionManager.appendCompaction("summary", firstKeptEntryId, staleAssistant.usage.totalTokens, undefined, false);
+		sessionManager.appendCompaction("summary", firstKeptEntryId, staleAssistant.usage.totalTokens, {
+			fromHook: false,
+		});
 
 		sessionManager.appendMessage({
 			role: "user",
@@ -384,7 +386,9 @@ describe("AgentSession auto-compaction queue resume", () => {
 		});
 		sessionManager.appendMessage(keptAssistant);
 		const firstKeptEntryId = sessionManager.getEntries()[0]!.id;
-		sessionManager.appendCompaction("summary", firstKeptEntryId, keptAssistant.usage.totalTokens, undefined, false);
+		sessionManager.appendCompaction("summary", firstKeptEntryId, keptAssistant.usage.totalTokens, {
+			fromHook: false,
+		});
 
 		// Post-compaction error message
 		const errorAssistant: AssistantMessage = {

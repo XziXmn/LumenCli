@@ -415,6 +415,9 @@ describe("prepareCompaction with previous compaction", () => {
 		expect(preparation!.firstKeptEntryId).toBe(u2.id);
 		expect(preparation!.previousSummary).toBe("First summary");
 		expect(extractText(preparation!.messagesToSummarize)).not.toContain("First summary");
+		expect(extractText(preparation!.keptMessages)).toContain("user msg 2 - kept by compaction1");
+		expect(extractText(preparation!.keptMessages)).toContain("user msg 3 - kept by compaction1");
+		expect(extractText(preparation!.keptMessages)).toContain("user msg 4 (new after compaction1)");
 		expect(preparation!.tokensBefore).toBe(estimateContextTokens(contextBefore.messages).tokens);
 
 		const compaction2: CompactionEntry = {
@@ -452,9 +455,11 @@ describe("prepareCompaction with previous compaction", () => {
 
 		expect(preparation).toBeDefined();
 		const summarizedText = extractText(preparation!.messagesToSummarize);
+		const keptText = extractText(preparation!.keptMessages);
 		expect(summarizedText).toContain("user msg 2 - kept by compaction1");
 		expect(summarizedText).toContain("user msg 3 - kept by compaction1");
 		expect(summarizedText).not.toContain("First summary");
+		expect(keptText).toContain("user msg 4 (new after compaction1)");
 		expect(preparation!.previousSummary).toBe("First summary");
 	});
 });

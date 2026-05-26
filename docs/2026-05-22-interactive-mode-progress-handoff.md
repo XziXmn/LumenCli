@@ -4,19 +4,17 @@
 
 ## 当前结论
 
-- `interactive-mode` 的主任务栏所有权已经基本回收到 core，主结构仍然是：
+- `interactive-mode` 的主任务栏所有权已经基本回收到 core，主结构已进一步收口为：
   - `header`
   - `chatContainer`
-  - `promptAreaContainer`
+  - `bottomPaneContainer`
     - `statusContainer`
     - `pendingMessagesContainer`
-  - `interactionAreaContainer`
+    - `bottomPaneGapContainer`
     - `editorContainer`
     - `extensionAreaContainer`
-      - `widgetContainerAbove`
-      - `widgetContainerBelow`
     - `footer`
-- 这意味着“输入框上方任务栏 + 待发送消息区 + 固定输入框”的主骨架已经在 core 内，而不是继续交给扩展层。
+- 这意味着“输入框上方任务栏 + 待发送消息区 + 固定输入框 + footer”的主骨架已经在 core 内，而不是继续交给扩展层。
 - 当前这轮工作重点不是继续发明新的光标恢复技巧，而是压住“输入中文拼音时，上方动画和定时刷新抢刷界面”。
 
 ## 本轮已完成
@@ -62,6 +60,21 @@
   - 输入期间先清掉终端进度 keepalive，避免即使不重绘 UI 仍持续向终端写入
   - 输入保护结束后再按当前 active 状态恢复
 - `setSpinnerBanner()` 已改成走输入保护感知的刷新路径，避免重试倒计时经由 banner 更新重新抢刷界面
+- `InteractiveMode` 里一批基础状态通知也已开始统一走输入保护感知路径：
+  - `showStatus`
+  - `showWarning`
+  - `showError`
+  - `setExtensionStatus`
+  - `setWorkingVisible`
+  - `setWorkingIndicator`
+  - `setHiddenThinkingLabel`
+  - `renderWidgets`
+- 一批常见只读面板命令也已改成走输入保护感知路径：
+  - `/session`
+  - `/changelog`
+  - `/hotkeys`
+  - `/compat`
+- extension selector / input / editor 的显示与恢复路径也已开始走输入保护感知刷新，而不是继续直接 `ui.requestRender()`
 - 本仓库当前唯一实际启用的 `aboveEditor` 被动 widget（`prompt-url-widget`）已下移到 `belowEditor`
   - 这样默认配置下，输入框上方更集中为“任务栏 + 待发送消息区”
 - `attachMainLayout()` 已继续收口：
@@ -87,6 +100,7 @@
   - `blocks non-input redraws after focused input while background updates are suppressed`
 - `InteractiveMode` 输入活动窗口
   - `requestRenderUnlessInputSuppressed skips redraws while input activity is active`
+  - `requestRenderRespectingInput delegates directly to TUI requestRender`
   - `markInputActivity defers redraw until suppression window ends, then restores refresh loop`
 - `InteractiveMode` core progress surface 行为
   - `renderWorkingArea prefers the core progress surface over the fallback loader`
@@ -94,11 +108,20 @@
   - `agent_end clears the core progress surface state so the taskbar can disappear`
 - `InteractiveMode` 主布局骨架
   - `attaches the core-owned surface in the expected top-to-bottom order`
-  - 当前顺序已更新为：`chat -> promptArea(taskbar + pending) -> interactionArea(editor + extensionArea(widgetAbove + widgetBelow) + footer)`
+  - 当前顺序已更新为：`chat -> bottomPane(taskbar + pending + gap + editor + extensionArea + footer)`
   - 默认 `setWidget()` 现在落到下方扩展区上半部，不再触碰输入框上方主链
 - `InteractiveMode` banner / queued 语义
   - `setSpinnerBanner prefers the input-aware render helper over direct ui.requestRender`
   - `updatePendingMessagesDisplay keeps queued commands out of the main transcript container`
+- `InteractiveMode` 基础状态通知
+  - `showStatus respects input-aware rendering when updating an existing status line`
+  - `showWarning routes redraw through the input-aware helper`
+  - `showError routes redraw through the input-aware helper`
+  - `handleSessionCommand routes redraw through the input-aware helper`
+  - `handleCompatibilityCommand routes redraw through the input-aware helper`
+- `InteractiveMode` working 状态
+  - `setWorkingVisible routes redraw through the input-aware helper`
+  - `setWorkingIndicator routes redraw through the input-aware helper`
 - `InteractiveMode` widget / footer 边界
   - `setExtensionWidget keeps belowEditor widgets out of the pending message slot`
   - `footer-progress-filter` 继续验证 ui/queue 等主动进度状态不会泄漏到 footer
@@ -113,8 +136,14 @@
 - 手工 IME 验证 harness
   - `ime-progress-surface-debug.ts` 提供真实 `ProcessTerminal` 的可切换场景
   - 其容器模型也已对齐到当前 runtime：
-    - `transcript -> promptArea(taskbar + pending) -> interactionArea(editor + extensionArea + footer)`
-  - 用于本地手工观察 taskbar / pending / footer / retry / reconnect / approval / ask-user 在输入期的表现
+    - `transcript -> bottomPane(taskbar + pending + gap + editor + extensionArea + footer)`
+  - 当前也已覆盖更贴近真实刷新链的 transcript 模拟：
+    - `bash`
+    - `branch-summary`
+  - 当前脚本也已支持：
+    - `--auto-cycle-ms`
+    - `--scenario-list approval,retry,reconnect,parallel,bash,branch-summary,complete`
+  - 用于本地手工观察 taskbar / pending / footer / retry / reconnect / approval / ask-user / bash / branch-summary 在输入期的表现
 
 ## 当前未提交改动
 
@@ -168,6 +197,17 @@
    - 通过
    - 当前仍然只是通用工具 smoke，不覆盖中文输入法现场
 
+6. `npx tsx ../../node_modules/vitest/dist/cli.js --run test/interactive-mode-status.test.ts test/claude-task-ui.test.ts test/lumen-task.test.ts test/lumen-todo.test.ts`
+   - 通过
+   - 当前主任务栏 / todo / task / queue 主线回归已覆盖：
+     - `complete`
+     - `approval`
+     - `retry`
+     - `reconnect`
+     - `parallel`
+     - `bash`
+     - `branch-summary`
+
 ## 还没完成的部分
 
 ### 1. 这还不是最终的“上下分区彻底解耦”
@@ -188,10 +228,12 @@
 - 输入位置是否始终留在真实输入框
 - 重试态、等待确认态、等待输入态同时出现时是否会重新抢刷
 - 子代理并行、todo/task 并行、queued command 并发出现时，是否仍能保持“正文区只留消息流、任务栏独占主动进度”
+- `bash` 流式输出和 `branch summary` loader 首帧出现时，是否还会把候选窗抢到正文/任务栏/footer
 - 可直接先跑：
   - `npx tsx packages/coding-agent/test/ime-progress-surface-debug.ts`
   - `.\ime-progress-surface-debug.ps1`
-  - 在脚本里切到中文输入法，使用 `Ctrl+N` 切换审批 / 等待输入 / 重试 / 重连 / 并行 / 完成等场景做现场观察
+  - `.\ime-progress-surface-debug.ps1 --scenario-list approval,retry,reconnect,parallel,bash,branch-summary,complete --auto-cycle-ms 2500`
+  - 在脚本里切到中文输入法，使用 `Ctrl+N` 切换审批 / 等待输入 / 重试 / 重连 / 并行 / bash / branch-summary / 完成等场景做现场观察
 - 现场验证步骤见：
   - [docs/ime-manual-check.md](/D:/UGit/LumenAgent/docs/ime-manual-check.md)
 
@@ -229,7 +271,7 @@
 
 ## 重要提醒
 
-- 当前工作树不是干净的；当前相关 diff 已扩到 19 个已跟踪文件 + 4 个新增文件
+- 当前工作树不是干净的；这份 handoff 里的 diff 统计和测试清单已带有历史时点信息，接手前要重新以当前工作树为准核对
 - `setWidget` 的公开语义文档也已开始对齐当前实现：
   - `aboveEditor` / `belowEditor` 现在应理解为“输入框下方扩展区”的上下两个 slot
   - 不再把 `aboveEditor` 理解为“输入框上方主链路”

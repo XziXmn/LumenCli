@@ -129,6 +129,8 @@ interface CompactionEntry<T = unknown> {
   summary: string;
   firstKeptEntryId: string;
   tokensBefore: number;
+  summaryPlacement?: "before-kept" | "after-kept";
+  replacementMessages?: AgentMessage[];
   fromHook?: boolean;  // true if provided by extension (legacy field name)
   details?: T;         // implementation-specific data
 }
@@ -276,10 +278,12 @@ Fired before auto-compaction or `/compact`. Can cancel or provide custom summary
 
 ```typescript
 pi.on("session_before_compact", async (event, ctx) => {
-  const { preparation, branchEntries, customInstructions, signal } = event;
+  const { reason, preparation, branchEntries, customInstructions, signal } = event;
 
+  // reason - "manual" | "threshold" | "overflow"
   // preparation.messagesToSummarize - messages to summarize
   // preparation.turnPrefixMessages - split turn prefix (if isSplitTurn)
+  // preparation.keptMessages - messages the default compaction path would keep
   // preparation.previousSummary - previous compaction summary
   // preparation.fileOps - extracted file operations
   // preparation.tokensBefore - context tokens before compaction
@@ -298,6 +302,10 @@ pi.on("session_before_compact", async (event, ctx) => {
       summary: "Your summary...",
       firstKeptEntryId: preparation.firstKeptEntryId,
       tokensBefore: preparation.tokensBefore,
+      summaryPlacement: "after-kept", // optional
+      replacementMessages: [
+        // optional: full replacement history for the compacted prefix
+      ],
       details: { /* custom data */ },
     }
   };
@@ -333,12 +341,50 @@ pi.on("session_before_compact", async (event, ctx) => {
       summary,
       firstKeptEntryId: preparation.firstKeptEntryId,
       tokensBefore: preparation.tokensBefore,
+      summaryPlacement: "after-kept",
     }
   };
 });
 ```
 
 See [custom-compaction.ts](../examples/extensions/custom-compaction.ts) for a complete example using a different model.
+
+### Custom replacement history
+
+If you want Codex-style compaction behavior, do not rely on `summary` text alone. Use `replacementMessages` to explicitly define what should replace the compacted prefix in future context.
+
+Typical pattern:
+
+- keep a small number of recent user messages from `preparation.keptMessages`
+- append a `compactionSummary` bridge message
+- optionally vary the strategy by `event.reason`
+
+```typescript
+import { createCompactionSummaryMessage } from "@earendil-works/pi-coding-agent";
+
+pi.on("session_before_compact", async (event) => {
+  const { preparation } = event;
+  const summary = "Condensed summary bridge";
+  const recentUsers = preparation.keptMessages
+    .filter((message) => message.role === "user")
+    .slice(-2);
+
+  return {
+    compaction: {
+      summary,
+      firstKeptEntryId: preparation.firstKeptEntryId,
+      tokensBefore: preparation.tokensBefore,
+      summaryPlacement: "after-kept",
+      replacementMessages: [
+        ...recentUsers,
+        createCompactionSummaryMessage(summary, preparation.tokensBefore, new Date().toISOString()),
+      ],
+    },
+  };
+});
+```
+
+This gives the extension explicit control over the compacted prefix while still letting the normal kept suffix remain in place.
 
 ### session_before_tree
 
@@ -380,7 +426,8 @@ Configure compaction in `~/.lumen/agent/settings.json` or `<project-dir>/.lumen/
   "compaction": {
     "enabled": true,
     "reserveTokens": 16384,
-    "keepRecentTokens": 20000
+    "keepRecentTokens": 20000,
+    "compactPrompt": "Create a structured coding-session checkpoint..."
   }
 }
 ```
@@ -390,5 +437,17 @@ Configure compaction in `~/.lumen/agent/settings.json` or `<project-dir>/.lumen/
 | `enabled` | `true` | Enable auto-compaction |
 | `reserveTokens` | `16384` | Tokens to reserve for LLM response |
 | `keepRecentTokens` | `20000` | Recent tokens to keep (not summarized) |
+| `compactPrompt` | built-in Codex-style prompt | Override the default compaction prompt used by core summarization |
 
 Disable auto-compaction with `"enabled": false`. You can still compact manually with `/compact`.
+
+## Lumen default behavior
+
+Lumen now ships a built-in Codex-style compaction prompt in core. When no extension overrides compaction and no `compaction.compactPrompt` is configured, the default path:
+
+1. creates a structured checkpoint summary
+2. keeps a small number of recent user messages
+3. writes a summary bridge as `replacementMessages`
+4. places the summary bridge after the kept messages
+
+Extensions can still override this through `session_before_compact`, but the core path no longer depends on an extension to produce Codex-style continuation bridges.

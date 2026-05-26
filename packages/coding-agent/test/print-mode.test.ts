@@ -139,4 +139,49 @@ describe("runPrintMode", () => {
 		expect(session.extensionRunner.emit).toHaveBeenCalledTimes(1);
 		expect(session.extensionRunner.emit).toHaveBeenCalledWith({ type: "session_shutdown", reason: "quit" });
 	});
+
+	it("falls back to the most recent assistant text when the last assistant message was aborted with no text", async () => {
+		const previousAssistant = createAssistantMessage({ text: "previous successful output" });
+		const abortedAssistant = createAssistantMessage({
+			stopReason: "aborted",
+			errorMessage: "Operation aborted",
+		});
+		const runtimeHost = createRuntimeHost(previousAssistant);
+		runtimeHost.session.state.messages = [previousAssistant, abortedAssistant];
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const stdoutSpy = vi
+			.spyOn(await import("../src/core/output-guard.js"), "writeRawStdout")
+			.mockImplementation(() => {});
+
+		const exitCode = await runPrintMode(runtimeHost as unknown as Parameters<typeof runPrintMode>[0], {
+			mode: "text",
+		});
+
+		expect(exitCode).toBe(0);
+		expect(stdoutSpy).toHaveBeenCalledWith("previous successful output\n");
+		expect(errorSpy).not.toHaveBeenCalled();
+	});
+
+	it("does not hide a newly aborted request behind older assistant text when a prompt was sent this run", async () => {
+		const previousAssistant = createAssistantMessage({ text: "previous successful output" });
+		const abortedAssistant = createAssistantMessage({
+			stopReason: "aborted",
+			errorMessage: "Operation aborted",
+		});
+		const runtimeHost = createRuntimeHost(previousAssistant);
+		runtimeHost.session.state.messages = [previousAssistant, abortedAssistant];
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const stdoutSpy = vi
+			.spyOn(await import("../src/core/output-guard.js"), "writeRawStdout")
+			.mockImplementation(() => {});
+
+		const exitCode = await runPrintMode(runtimeHost as unknown as Parameters<typeof runPrintMode>[0], {
+			mode: "text",
+			messages: ["new prompt"],
+		});
+
+		expect(exitCode).toBe(1);
+		expect(errorSpy).toHaveBeenCalledWith("Operation aborted");
+		expect(stdoutSpy).not.toHaveBeenCalled();
+	});
 });

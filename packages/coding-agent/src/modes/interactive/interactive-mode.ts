@@ -75,6 +75,7 @@ import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.js";
+import type { PackageCompatibilityReevaluationResult } from "../../core/package-manager.js";
 import { DefaultPackageManager } from "../../core/package-manager.js";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.js";
 import type { ResourceDiagnostic } from "../../core/resource-loader.js";
@@ -84,6 +85,7 @@ import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import type { SourceInfo } from "../../core/source-info.js";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
+import { formatStartupCompatibilityNotice } from "../../startup-compatibility.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
@@ -235,6 +237,8 @@ export interface InteractiveModeOptions {
 	migratedProviders?: string[];
 	/** Info/warning message about one-time legacy .pi import flow */
 	legacyImportMessage?: string;
+	/** Startup package/plugin reevaluation result collected before interactive mode boot */
+	compatibilityReevaluation?: PackageCompatibilityReevaluationResult;
 	/** Warning message if session model couldn't be restored */
 	modelFallbackMessage?: string;
 	/** Initial message to send on startup (can include @file content) */
@@ -252,7 +256,8 @@ export class InteractiveMode {
 	private ui: TUI;
 	private chatContainer: Container;
 	private pendingMessagesContainer: Container;
-	private promptAreaContainer: Container;
+	private bottomPaneContainer: Container;
+	private bottomPaneGapContainer: Container;
 	private statusContainer: Container;
 	private defaultEditor: CustomEditor;
 	private editor: EditorComponent;
@@ -260,7 +265,6 @@ export class InteractiveMode {
 	private autocompleteProvider: AutocompleteProvider | undefined;
 	private autocompleteProviderWrappers: AutocompleteProviderFactory[] = [];
 	private fdPath: string | undefined;
-	private interactionAreaContainer: Container;
 	private editorContainer: Container;
 	private footer: FooterComponent;
 	private footerDataProvider: FooterDataProvider;
@@ -421,7 +425,8 @@ export class InteractiveMode {
 		});
 		this.headerContainer = new Container();
 		this.chatContainer = new Container();
-		this.promptAreaContainer = new Container();
+		this.bottomPaneContainer = new Container();
+		this.bottomPaneGapContainer = new Container();
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
 		this.extensionAreaContainer = new Container();
@@ -443,7 +448,6 @@ export class InteractiveMode {
 			autocompleteMaxVisible,
 		});
 		this.editor = this.defaultEditor;
-		this.interactionAreaContainer = new Container();
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
@@ -723,12 +727,12 @@ export class InteractiveMode {
 		onThemeChange(() => {
 			this.ui.invalidate();
 			this.updateEditorBorderColor();
-			this.ui.requestRender();
+			this.requestRenderUnlessInputSuppressed();
 		});
 
 		// Set up git branch watcher (uses provider instead of footer)
 		this.footerDataProvider.onBranchChange(() => {
-			this.ui.requestRender();
+			this.requestRenderUnlessInputSuppressed();
 		});
 
 		// Initialize available provider count for footer display
@@ -736,18 +740,27 @@ export class InteractiveMode {
 	}
 
 	private attachMainLayout(): void {
-		this.promptAreaContainer.clear();
-		this.promptAreaContainer.addChild(this.statusContainer);
-		this.promptAreaContainer.addChild(this.pendingMessagesContainer);
-		this.interactionAreaContainer.clear();
-		this.interactionAreaContainer.addChild(this.editorContainer);
-		this.interactionAreaContainer.addChild(this.extensionAreaContainer);
-		this.interactionAreaContainer.addChild(this.footer);
+		this.bottomPaneContainer.clear();
+		this.bottomPaneContainer.addChild(this.statusContainer);
+		this.bottomPaneContainer.addChild(this.pendingMessagesContainer);
+		this.bottomPaneContainer.addChild(this.bottomPaneGapContainer);
+		this.bottomPaneContainer.addChild(this.editorContainer);
+		this.bottomPaneContainer.addChild(this.extensionAreaContainer);
+		this.bottomPaneContainer.addChild(this.footer);
+		this.syncBottomPaneGap();
 
 		this.ui.addChild(this.chatContainer);
-		this.ui.addChild(this.promptAreaContainer);
 		this.renderWidgets(); // Initialize with default spacer
-		this.ui.addChild(this.interactionAreaContainer);
+		this.ui.addChild(this.bottomPaneContainer);
+	}
+
+	private syncBottomPaneGap(): void {
+		this.bottomPaneGapContainer.clear();
+		const hasTopPaneContent =
+			this.statusContainer.children.length > 0 || this.pendingMessagesContainer.children.length > 0;
+		if (hasTopPaneContent) {
+			this.bottomPaneGapContainer.addChild(new Spacer(1));
+		}
 	}
 
 	/**
@@ -795,6 +808,7 @@ export class InteractiveMode {
 		const {
 			migratedProviders,
 			legacyImportMessage,
+			compatibilityReevaluation,
 			modelFallbackMessage,
 			initialMessage,
 			initialImages,
@@ -808,6 +822,8 @@ export class InteractiveMode {
 		if (legacyImportMessage) {
 			this.showStatus(legacyImportMessage);
 		}
+
+		await this.showCompatibilityReminderIfNeeded(compatibilityReevaluation);
 
 		const modelsJsonError = this.session.modelRegistry.getError();
 		if (modelsJsonError) {
@@ -1744,7 +1760,7 @@ export class InteractiveMode {
 	 */
 	private setExtensionStatus(key: string, text: string | undefined): void {
 		this.footerDataProvider.setExtensionStatus(key, text);
-		this.ui.requestRender();
+		this.requestRenderRespectingInput();
 	}
 
 	private buildDefaultSpinnerState(): SpinnerUiState | undefined {
@@ -1895,6 +1911,10 @@ export class InteractiveMode {
 		this.ui.requestRender(force);
 	}
 
+	private requestRenderRespectingInput(force = false): void {
+		this.ui.requestRender(force);
+	}
+
 	private createWorkingLoader(): Loader {
 		return new Loader(
 			this.ui,
@@ -1902,6 +1922,7 @@ export class InteractiveMode {
 			(text) => theme.fg("muted", text),
 			this.getWorkingLoaderMessage(),
 			this.workingIndicatorOptions,
+			{ skipInitialRender: true },
 		);
 	}
 
@@ -1934,6 +1955,7 @@ export class InteractiveMode {
 				this.statusContainer.addChild(new Text(line, 0, 0));
 			}
 		}
+		this.syncBottomPaneGap();
 	}
 
 	private stopWorkingLoader(): void {
@@ -1999,21 +2021,21 @@ export class InteractiveMode {
 		this.workingVisible = visible;
 		if (!visible) {
 			this.stopWorkingLoader();
-			this.ui.requestRender();
+			this.requestRenderRespectingInput();
 			return;
 		}
 		if (this.session.isStreaming && !this.loadingAnimation) {
 			this.loadingAnimation = this.createWorkingLoader();
 		}
 		this.renderWorkingArea();
-		this.ui.requestRender();
+		this.requestRenderRespectingInput();
 	}
 
 	private setWorkingIndicator(options?: LoaderIndicatorOptions): void {
 		this.workingIndicatorOptions = options;
 		this.loadingAnimation?.setIndicator(options);
 		this.renderWorkingArea();
-		this.ui.requestRender();
+		this.requestRenderRespectingInput();
 	}
 
 	private setHiddenThinkingLabel(label?: string): void {
@@ -2026,7 +2048,7 @@ export class InteractiveMode {
 		if (this.streamingComponent) {
 			this.streamingComponent.setHiddenThinkingLabel(this.hiddenThinkingLabel);
 		}
-		this.ui.requestRender();
+		this.requestRenderRespectingInput();
 	}
 
 	private clearSpinnerBannerTimeout(): void {
@@ -2106,7 +2128,7 @@ export class InteractiveMode {
 		}
 
 		this.renderWorkingArea();
-		this.ui.requestRender();
+		this.requestRenderUnlessInputSuppressed();
 	}
 
 	private resetSpinnerRuntimeState(): void {
@@ -2228,7 +2250,7 @@ export class InteractiveMode {
 		if (!this.widgetContainerAbove || !this.widgetContainerBelow) return;
 		this.renderWidgetContainer(this.widgetContainerAbove, this.extensionWidgetsAbove, false, true);
 		this.renderWidgetContainer(this.widgetContainerBelow, this.extensionWidgetsBelow, false, false);
-		this.ui.requestRender();
+		this.requestRenderRespectingInput();
 	}
 
 	private renderWidgetContainer(
@@ -2262,7 +2284,7 @@ export class InteractiveMode {
 			| ((tui: TUI, thm: Theme, footerData: ReadonlyFooterDataProvider) => Component & { dispose?(): void })
 			| undefined,
 	): void {
-		if (!this.interactionAreaContainer) {
+		if (!this.bottomPaneContainer) {
 			return;
 		}
 
@@ -2272,7 +2294,7 @@ export class InteractiveMode {
 		}
 
 		const currentFooter = this.customFooter ?? this.footer;
-		const footerIndex = this.interactionAreaContainer.children.indexOf(currentFooter);
+		const footerIndex = this.bottomPaneContainer.children.indexOf(currentFooter);
 		if (footerIndex === -1) {
 			return;
 		}
@@ -2280,11 +2302,11 @@ export class InteractiveMode {
 		if (factory) {
 			// Create and replace footer within the lower interaction area.
 			this.customFooter = factory(this.ui, theme, this.footerDataProvider);
-			this.interactionAreaContainer.children[footerIndex] = this.customFooter;
+			this.bottomPaneContainer.children[footerIndex] = this.customFooter;
 		} else {
 			// Restore built-in footer in-place.
 			this.customFooter = undefined;
-			this.interactionAreaContainer.children[footerIndex] = this.footer;
+			this.bottomPaneContainer.children[footerIndex] = this.footer;
 		}
 
 		this.ui.requestRender();
@@ -2399,7 +2421,7 @@ export class InteractiveMode {
 			setTheme: (themeOrName) => {
 				if (themeOrName instanceof Theme) {
 					setThemeInstance(themeOrName);
-					this.ui.requestRender();
+					this.requestRenderRespectingInput();
 					return { success: true };
 				}
 				const result = setTheme(themeOrName, true);
@@ -2407,7 +2429,7 @@ export class InteractiveMode {
 					if (this.settingsManager.getTheme() !== themeOrName) {
 						this.settingsManager.setTheme(themeOrName);
 					}
-					this.ui.requestRender();
+					this.requestRenderRespectingInput();
 				}
 				return result;
 			},
@@ -2463,7 +2485,7 @@ export class InteractiveMode {
 			this.editorContainer.clear();
 			this.editorContainer.addChild(this.extensionSelector);
 			this.ui.setFocus(this.extensionSelector);
-			this.ui.requestRender();
+			this.requestRenderRespectingInput();
 		});
 	}
 
@@ -2478,7 +2500,7 @@ export class InteractiveMode {
 		this.setExtensionStatus("ui", undefined);
 		this.setSpinnerBanner(undefined);
 		this.ui.setFocus(this.editor);
-		this.ui.requestRender();
+		this.requestRenderRespectingInput();
 	}
 
 	/**
@@ -2547,7 +2569,7 @@ export class InteractiveMode {
 			this.editorContainer.clear();
 			this.editorContainer.addChild(this.extensionInput);
 			this.ui.setFocus(this.extensionInput);
-			this.ui.requestRender();
+			this.requestRenderRespectingInput();
 		});
 	}
 
@@ -2562,7 +2584,7 @@ export class InteractiveMode {
 		this.setExtensionStatus("ui", undefined);
 		this.setSpinnerBanner(undefined);
 		this.ui.setFocus(this.editor);
-		this.ui.requestRender();
+		this.requestRenderRespectingInput();
 	}
 
 	/**
@@ -2594,7 +2616,7 @@ export class InteractiveMode {
 			this.editorContainer.clear();
 			this.editorContainer.addChild(this.extensionEditor);
 			this.ui.setFocus(this.extensionEditor);
-			this.ui.requestRender();
+			this.requestRenderRespectingInput();
 		});
 	}
 
@@ -2608,7 +2630,7 @@ export class InteractiveMode {
 		this.setExtensionStatus("ui", undefined);
 		this.setSpinnerBanner(undefined);
 		this.ui.setFocus(this.editor);
-		this.ui.requestRender();
+		this.requestRenderRespectingInput();
 	}
 
 	/**
@@ -2984,6 +3006,11 @@ export class InteractiveMode {
 				await this.handleCompactCommand(customInstructions);
 				return;
 			}
+			if (text === "/compat") {
+				this.editor.setText("");
+				await this.handleCompatibilityCommand();
+				return;
+			}
 			if (text === "/reload") {
 				this.editor.setText("");
 				await this.handleReloadCommand();
@@ -3128,18 +3155,18 @@ export class InteractiveMode {
 						this.loadingAnimation = this.createWorkingLoader();
 					}
 					this.renderWorkingArea();
-					this.ui.requestRender();
+					this.requestRenderUnlessInputSuppressed();
 					break;
 
 				case "queue_update":
 					this.updatePendingMessagesDisplay();
-					this.ui.requestRender();
+					this.requestRenderRespectingInput();
 					break;
 
 				case "session_info_changed":
 					this.updateTerminalTitle();
 					this.footer.invalidate();
-					this.ui.requestRender();
+					this.requestRenderRespectingInput();
 					break;
 
 				case "thinking_level_changed":
@@ -3150,11 +3177,11 @@ export class InteractiveMode {
 				case "message_start":
 					if (event.message.role === "custom") {
 						this.addMessageToChat(event.message);
-						this.ui.requestRender();
+						this.requestRenderRespectingInput();
 					} else if (event.message.role === "user") {
 						this.addMessageToChat(event.message);
 						this.updatePendingMessagesDisplay();
-						this.ui.requestRender();
+						this.requestRenderRespectingInput();
 					} else if (event.message.role === "assistant") {
 						this.activeCollapsedToolGroup = undefined;
 						this.activeToolSummary = undefined;
@@ -3167,7 +3194,7 @@ export class InteractiveMode {
 						this.streamingMessage = event.message;
 						this.chatContainer.addChild(this.streamingComponent);
 						this.streamingComponent.updateContent(this.streamingMessage);
-						this.ui.requestRender();
+						this.requestRenderRespectingInput();
 					}
 					break;
 
@@ -3217,7 +3244,7 @@ export class InteractiveMode {
 								);
 								this.collapsedGroupByToolCallId.set(toolCall.id, this.activeCollapsedToolGroup);
 							}
-							this.ui.requestRender();
+							this.requestRenderRespectingInput();
 							break;
 						}
 
@@ -3240,7 +3267,7 @@ export class InteractiveMode {
 								this.activeToolSummary.updateArgs(toolCall.arguments);
 							}
 							this.toolSummaryByToolCallId.set(toolCall.id, this.activeToolSummary);
-							this.ui.requestRender();
+							this.requestRenderRespectingInput();
 							break;
 						}
 
@@ -3264,7 +3291,7 @@ export class InteractiveMode {
 								this.activeToolBatchSummary.addOrUpdateToolCall(toolCall.name, toolCall.arguments, toolCall.id);
 								this.toolBatchSummaryByToolCallId.set(toolCall.id, this.activeToolBatchSummary);
 							}
-							this.ui.requestRender();
+							this.requestRenderRespectingInput();
 							break;
 						}
 
@@ -3322,7 +3349,7 @@ export class InteractiveMode {
 								component.updateArgs(toolCall.arguments);
 							}
 						}
-						this.ui.requestRender();
+						this.requestRenderRespectingInput();
 					}
 					break;
 
@@ -3376,7 +3403,7 @@ export class InteractiveMode {
 						this.streamingMessage = undefined;
 						this.footer.invalidate();
 					}
-					this.ui.requestRender();
+					this.requestRenderRespectingInput();
 					break;
 
 				case "tool_execution_start": {
@@ -3386,15 +3413,15 @@ export class InteractiveMode {
 						event.args as Record<string, unknown>,
 					);
 					if (this.collapsedGroupByToolCallId.has(event.toolCallId)) {
-						this.ui.requestRender();
+						this.requestRenderRespectingInput();
 						break;
 					}
 					if (this.toolSummaryByToolCallId.has(event.toolCallId)) {
-						this.ui.requestRender();
+						this.requestRenderRespectingInput();
 						break;
 					}
 					if (this.toolBatchSummaryByToolCallId.has(event.toolCallId)) {
-						this.ui.requestRender();
+						this.requestRenderRespectingInput();
 						break;
 					}
 					let component = this.pendingTools.get(event.toolCallId);
@@ -3416,27 +3443,27 @@ export class InteractiveMode {
 						this.pendingTools.set(event.toolCallId, component);
 					}
 					component.markExecutionStarted();
-					this.ui.requestRender();
+					this.requestRenderRespectingInput();
 					break;
 				}
 
 				case "tool_execution_update": {
 					if (this.collapsedGroupByToolCallId.has(event.toolCallId)) {
-						this.ui.requestRender();
+						this.requestRenderRespectingInput();
 						break;
 					}
 					if (this.toolSummaryByToolCallId.has(event.toolCallId)) {
-						this.ui.requestRender();
+						this.requestRenderRespectingInput();
 						break;
 					}
 					if (this.toolBatchSummaryByToolCallId.has(event.toolCallId)) {
-						this.ui.requestRender();
+						this.requestRenderRespectingInput();
 						break;
 					}
 					const component = this.pendingTools.get(event.toolCallId);
 					if (component) {
 						component.updateResult({ ...event.partialResult, isError: false }, true);
-						this.ui.requestRender();
+						this.requestRenderRespectingInput();
 					}
 					break;
 				}
@@ -3453,7 +3480,7 @@ export class InteractiveMode {
 						if (this.activeCollapsedToolGroup === collapsedGroup && collapsedGroup.isComplete()) {
 							this.activeCollapsedToolGroup = undefined;
 						}
-						this.ui.requestRender();
+						this.requestRenderRespectingInput();
 						break;
 					}
 					const summary = this.toolSummaryByToolCallId.get(event.toolCallId);
@@ -3463,7 +3490,7 @@ export class InteractiveMode {
 						if (this.activeToolSummary === summary) {
 							this.activeToolSummary = undefined;
 						}
-						this.ui.requestRender();
+						this.requestRenderRespectingInput();
 						break;
 					}
 					const batchSummary = this.toolBatchSummaryByToolCallId.get(event.toolCallId);
@@ -3478,14 +3505,14 @@ export class InteractiveMode {
 								this.activeToolBatchSummary = undefined;
 							}
 						}
-						this.ui.requestRender();
+						this.requestRenderRespectingInput();
 						break;
 					}
 					const component = this.pendingTools.get(event.toolCallId);
 					if (component) {
 						component.updateResult({ ...event.result, isError: event.isError });
 						this.pendingTools.delete(event.toolCallId);
-						this.ui.requestRender();
+						this.requestRenderRespectingInput();
 					}
 					break;
 				}
@@ -3516,19 +3543,19 @@ export class InteractiveMode {
 
 					await this.checkShutdownRequested();
 
-					this.ui.requestRender();
+					this.requestRenderRespectingInput();
 					break;
 
 				case "compaction_hooks_start": {
 					this.spinnerSystemOverrideMessage =
 						event.phase === "pre" ? "Running PreCompact hooks…" : "Running PostCompact hooks…";
-					this.ui.requestRender();
+					this.requestRenderRespectingInput();
 					break;
 				}
 
 				case "compaction_hooks_end": {
 					this.spinnerSystemOverrideMessage = undefined;
-					this.ui.requestRender();
+					this.requestRenderRespectingInput();
 					break;
 				}
 
@@ -3555,7 +3582,7 @@ export class InteractiveMode {
 					this.defaultEditor.onEscape = () => {
 						this.session.abortCompaction();
 					};
-					this.ui.requestRender();
+					this.requestRenderRespectingInput();
 					break;
 				}
 
@@ -3598,7 +3625,7 @@ export class InteractiveMode {
 						}
 					}
 					void this.flushCompactionQueue({ willRetry: event.willRetry });
-					this.ui.requestRender();
+					this.requestRenderRespectingInput();
 					break;
 				}
 
@@ -3629,7 +3656,7 @@ export class InteractiveMode {
 							this.retryCountdown = undefined;
 						},
 					);
-					this.ui.requestRender();
+					this.requestRenderUnlessInputSuppressed();
 					break;
 				}
 
@@ -3662,7 +3689,7 @@ export class InteractiveMode {
 							`Retry failed after ${event.attempt} attempts: ${event.finalError || "Unknown error"}`,
 						);
 					}
-					this.ui.requestRender();
+					this.requestRenderUnlessInputSuppressed();
 					break;
 				}
 			}
@@ -3694,7 +3721,7 @@ export class InteractiveMode {
 
 		if (last && secondLast && last === this.lastStatusText && secondLast === this.lastStatusSpacer) {
 			this.lastStatusText.setText(theme.fg("dim", message));
-			this.ui.requestRender();
+			this.requestRenderRespectingInput();
 			return;
 		}
 
@@ -3704,7 +3731,7 @@ export class InteractiveMode {
 		this.chatContainer.addChild(text);
 		this.lastStatusSpacer = spacer;
 		this.lastStatusText = text;
-		this.ui.requestRender();
+		this.requestRenderRespectingInput();
 	}
 
 	private addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void {
@@ -4225,7 +4252,7 @@ export class InteractiveMode {
 				child.setExpanded(expanded);
 			}
 		}
-		this.ui.requestRender();
+		this.requestRenderRespectingInput();
 	}
 
 	private toggleThinkingBlockVisibility(): void {
@@ -4306,13 +4333,13 @@ export class InteractiveMode {
 	showError(errorMessage: string): void {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(theme.fg("error", `Error: ${errorMessage}`), 1, 0));
-		this.ui.requestRender();
+		this.requestRenderRespectingInput();
 	}
 
 	showWarning(warningMessage: string): void {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
-		this.ui.requestRender();
+		this.requestRenderRespectingInput();
 	}
 
 	showNewVersionNotification(newVersion: string): void {
@@ -4402,6 +4429,7 @@ export class InteractiveMode {
 				this.pendingMessagesContainer.addChild(component);
 			}
 		}
+		this.syncBottomPaneGap();
 	}
 
 	/**
@@ -5062,9 +5090,11 @@ export class InteractiveMode {
 							(spinner) => theme.fg("accent", spinner),
 							(text) => theme.fg("muted", text),
 							`Summarizing branch... (${keyText("app.interrupt")} to cancel)`,
+							undefined,
+							{ skipInitialRender: true },
 						);
 						this.statusContainer.addChild(summaryLoader);
-						this.ui.requestRender();
+						this.requestRenderUnlessInputSuppressed();
 					}
 
 					try {
@@ -5907,7 +5937,7 @@ export class InteractiveMode {
 		this.session.setSessionName(name);
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(theme.fg("dim", `Session name set: ${name}`), 1, 0));
-		this.ui.requestRender();
+		this.requestRenderRespectingInput();
 	}
 
 	private handleSessionCommand(): void {
@@ -5944,7 +5974,7 @@ export class InteractiveMode {
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(info, 1, 0));
-		this.ui.requestRender();
+		this.requestRenderRespectingInput();
 	}
 
 	private handleChangelogCommand(): void {
@@ -5965,7 +5995,7 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Markdown(changelogMarkdown, 1, 1, this.getMarkdownThemeWithSettings()));
 		this.chatContainer.addChild(new DynamicBorder());
-		this.ui.requestRender();
+		this.requestRenderRespectingInput();
 	}
 
 	/**
@@ -6094,7 +6124,7 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Markdown(hotkeys.trim(), 1, 1, this.getMarkdownThemeWithSettings()));
 		this.chatContainer.addChild(new DynamicBorder());
-		this.ui.requestRender();
+		this.requestRenderRespectingInput();
 	}
 
 	private async handleClearCommand(): Promise<void> {
@@ -6115,6 +6145,131 @@ export class InteractiveMode {
 		} catch (error: unknown) {
 			await this.handleFatalRuntimeError("Failed to create session", error);
 		}
+	}
+
+	private async collectCompatibilityDiagnostics(): Promise<{
+		packageAudits: Awaited<ReturnType<DefaultPackageManager["auditConfiguredCompatibility"]>>;
+		extensionErrors: Array<{ path: string; error: string }>;
+		skillDiagnostics: ResourceDiagnostic[];
+	}> {
+		const packageManager = new DefaultPackageManager({
+			cwd: this.sessionManager.getCwd(),
+			agentDir: getAgentDir(),
+			settingsManager: this.settingsManager,
+		});
+
+		return {
+			packageAudits: await packageManager.auditConfiguredCompatibility(),
+			extensionErrors: this.session.resourceLoader.getExtensions().errors,
+			skillDiagnostics: this.session.resourceLoader.getSkills().diagnostics,
+		};
+	}
+
+	private getCompatibilityIssueCounts(diagnostics: {
+		packageAudits: Array<{
+			status: "direct" | "light-adapt" | "needs-ai-review";
+		}>;
+		extensionErrors: Array<{ path: string; error: string }>;
+		skillDiagnostics: ResourceDiagnostic[];
+	}): {
+		riskyPackageCount: number;
+		extensionIssueCount: number;
+		skillIssueCount: number;
+	} {
+		return {
+			riskyPackageCount: diagnostics.packageAudits.filter((audit) => audit.status !== "direct").length,
+			extensionIssueCount: diagnostics.extensionErrors.length,
+			skillIssueCount: diagnostics.skillDiagnostics.length,
+		};
+	}
+
+	private formatCompatibilityDiagnostics(diagnostics: {
+		packageAudits: Array<{
+			source: string;
+			status: "direct" | "light-adapt" | "needs-ai-review";
+			reasons: string[];
+		}>;
+		extensionErrors: Array<{ path: string; error: string }>;
+		skillDiagnostics: ResourceDiagnostic[];
+	}): string[] {
+		const lines: string[] = [];
+
+		if (diagnostics.packageAudits.length > 0) {
+			lines.push(theme.fg("accent", "[Package compatibility]"));
+			for (const audit of diagnostics.packageAudits) {
+				lines.push(`  ${audit.source} (${audit.status})`);
+				for (const reason of audit.reasons) {
+					lines.push(`    - ${reason}`);
+				}
+				if (audit.status !== "direct") {
+					lines.push(`    - If this keeps failing, remove it with "${APP_NAME} remove ${audit.source}".`);
+				}
+			}
+			lines.push("");
+		}
+
+		if (diagnostics.extensionErrors.length > 0) {
+			lines.push(theme.fg("warning", "[Extension issues]"));
+			for (const error of diagnostics.extensionErrors) {
+				lines.push(`  ${this.formatDisplayPath(error.path)}`);
+				lines.push(`    - ${error.error}`);
+			}
+			lines.push("");
+		}
+
+		if (diagnostics.skillDiagnostics.length > 0) {
+			lines.push(theme.fg("warning", "[Skill issues]"));
+			for (const diagnostic of diagnostics.skillDiagnostics) {
+				if (diagnostic.path) {
+					lines.push(`  ${this.formatDisplayPath(diagnostic.path)}`);
+				}
+				lines.push(`    - ${diagnostic.message}`);
+			}
+			lines.push("");
+		}
+
+		if (lines.length === 0) {
+			lines.push(theme.fg("accent", "[Compatibility]"));
+			lines.push("  No current plugin, extension, or skill compatibility issues detected.");
+			return lines;
+		}
+
+		lines.push(theme.fg("dim", "Next steps:"));
+		lines.push("  1. Fix or adapt the incompatible plugin/skill.");
+		lines.push("  2. Run /reload to re-check the current session.");
+		lines.push("  3. If it still fails, remove the plugin/package or delete the skill.");
+		return lines;
+	}
+
+	private async showCompatibilityReminderIfNeeded(
+		compatibilityReevaluation?: PackageCompatibilityReevaluationResult,
+	): Promise<void> {
+		const diagnostics = await this.collectCompatibilityDiagnostics();
+		const counts = this.getCompatibilityIssueCounts(diagnostics);
+		const notice = formatStartupCompatibilityNotice({
+			reevaluation: compatibilityReevaluation,
+			riskyPackageCount: counts.riskyPackageCount,
+			extensionIssueCount: counts.extensionIssueCount,
+			skillIssueCount: counts.skillIssueCount,
+		});
+
+		if (!notice) {
+			return;
+		}
+
+		if (notice.level === "warning") {
+			this.showWarning(notice.message);
+			return;
+		}
+
+		this.showStatus(notice.message);
+	}
+
+	private async handleCompatibilityCommand(): Promise<void> {
+		const diagnostics = await this.collectCompatibilityDiagnostics();
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(this.formatCompatibilityDiagnostics(diagnostics).join("\n"), 0, 0));
+		this.requestRenderRespectingInput();
 	}
 
 	private handleDebugCommand(): void {
@@ -6212,7 +6367,7 @@ export class InteractiveMode {
 			// Record the result in session
 			this.session.recordBashResult(command, result, { excludeFromContext });
 			this.bashComponent = undefined;
-			this.ui.requestRender();
+			this.requestRenderUnlessInputSuppressed();
 			return;
 		}
 
@@ -6228,7 +6383,7 @@ export class InteractiveMode {
 			// Show in chat immediately when agent is idle
 			this.chatContainer.addChild(this.bashComponent);
 		}
-		this.ui.requestRender();
+		this.requestRenderUnlessInputSuppressed();
 
 		try {
 			const result = await this.session.executeBash(
@@ -6236,7 +6391,7 @@ export class InteractiveMode {
 				(chunk) => {
 					if (this.bashComponent) {
 						this.bashComponent.appendOutput(chunk);
-						this.ui.requestRender();
+						this.requestRenderUnlessInputSuppressed();
 					}
 				},
 				{ excludeFromContext, operations: eventResult?.operations },
@@ -6258,7 +6413,7 @@ export class InteractiveMode {
 		}
 
 		this.bashComponent = undefined;
-		this.ui.requestRender();
+		this.requestRenderUnlessInputSuppressed();
 	}
 
 	private async handleCompactCommand(customInstructions?: string): Promise<void> {

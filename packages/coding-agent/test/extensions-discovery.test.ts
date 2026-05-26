@@ -490,4 +490,16 @@ describe("extensions discovery", () => {
 		expect(result.errors).toHaveLength(0);
 		expect(result.extensions).toHaveLength(0);
 	});
+
+	it("loads the codex-style compaction extension without initialization errors", async () => {
+		const extPath = path.resolve(__dirname, "../../../.lumen/extensions/codex-style-compaction.ts");
+
+		const result = await discoverAndLoadExtensions([extPath], tempDir, tempDir);
+
+		expect(result.errors).toHaveLength(0);
+		expect(result.extensions).toHaveLength(1);
+		expect(result.extensions[0].path).toContain("codex-style-compaction.ts");
+		expect(result.extensions[0].handlers.has("session_before_compact")).toBe(true);
+		expect(result.extensions[0].handlers.has("session_before_tree")).toBe(true);
+	});
 });

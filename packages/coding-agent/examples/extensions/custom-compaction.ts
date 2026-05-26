@@ -15,14 +15,15 @@
 
 import { complete } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { convertToLlm, serializeConversation } from "@earendil-works/pi-coding-agent";
+import { convertToLlm, createCompactionSummaryMessage, serializeConversation } from "@earendil-works/pi-coding-agent";
 
 export default function (pi: ExtensionAPI) {
 	pi.on("session_before_compact", async (event, ctx) => {
 		ctx.ui.notify("Custom compaction extension triggered", "info");
 
-		const { preparation, branchEntries: _, signal } = event;
-		const { messagesToSummarize, turnPrefixMessages, tokensBefore, firstKeptEntryId, previousSummary } = preparation;
+		const { preparation, reason, branchEntries: _, signal } = event;
+		const { messagesToSummarize, turnPrefixMessages, keptMessages, tokensBefore, firstKeptEntryId, previousSummary } =
+			preparation;
 
 		// Use Gemini Flash for summarization (cheaper/faster than most conversation models)
 		const model = ctx.modelRegistry.find("google", "gemini-2.5-flash");
@@ -108,13 +109,24 @@ ${conversationText}
 				return;
 			}
 
-			// Return compaction content - SessionManager adds id/parentId
-			// Use firstKeptEntryId from preparation to keep recent messages
+			// Keep a small amount of recent user intent from the kept region.
+			// Overflow recovery keeps a bit more user context than normal threshold compaction.
+			const recentUserMessages = keptMessages
+				.filter((message) => message.role === "user")
+				.slice(reason === "overflow" ? -3 : -2);
+
+			// Return compaction content - SessionManager adds id/parentId.
+			// replacementMessages lets the extension explicitly control the compacted prefix.
 			return {
 				compaction: {
 					summary,
 					firstKeptEntryId,
 					tokensBefore,
+					summaryPlacement: "after-kept",
+					replacementMessages: [
+						...recentUserMessages,
+						createCompactionSummaryMessage(summary, tokensBefore, new Date().toISOString()),
+					],
 				},
 			};
 		} catch (error) {

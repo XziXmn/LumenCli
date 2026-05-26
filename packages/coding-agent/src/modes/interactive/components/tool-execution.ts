@@ -40,6 +40,13 @@ export class ToolExecutionComponent extends Container {
 	private convertedImages: Map<number, { data: string; mimeType: string }> = new Map();
 	private hideComponent = false;
 
+	private requestRenderUnlessInputSuppressed(force = false): void {
+		if (this.ui.shouldSuppressBackgroundRenderUpdates?.()) {
+			return;
+		}
+		this.ui.requestRender(force);
+	}
+
 	constructor(
 		toolName: string,
 		toolCallId: string,
@@ -118,7 +125,7 @@ export class ToolExecutionComponent extends Container {
 			toolCallId: this.toolCallId,
 			invalidate: () => {
 				this.invalidate();
-				this.ui.requestRender();
+				this.requestRenderUnlessInputSuppressed();
 			},
 			lastComponent,
 			state: this.rendererState,
@@ -152,13 +159,13 @@ export class ToolExecutionComponent extends Container {
 	markExecutionStarted(): void {
 		this.executionStarted = true;
 		this.updateDisplay();
-		this.ui.requestRender();
+		this.requestRenderUnlessInputSuppressed();
 	}
 
 	setArgsComplete(): void {
 		this.argsComplete = true;
 		this.updateDisplay();
-		this.ui.requestRender();
+		this.requestRenderUnlessInputSuppressed();
 	}
 
 	updateResult(
@@ -192,9 +199,7 @@ export class ToolExecutionComponent extends Container {
 				if (converted) {
 					this.convertedImages.set(index, converted);
 					this.updateDisplay();
-					if (!this.ui.shouldSuppressBackgroundRenderUpdates?.()) {
-						this.ui.requestRender();
-					}
+					this.requestRenderUnlessInputSuppressed();
 				}
 			});
 		}

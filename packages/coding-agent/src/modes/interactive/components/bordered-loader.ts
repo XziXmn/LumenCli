@@ -20,6 +20,8 @@ export class BorderedLoader extends Container {
 				(s) => theme.fg("accent", s),
 				(s) => theme.fg("muted", s),
 				message,
+				undefined,
+				{ skipInitialRender: true },
 			);
 		} else {
 			this.signalController = new AbortController();
@@ -28,6 +30,8 @@ export class BorderedLoader extends Container {
 				(s) => theme.fg("accent", s),
 				(s) => theme.fg("muted", s),
 				message,
+				undefined,
+				{ skipInitialRender: true },
 			);
 		}
 		this.addChild(this.loader);

@@ -66,7 +66,7 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 		this.addChild(new Spacer(1));
 
 		// Add title
-		const title = mode === "login" ? "Select provider to configure:" : "Select provider to logout:";
+		const title = mode === "login" ? "选择要配置的 provider：" : "选择要退出登录的 provider：";
 		this.addChild(new TruncatedText(theme.fg("accent", theme.bold(title)), 1, 0));
 		this.addChild(new Spacer(1));
 
@@ -141,36 +141,36 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 			const message =
 				this.allProviders.length === 0
 					? this.mode === "login"
-						? "No providers available"
-						: "No providers logged in. Use /login first."
-					: "No matching providers";
+						? "当前没有可用 provider"
+						: "当前没有已登录的 provider，请先使用 /login。"
+					: "没有匹配的 provider";
 			this.listContainer.addChild(new TruncatedText(theme.fg("muted", `  ${message}`), 1, 0));
 		}
 	}
 
 	private formatStatusIndicator(provider: AuthSelectorProvider): string {
 		const credential = this.authStorage.get(provider.id);
-		if (credential?.type === provider.authType) return theme.fg("success", " ✓ configured");
+		if (credential?.type === provider.authType) return theme.fg("success", " ✓ 已配置");
 		if (credential) {
-			const label = credential.type === "oauth" ? "subscription configured" : "API key configured";
+			const label = credential.type === "oauth" ? "订阅已配置" : "API key 已配置";
 			return theme.fg("muted", " • ") + theme.fg("warning", label);
 		}
-		if (provider.authType !== "api_key") return theme.fg("muted", " • unconfigured");
+		if (provider.authType !== "api_key") return theme.fg("muted", " • 未配置");
 
 		const status = this.getAuthStatus(provider.id);
 		switch (status.source) {
 			case "environment":
-				return theme.fg("success", ` ✓ env: ${status.label ?? "API key"}`);
+				return theme.fg("success", ` ✓ 环境变量: ${status.label ?? "API key"}`);
 			case "runtime":
-				return theme.fg("success", " ✓ runtime API key");
+				return theme.fg("success", " ✓ 运行时 API key");
 			case "fallback":
-				return theme.fg("success", " ✓ custom API key");
+				return theme.fg("success", " ✓ 自定义 API key");
 			case "models_json_key":
-				return theme.fg("success", " ✓ key in models.json");
+				return theme.fg("success", " ✓ models.json 中的 key");
 			case "models_json_command":
-				return theme.fg("success", " ✓ command in models.json");
+				return theme.fg("success", " ✓ models.json 中的命令");
 			default:
-				return theme.fg("muted", " • unconfigured");
+				return theme.fg("muted", " • 未配置");
 		}
 	}
 

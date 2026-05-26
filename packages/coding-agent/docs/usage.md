@@ -47,6 +47,7 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/fork` | Create a new session from a previous user message |
 | `/clone` | Duplicate the current active branch into a new session |
 | `/compact [prompt]` | Manually compact context, optionally with custom instructions |
+| `/compat` | Inspect package, extension, and skill compatibility diagnostics |
 | `/copy` | Copy last assistant message to clipboard |
 | `/export [file]` | Export session to HTML |
 | `/share` | Upload as private GitHub gist with shareable HTML link |
@@ -89,6 +90,22 @@ Useful session commands:
 - `/compact` summarizes older messages to free context.
 
 See [Sessions](sessions.md) and [Compaction](compaction.md) for details.
+
+## Compatibility Diagnostics
+
+When Pi detects compatibility problems for installed packages, extensions, or skills at startup, it shows a warning in interactive mode.
+
+Use `/compat` to inspect the current diagnostics in one place:
+
+- package compatibility audits from installed npm, git, or local packages
+- extension load errors
+- skill validation warnings
+
+Typical recovery flow:
+
+1. Adapt or fix the incompatible plugin or skill.
+2. Run `/reload` to re-check the current session.
+3. If it still fails, remove the package or delete the skill.
 
 ## Context Files
 

@@ -190,6 +190,59 @@ describe("core progress surface", () => {
 		expect(output).toContain("@review: grep retry logic");
 	});
 
+	it("keeps execution row text stable when a running task briefly loses meta", () => {
+		const withMeta = render({
+			tasks: [
+				{
+					id: "task:explore-1",
+					content: "分析审批和用户判断流程实现",
+					subject: "分析审批和用户判断流程实现",
+					activeForm: "分析审批和用户判断流程实现",
+					status: "running",
+					group: "explore",
+					meta: "分析审批和用户判断流程实现",
+					toolCount: 55,
+					tokens: 26_000,
+					durationMs: 3 * 60_000 + 29_000,
+				},
+			],
+			queued: undefined,
+			spinner: {
+				elapsedMs: 3 * 60_000 + 57_000,
+				outputTokens: 502,
+				mode: "tool-use",
+			},
+			expanded: false,
+		});
+
+		const withoutMeta = render({
+			tasks: [
+				{
+					id: "task:explore-1",
+					content: "分析审批和用户判断流程实现",
+					subject: "分析审批和用户判断流程实现",
+					activeForm: "分析审批和用户判断流程实现",
+					status: "running",
+					group: "explore",
+					toolCount: 55,
+					tokens: 26_000,
+					durationMs: 3 * 60_000 + 30_000,
+				},
+			],
+			queued: undefined,
+			spinner: {
+				elapsedMs: 3 * 60_000 + 58_000,
+				outputTokens: 502,
+				mode: "tool-use",
+			},
+			expanded: false,
+		});
+
+		expect(withMeta).toContain("@explore: 分析审批和用户判断流程实现 · 55 uses · 26k tokens · 3m 29s");
+		expect(withoutMeta).toContain("@explore: 分析审批和用户判断流程实现 · 55 uses · 26k tokens · 3m 30s");
+		expect(withoutMeta).not.toContain("@explore: 分析审批和用户判断流程实现...");
+	});
+
 	it("keeps the generic working verb when there is no active todo and the leader is just streaming", () => {
 		const output = render({
 			tasks: [

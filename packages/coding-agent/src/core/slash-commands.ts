@@ -34,6 +34,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "logout", description: "移除 provider 认证" },
 	{ name: "new", description: "开始新会话" },
 	{ name: "compact", description: "手动压缩会话上下文" },
+	{ name: "compat", description: "检查插件、技能与兼容性问题" },
 	{ name: "resume", description: "恢复其他会话" },
 	{ name: "reload", description: "重新加载快捷键、扩展、技能、提示词和主题" },
 	{ name: "quit", description: `退出 ${APP_NAME}` },

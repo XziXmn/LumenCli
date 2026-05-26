@@ -104,6 +104,10 @@ export interface CompactionResult<T = unknown> {
 	summary: string;
 	firstKeptEntryId: string;
 	tokensBefore: number;
+	/** Where the compaction summary should appear relative to kept messages in rebuilt context. */
+	summaryPlacement?: "before-kept" | "after-kept";
+	/** Full replacement history for the compacted prefix, when the extension wants exact control. */
+	replacementMessages?: AgentMessage[];
 	/** Extension-specific data (e.g., ArtifactIndex, version markers for structured compaction) */
 	details?: T;
 }
@@ -116,6 +120,7 @@ export interface CompactionSettings {
 	enabled: boolean;
 	reserveTokens: number;
 	keepRecentTokens: number;
+	compactPrompt?: string;
 }
 
 export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
@@ -451,6 +456,40 @@ export function findCutPoint(
 // Summarization
 // ============================================================================
 
+export const CODEX_COMPACTION_SYSTEM_PROMPT =
+	"You summarize coding conversations into high-signal continuation checkpoints. Preserve exact file paths, error messages, tool outcomes, and next steps.";
+
+export const CODEX_COMPACTION_PROMPT = `Create a structured coding-session checkpoint.
+
+Use this exact section structure:
+
+## Goal
+[Main objective]
+
+## Constraints & Preferences
+- [...]
+
+## Progress
+### Done
+- [x] ...
+
+### In Progress
+- [ ] ...
+
+### Blocked
+- ...
+
+## Key Decisions
+- **Decision**: rationale
+
+## Next Steps
+1. ...
+
+## Critical Context
+- ...
+
+Keep the summary compact but continuation-ready.`;
+
 const SUMMARIZATION_PROMPT = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
 
 Use this EXACT format:
@@ -537,6 +576,7 @@ export async function generateSummary(
 	customInstructions?: string,
 	previousSummary?: string,
 	thinkingLevel?: ThinkingLevel,
+	basePromptOverride?: string,
 ): Promise<string> {
 	const maxTokens = Math.min(
 		Math.floor(0.8 * reserveTokens),
@@ -544,7 +584,7 @@ export async function generateSummary(
 	);
 
 	// Use update prompt if we have a previous summary, otherwise initial prompt
-	let basePrompt = previousSummary ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT;
+	let basePrompt = previousSummary ? UPDATE_SUMMARIZATION_PROMPT : basePromptOverride?.trim() || SUMMARIZATION_PROMPT;
 	if (customInstructions) {
 		basePrompt = `${basePrompt}\n\nAdditional focus: ${customInstructions}`;
 	}
@@ -576,7 +616,10 @@ export async function generateSummary(
 
 	const response = await completeSimple(
 		model,
-		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
+		{
+			systemPrompt: basePromptOverride?.trim() ? CODEX_COMPACTION_SYSTEM_PROMPT : SUMMARIZATION_SYSTEM_PROMPT,
+			messages: summarizationMessages,
+		},
 		completionOptions,
 	);
 
@@ -603,6 +646,8 @@ export interface CompactionPreparation {
 	messagesToSummarize: AgentMessage[];
 	/** Messages that will be turned into turn prefix summary (if splitting) */
 	turnPrefixMessages: AgentMessage[];
+	/** Messages that the default compaction path would keep after the cut point. */
+	keptMessages: AgentMessage[];
 	/** Whether this is a split turn (cut point in middle of turn) */
 	isSplitTurn: boolean;
 	tokensBefore: number;
@@ -612,6 +657,55 @@ export interface CompactionPreparation {
 	fileOps: FileOperations;
 	/** Compaction settions from settings.jsonl	*/
 	settings: CompactionSettings;
+}
+
+export function createCodexStyleReplacementMessages(
+	recentUserMessages: string[],
+	summaryBridge: string | undefined,
+	tokensBefore: number,
+	maxRecentUserMessages: number,
+): AgentMessage[] | undefined {
+	if (recentUserMessages.length === 0 && !summaryBridge) {
+		return undefined;
+	}
+
+	const replacementMessages: AgentMessage[] = recentUserMessages
+		.slice(Math.max(0, recentUserMessages.length - maxRecentUserMessages))
+		.map((text, index) => ({
+			role: "user",
+			content: text,
+			timestamp: Date.now() + index,
+		}));
+
+	if (summaryBridge) {
+		replacementMessages.push(createCompactionSummaryMessage(summaryBridge, tokensBefore, new Date().toISOString()));
+	}
+
+	return replacementMessages;
+}
+
+function extractRecentUserMessages(messages: AgentMessage[], count: number): string[] {
+	const result: string[] = [];
+	for (let i = messages.length - 1; i >= 0 && result.length < count; i--) {
+		const message = messages[i];
+		if (message.role !== "user") continue;
+		const content = message.content;
+		if (typeof content === "string" && content.trim()) {
+			result.push(content.trim());
+			continue;
+		}
+		if (Array.isArray(content)) {
+			const text = content
+				.filter((block): block is { type: "text"; text: string } => block.type === "text")
+				.map((block) => block.text)
+				.join("\n")
+				.trim();
+			if (text) {
+				result.push(text);
+			}
+		}
+	}
+	return result.reverse();
 }
 
 export function prepareCompaction(
@@ -669,6 +763,13 @@ export function prepareCompaction(
 		}
 	}
 
+	// Messages that remain in context after the cut point and before the compaction entry
+	const keptMessages: AgentMessage[] = [];
+	for (let i = cutPoint.firstKeptEntryIndex; i < boundaryEnd; i++) {
+		const msg = getMessageFromEntryForCompaction(pathEntries[i]);
+		if (msg) keptMessages.push(msg);
+	}
+
 	// Extract file operations from messages and previous compaction
 	const fileOps = extractFileOperations(messagesToSummarize, pathEntries, prevCompactionIndex);
 
@@ -683,6 +784,7 @@ export function prepareCompaction(
 		firstKeptEntryId,
 		messagesToSummarize,
 		turnPrefixMessages,
+		keptMessages,
 		isSplitTurn: cutPoint.isSplitTurn,
 		tokensBefore,
 		previousSummary,
@@ -754,6 +856,7 @@ export async function compact(
 						customInstructions,
 						previousSummary,
 						thinkingLevel,
+						settings.compactPrompt,
 					)
 				: Promise.resolve("No prior history."),
 			generateTurnPrefixSummary(
@@ -780,6 +883,7 @@ export async function compact(
 			customInstructions,
 			previousSummary,
 			thinkingLevel,
+			settings.compactPrompt,
 		);
 	}
 
@@ -791,10 +895,18 @@ export async function compact(
 		throw new Error("First kept entry has no UUID - session may need migration");
 	}
 
+	const recentUserMessages = extractRecentUserMessages(
+		preparation.keptMessages.length > 0 ? preparation.keptMessages : [...messagesToSummarize, ...turnPrefixMessages],
+		3,
+	);
+	const replacementMessages = createCodexStyleReplacementMessages(recentUserMessages, summary, tokensBefore, 2);
+
 	return {
 		summary,
 		firstKeptEntryId,
 		tokensBefore,
+		summaryPlacement: replacementMessages ? "after-kept" : "before-kept",
+		replacementMessages,
 		details: { readFiles, modifiedFiles } as CompactionDetails,
 	};
 }

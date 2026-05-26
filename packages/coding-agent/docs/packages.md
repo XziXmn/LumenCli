@@ -38,6 +38,8 @@ pi update --extension npm:@foo/bar
 
 By default, `install` and `remove` write to global settings (`~/.lumen/agent/settings.json`). Use `-l` to write to project settings (`.lumen/settings.json`) instead. Project settings can be shared with your team, and Lumen installs any missing packages automatically on startup.
 
+After `pi install`, Pi immediately audits package compatibility and also records the package for one more automatic compatibility check on the next startup. If startup later reports compatibility issues, run `/compat` in interactive mode to inspect the current diagnostics, then `/reload` after applying fixes. If the package still fails, remove it.
+
 To try a package without installing it, use `--extension` or `-e`. This installs to a temporary directory for the current run only:
 
 ```bash
