@@ -126,6 +126,22 @@ Replace the default system prompt with:
 
 Append to the default prompt without replacing it with `APPEND_SYSTEM.md` in either location.
 
+### System Prompt Layering
+
+Pi keeps the main conversation system prompt and the compaction prompt as two separate chains.
+
+The main conversation system prompt is built in this order:
+
+1. Default built-in Lumen prompt, or a replacement from `SYSTEM.md` / `--system-prompt`
+2. Append overlay from `APPEND_SYSTEM.md` and `--append-system-prompt`
+3. Project context files such as `AGENTS.md`
+4. Skills that are visible to the model
+5. Runtime context such as current date and working directory
+
+This chain controls normal turns. It does not control compaction summaries.
+
+`compact_prompt` is a separate compaction-only prompt, configured through `settings.json` under `compaction.compactPrompt` or `compaction.compactPromptFile`. See [Compaction](compaction.md).
+
 ## Exporting and Sharing Sessions
 
 Use `/export [file]` to write a session to HTML.

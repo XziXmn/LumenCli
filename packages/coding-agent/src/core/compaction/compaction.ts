@@ -123,6 +123,8 @@ export interface CompactionSettings {
 	compactPrompt?: string;
 }
 
+export type CompactionReason = "manual" | "threshold" | "overflow";
+
 export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
 	enabled: true,
 	reserveTokens: 16384,
@@ -490,77 +492,46 @@ Use this exact section structure:
 
 Keep the summary compact but continuation-ready.`;
 
-const SUMMARIZATION_PROMPT = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
+const SUMMARIZATION_PROMPT = CODEX_COMPACTION_PROMPT;
 
-Use this EXACT format:
+const UPDATE_SUMMARIZATION_PROMPT = `Update the existing structured coding-session checkpoint using the new conversation messages.
+
+Rules:
+- Preserve all still-valid information from the previous summary.
+- Add new progress, decisions, blockers, and context from the new messages.
+- Move completed work from "In Progress" to "Done" when appropriate.
+- Refresh "Next Steps" so they reflect the current best continuation path.
+- Preserve exact file paths, function names, commands, and error messages when they matter.
+- Remove stale blockers or stale next steps once they are resolved.
+
+Use this exact section structure:
 
 ## Goal
-[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]
+[Preserve existing goals, extend only if scope truly expanded]
 
 ## Constraints & Preferences
-- [Any constraints, preferences, or requirements mentioned by user]
-- [Or "(none)" if none were mentioned]
+- [...]
 
 ## Progress
 ### Done
-- [x] [Completed tasks/changes]
+- [x] ...
 
 ### In Progress
-- [ ] [Current work]
+- [ ] ...
 
 ### Blocked
-- [Issues preventing progress, if any]
+- ...
 
 ## Key Decisions
-- **[Decision]**: [Brief rationale]
+- **Decision**: rationale
 
 ## Next Steps
-1. [Ordered list of what should happen next]
+1. ...
 
 ## Critical Context
-- [Any data, examples, or references needed to continue]
-- [Or "(none)" if not applicable]
+- ...
 
-Keep each section concise. Preserve exact file paths, function names, and error messages.`;
-
-const UPDATE_SUMMARIZATION_PROMPT = `The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.
-
-Update the existing structured summary with new information. RULES:
-- PRESERVE all existing information from the previous summary
-- ADD new progress, decisions, and context from the new messages
-- UPDATE the Progress section: move items from "In Progress" to "Done" when completed
-- UPDATE "Next Steps" based on what was accomplished
-- PRESERVE exact file paths, function names, and error messages
-- If something is no longer relevant, you may remove it
-
-Use this EXACT format:
-
-## Goal
-[Preserve existing goals, add new ones if the task expanded]
-
-## Constraints & Preferences
-- [Preserve existing, add new ones discovered]
-
-## Progress
-### Done
-- [x] [Include previously done items AND newly completed items]
-
-### In Progress
-- [ ] [Current work - update based on progress]
-
-### Blocked
-- [Current blockers - remove if resolved]
-
-## Key Decisions
-- **[Decision]**: [Brief rationale] (preserve all previous, add new)
-
-## Next Steps
-1. [Update based on current state]
-
-## Critical Context
-- [Preserve important context, add new if needed]
-
-Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+Keep the summary compact but continuation-ready.`;
 
 /**
  * Generate a summary of the conversation using the LLM.
@@ -827,6 +798,7 @@ export async function compact(
 	customInstructions?: string,
 	signal?: AbortSignal,
 	thinkingLevel?: ThinkingLevel,
+	reason: CompactionReason = "manual",
 ): Promise<CompactionResult> {
 	const {
 		firstKeptEntryId,
@@ -842,7 +814,9 @@ export async function compact(
 	// Generate summaries (can be parallel if both needed) and merge into one
 	let summary: string;
 
-	if (isSplitTurn && turnPrefixMessages.length > 0) {
+	const shouldIncludeTurnPrefix = isSplitTurn && turnPrefixMessages.length > 0 && reason === "manual";
+
+	if (shouldIncludeTurnPrefix) {
 		// Generate both summaries in parallel
 		const [historyResult, turnPrefixResult] = await Promise.all([
 			messagesToSummarize.length > 0
@@ -897,9 +871,14 @@ export async function compact(
 
 	const recentUserMessages = extractRecentUserMessages(
 		preparation.keptMessages.length > 0 ? preparation.keptMessages : [...messagesToSummarize, ...turnPrefixMessages],
-		3,
+		reason === "overflow" ? 5 : 3,
 	);
-	const replacementMessages = createCodexStyleReplacementMessages(recentUserMessages, summary, tokensBefore, 2);
+	const replacementMessages = createCodexStyleReplacementMessages(
+		recentUserMessages,
+		summary,
+		tokensBefore,
+		reason === "overflow" ? 3 : 2,
+	);
 
 	return {
 		summary,

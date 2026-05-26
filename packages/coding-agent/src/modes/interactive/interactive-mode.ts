@@ -130,6 +130,7 @@ import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
+import { TUI_COPY } from "./components/tui-copy.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
 import { collapseReadSearchGroups, isCollapsibleToolName } from "./output-flow/collapse.js";
@@ -257,6 +258,11 @@ export class InteractiveMode {
 	private chatContainer: Container;
 	private pendingMessagesContainer: Container;
 	private bottomPaneContainer: Container;
+	private taskbarRowContainer: Container;
+	private pendingRowContainer: Container;
+	private composerFrameContainer: Container;
+	private extensionRowContainer: Container;
+	private passiveFooterRowContainer: Container;
 	private bottomPaneGapContainer: Container;
 	private statusContainer: Container;
 	private defaultEditor: CustomEditor;
@@ -426,6 +432,11 @@ export class InteractiveMode {
 		this.headerContainer = new Container();
 		this.chatContainer = new Container();
 		this.bottomPaneContainer = new Container();
+		this.taskbarRowContainer = new Container();
+		this.pendingRowContainer = new Container();
+		this.composerFrameContainer = new Container();
+		this.extensionRowContainer = new Container();
+		this.passiveFooterRowContainer = new Container();
 		this.bottomPaneGapContainer = new Container();
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
@@ -737,13 +748,28 @@ export class InteractiveMode {
 	}
 
 	private attachMainLayout(): void {
+		this.taskbarRowContainer.clear();
+		this.taskbarRowContainer.addChild(this.statusContainer);
+
+		this.pendingRowContainer.clear();
+		this.pendingRowContainer.addChild(this.pendingMessagesContainer);
+
+		this.composerFrameContainer.clear();
+		this.composerFrameContainer.addChild(this.bottomPaneGapContainer);
+		this.composerFrameContainer.addChild(this.editorContainer);
+
+		this.extensionRowContainer.clear();
+		this.extensionRowContainer.addChild(this.extensionAreaContainer);
+
+		this.passiveFooterRowContainer.clear();
+		this.passiveFooterRowContainer.addChild(this.customFooter ?? this.footer);
+
 		this.bottomPaneContainer.clear();
-		this.bottomPaneContainer.addChild(this.statusContainer);
-		this.bottomPaneContainer.addChild(this.pendingMessagesContainer);
-		this.bottomPaneContainer.addChild(this.bottomPaneGapContainer);
-		this.bottomPaneContainer.addChild(this.editorContainer);
-		this.bottomPaneContainer.addChild(this.extensionAreaContainer);
-		this.bottomPaneContainer.addChild(this.footer);
+		this.bottomPaneContainer.addChild(this.taskbarRowContainer);
+		this.bottomPaneContainer.addChild(this.pendingRowContainer);
+		this.bottomPaneContainer.addChild(this.composerFrameContainer);
+		this.bottomPaneContainer.addChild(this.extensionRowContainer);
+		this.bottomPaneContainer.addChild(this.passiveFooterRowContainer);
 		this.syncBottomPaneGap();
 
 		this.ui.addChild(this.chatContainer);
@@ -838,7 +864,7 @@ export class InteractiveMode {
 			try {
 				await this.session.prompt(initialMessage, { images: initialImages });
 			} catch (error: unknown) {
-				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+				const errorMessage = error instanceof Error ? error.message : "发生未知错误";
 				this.showError(errorMessage);
 			}
 		}
@@ -848,7 +874,7 @@ export class InteractiveMode {
 				try {
 					await this.session.prompt(message);
 				} catch (error: unknown) {
-					const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+					const errorMessage = error instanceof Error ? error.message : "发生未知错误";
 					this.showError(errorMessage);
 				}
 			}
@@ -860,7 +886,7 @@ export class InteractiveMode {
 			try {
 				await this.session.prompt(userInput);
 			} catch (error: unknown) {
-				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+				const errorMessage = error instanceof Error ? error.message : "发生未知错误";
 				this.showError(errorMessage);
 			}
 		}
@@ -2277,7 +2303,7 @@ export class InteractiveMode {
 			| ((tui: TUI, thm: Theme, footerData: ReadonlyFooterDataProvider) => Component & { dispose?(): void })
 			| undefined,
 	): void {
-		if (!this.bottomPaneContainer) {
+		if (!this.passiveFooterRowContainer) {
 			return;
 		}
 
@@ -2286,21 +2312,14 @@ export class InteractiveMode {
 			this.customFooter.dispose();
 		}
 
-		const currentFooter = this.customFooter ?? this.footer;
-		const footerIndex = this.bottomPaneContainer.children.indexOf(currentFooter);
-		if (footerIndex === -1) {
-			return;
-		}
-
 		if (factory) {
-			// Create and replace footer within the lower interaction area.
+			// Create and replace the passive footer row content in-place.
 			this.customFooter = factory(this.ui, theme, this.footerDataProvider);
-			this.bottomPaneContainer.children[footerIndex] = this.customFooter;
 		} else {
-			// Restore built-in footer in-place.
 			this.customFooter = undefined;
-			this.bottomPaneContainer.children[footerIndex] = this.footer;
 		}
+		this.passiveFooterRowContainer.clear();
+		this.passiveFooterRowContainer.addChild(this.customFooter ?? this.footer);
 
 		this.ui.requestRender();
 	}
@@ -3678,9 +3697,7 @@ export class InteractiveMode {
 						event.success ? { expiresMs: 1500 } : undefined,
 					);
 					if (!event.success) {
-						this.showError(
-							`Retry failed after ${event.attempt} attempts: ${event.finalError || "Unknown error"}`,
-						);
+						this.showError(`重试在第 ${event.attempt} 次后失败：${event.finalError || "未知错误"}`);
 					}
 					this.requestRenderUnlessInputSuppressed();
 					break;
@@ -5259,7 +5276,7 @@ export class InteractiveMode {
 
 	private showLoginAuthTypeSelector(): void {
 		const subscriptionLabel = "使用订阅登录";
-		const apiKeyLabel = "使用 API key";
+		const apiKeyLabel = "使用 API 密钥";
 		this.showSelector((done) => {
 			const selector = new ExtensionSelectorComponent(
 				"请选择登录方式：",
@@ -5282,7 +5299,7 @@ export class InteractiveMode {
 		const providerOptions = this.getLoginProviderOptions(authType);
 		if (providerOptions.length === 0) {
 			this.showStatus(
-				authType === "oauth" ? "当前没有可用的订阅登录 provider。" : "当前没有可用的 API key provider。",
+				authType === "oauth" ? "当前没有可用的订阅登录模型提供方。" : "当前没有可用的 API 密钥登录模型提供方。",
 			);
 			return;
 		}
@@ -5352,7 +5369,7 @@ export class InteractiveMode {
 						const message =
 							providerOption.authType === "oauth"
 								? `已退出 ${providerOption.name}`
-								: `已移除 ${providerOption.name} 的已保存 API key。环境变量和 models.json 不会被改动。`;
+								: `已移除 ${providerOption.name} 的已保存 API 密钥。环境变量和 models.json 不会被修改。`;
 						this.showStatus(message);
 					} catch (error: unknown) {
 						this.showError(`退出登录失败：${error instanceof Error ? error.message : String(error)}`);
@@ -5375,7 +5392,7 @@ export class InteractiveMode {
 	): Promise<void> {
 		this.session.modelRegistry.refresh();
 
-		const actionLabel = authType === "oauth" ? `已登录 ${providerName}` : `已保存 ${providerName} 的 API key`;
+		const actionLabel = authType === "oauth" ? `已登录 ${providerName}` : `已保存 ${providerName} 的 API 密钥`;
 
 		let selectedModel: Model<any> | undefined;
 		let selectionError: string | undefined;
@@ -5383,9 +5400,9 @@ export class InteractiveMode {
 			const availableModels = this.session.modelRegistry.getAvailable();
 			const providerModels = availableModels.filter((model) => model.provider === providerId);
 			if (!hasDefaultModelProvider(providerId)) {
-				selectionError = `${actionLabel}，但 provider "${providerId}" 还没有默认模型。请使用 /model 选择模型。`;
+				selectionError = `${actionLabel}，但模型提供方“${providerId}”还没有默认模型。请使用 /model 选择模型。`;
 			} else if (providerModels.length === 0) {
-				selectionError = `${actionLabel}，但这个 provider 当前没有可用模型。请使用 /model 选择模型。`;
+				selectionError = `${actionLabel}，但这个模型提供方当前没有可用模型。请使用 /model 选择模型。`;
 			} else {
 				const defaultModelId = defaultModelPerProvider[providerId];
 				selectedModel = providerModels.find((model) => model.id === defaultModelId);
@@ -5436,8 +5453,8 @@ export class InteractiveMode {
 			"Amazon Bedrock 配置说明",
 		);
 		dialog.showInfo([
-			theme.fg("text", "Amazon Bedrock 使用 AWS 凭据，不是单独的一条 API key。"),
-			theme.fg("text", "请先配置 AWS profile、IAM key、bearer token，或基于角色的凭据。"),
+			theme.fg("text", "Amazon Bedrock 使用 AWS 凭据，不是单独的一条 API 密钥。"),
+			theme.fg("text", "请先配置 AWS profile、IAM 密钥、bearer token，或基于角色的凭据。"),
 			theme.fg("muted", "参考："),
 			theme.fg("accent", `  ${path.join(getDocsPath(), "providers.md")}`),
 		]);
@@ -5473,9 +5490,9 @@ export class InteractiveMode {
 		};
 
 		try {
-			const apiKey = (await dialog.showPrompt("请输入 API key：")).trim();
+			const apiKey = (await dialog.showPrompt("请输入 API 密钥：")).trim();
 			if (!apiKey) {
-				throw new Error("API key 不能为空。");
+				throw new Error("API 密钥不能为空。");
 			}
 
 			this.session.modelRegistry.authStorage.set(providerId, { type: "api_key", key: apiKey });
@@ -5486,7 +5503,7 @@ export class InteractiveMode {
 			restoreEditor();
 			const errorMsg = error instanceof Error ? error.message : String(error);
 			if (errorMsg !== "登录已取消") {
-				this.showError(`保存 ${providerName} 的 API key 失败：${errorMsg}`);
+				this.showError(`保存 ${providerName} 的 API 密钥失败：${errorMsg}`);
 			}
 		}
 	}
@@ -5867,7 +5884,7 @@ export class InteractiveMode {
 			restoreEditor();
 
 			if (result.code !== 0) {
-				const errorMsg = result.stderr?.trim() || "Unknown error";
+				const errorMsg = result.stderr?.trim() || "未知错误";
 				this.showError(`创建 gist 失败：${errorMsg}`);
 				return;
 			}
@@ -6043,50 +6060,50 @@ export class InteractiveMode {
 		const pasteImage = this.getAppKeyDisplay("app.clipboard.pasteImage");
 
 		let hotkeys = `
-**Navigation**
-| Key | Action |
+**${TUI_COPY.hotkeys.navigation}**
+| ${TUI_COPY.hotkeys.key} | ${TUI_COPY.hotkeys.action} |
 |-----|--------|
-| \`${cursorUp}\` / \`${cursorDown}\` / \`${cursorLeft}\` / \`${cursorRight}\` | Move cursor / browse history (Up when empty) |
-| \`${cursorWordLeft}\` / \`${cursorWordRight}\` | Move by word |
-| \`${cursorLineStart}\` | Start of line |
-| \`${cursorLineEnd}\` | End of line |
-| \`${jumpForward}\` | Jump forward to character |
-| \`${jumpBackward}\` | Jump backward to character |
-| \`${pageUp}\` / \`${pageDown}\` | Scroll by page |
+| \`${cursorUp}\` / \`${cursorDown}\` / \`${cursorLeft}\` / \`${cursorRight}\` | ${TUI_COPY.hotkeys.moveCursor} |
+| \`${cursorWordLeft}\` / \`${cursorWordRight}\` | ${TUI_COPY.hotkeys.moveByWord} |
+| \`${cursorLineStart}\` | ${TUI_COPY.hotkeys.lineStart} |
+| \`${cursorLineEnd}\` | ${TUI_COPY.hotkeys.lineEnd} |
+| \`${jumpForward}\` | ${TUI_COPY.hotkeys.jumpForward} |
+| \`${jumpBackward}\` | ${TUI_COPY.hotkeys.jumpBackward} |
+| \`${pageUp}\` / \`${pageDown}\` | ${TUI_COPY.hotkeys.scrollPage} |
 
-**Editing**
-| Key | Action |
+**${TUI_COPY.hotkeys.editing}**
+| ${TUI_COPY.hotkeys.key} | ${TUI_COPY.hotkeys.action} |
 |-----|--------|
-| \`${submit}\` | Send message |
-| \`${newLine}\` | New line${process.platform === "win32" ? " (Ctrl+Enter on Windows Terminal)" : ""} |
-| \`${deleteWordBackward}\` | Delete word backwards |
-| \`${deleteWordForward}\` | Delete word forwards |
-| \`${deleteToLineStart}\` | Delete to start of line |
-| \`${deleteToLineEnd}\` | Delete to end of line |
-| \`${yank}\` | Paste the most-recently-deleted text |
-| \`${yankPop}\` | Cycle through the deleted text after pasting |
-| \`${undo}\` | Undo |
+| \`${submit}\` | ${TUI_COPY.hotkeys.sendMessage} |
+| \`${newLine}\` | ${process.platform === "win32" ? TUI_COPY.hotkeys.newLineWindowsTerminal : TUI_COPY.hotkeys.newLine} |
+| \`${deleteWordBackward}\` | ${TUI_COPY.hotkeys.deleteWordBackward} |
+| \`${deleteWordForward}\` | ${TUI_COPY.hotkeys.deleteWordForward} |
+| \`${deleteToLineStart}\` | ${TUI_COPY.hotkeys.deleteToLineStart} |
+| \`${deleteToLineEnd}\` | ${TUI_COPY.hotkeys.deleteToLineEnd} |
+| \`${yank}\` | ${TUI_COPY.hotkeys.yank} |
+| \`${yankPop}\` | ${TUI_COPY.hotkeys.yankPop} |
+| \`${undo}\` | ${TUI_COPY.hotkeys.undo} |
 
-**Other**
-| Key | Action |
+**${TUI_COPY.hotkeys.other}**
+| ${TUI_COPY.hotkeys.key} | ${TUI_COPY.hotkeys.action} |
 |-----|--------|
-| \`${tab}\` | Path completion / accept autocomplete |
-| \`${interrupt}\` | Cancel autocomplete / abort streaming |
-| \`${clear}\` | Clear editor (first) / exit (second) |
-| \`${exit}\` | Exit (when editor is empty) |
-| \`${suspend}\` | Suspend to background |
-| \`${cycleThinkingLevel}\` | Cycle thinking level |
-| \`${cycleModelForward}\` / \`${cycleModelBackward}\` | Cycle models |
-| \`${selectModel}\` | Open model selector |
-| \`${expandTools}\` | Toggle tool output expansion |
-| \`${toggleThinking}\` | Toggle thinking block visibility |
-| \`${externalEditor}\` | Edit message in external editor |
-| \`${followUp}\` | Queue follow-up message |
-| \`${dequeue}\` | Restore queued messages |
-| \`${pasteImage}\` | Paste image from clipboard |
-| \`/\` | Slash commands |
-| \`!\` | Run bash command |
-| \`!!\` | Run bash command (excluded from context) |
+| \`${tab}\` | ${TUI_COPY.hotkeys.pathCompletion} |
+| \`${interrupt}\` | ${TUI_COPY.hotkeys.cancelAutocomplete} |
+| \`${clear}\` | ${TUI_COPY.hotkeys.clearOrExit} |
+| \`${exit}\` | ${TUI_COPY.hotkeys.exitWhenEmpty} |
+| \`${suspend}\` | ${TUI_COPY.hotkeys.suspend} |
+| \`${cycleThinkingLevel}\` | ${TUI_COPY.hotkeys.cycleThinking} |
+| \`${cycleModelForward}\` / \`${cycleModelBackward}\` | ${TUI_COPY.hotkeys.cycleModels} |
+| \`${selectModel}\` | ${TUI_COPY.hotkeys.openModelSelector} |
+| \`${expandTools}\` | ${TUI_COPY.hotkeys.toggleToolExpansion} |
+| \`${toggleThinking}\` | ${TUI_COPY.hotkeys.toggleThinking} |
+| \`${externalEditor}\` | ${TUI_COPY.hotkeys.openExternalEditor} |
+| \`${followUp}\` | ${TUI_COPY.hotkeys.queueFollowUp} |
+| \`${dequeue}\` | ${TUI_COPY.hotkeys.restoreQueued} |
+| \`${pasteImage}\` | ${TUI_COPY.hotkeys.pasteImage} |
+| \`/\` | ${TUI_COPY.hotkeys.slashCommands} |
+| \`!\` | ${TUI_COPY.hotkeys.runBash} |
+| \`!!\` | ${TUI_COPY.hotkeys.runBashExcluded} |
 `;
 
 		// Add extension-registered shortcuts
@@ -6094,8 +6111,8 @@ export class InteractiveMode {
 		const shortcuts = extensionRunner.getShortcuts(this.keybindings.getEffectiveConfig());
 		if (shortcuts.size > 0) {
 			hotkeys += `
-**Extensions**
-| Key | Action |
+**${TUI_COPY.hotkeys.extensions}**
+| ${TUI_COPY.hotkeys.key} | ${TUI_COPY.hotkeys.action} |
 |-----|--------|
 `;
 			for (const [key, shortcut] of shortcuts) {
@@ -6396,7 +6413,7 @@ export class InteractiveMode {
 			if (this.bashComponent) {
 				this.bashComponent.setComplete(undefined, false);
 			}
-			this.showError(`Bash command failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+			this.showError(`Bash 命令执行失败：${error instanceof Error ? error.message : "未知错误"}`);
 		}
 
 		this.bashComponent = undefined;

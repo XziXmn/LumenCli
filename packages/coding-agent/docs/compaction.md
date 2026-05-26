@@ -438,8 +438,27 @@ Configure compaction in `~/.lumen/agent/settings.json` or `<project-dir>/.lumen/
 | `reserveTokens` | `16384` | Tokens to reserve for LLM response |
 | `keepRecentTokens` | `20000` | Recent tokens to keep (not summarized) |
 | `compactPrompt` | built-in Codex-style prompt | Override the default compaction prompt used by core summarization |
+| `compactPromptFile` | unset | Load the compaction prompt from a file; overrides `compactPrompt` when present |
 
 Disable auto-compaction with `"enabled": false`. You can still compact manually with `/compact`.
+
+## Prompt Boundary
+
+`compact_prompt` is governed separately from the main conversation system prompt.
+
+- Main conversation prompt:
+  - built-in Lumen prompt or `SYSTEM.md`
+  - `APPEND_SYSTEM.md`
+  - context files
+  - skills
+  - runtime context
+- Compaction prompt:
+  - built-in Codex-style compaction prompt
+  - `compaction.compactPrompt`
+  - `compaction.compactPromptFile`
+  - optional custom instructions passed to `/compact`
+
+Changing the main system prompt does not automatically change compaction behavior. Extensions that need custom compaction should use `session_before_compact`, not `appendSystemPrompt`.
 
 ## Lumen default behavior
 

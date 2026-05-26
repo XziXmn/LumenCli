@@ -35,7 +35,7 @@ describe("TUI dialog localization", () => {
 	it("shows login dialog labels in Chinese", () => {
 		const tui = new TUI(new VirtualTerminal(80, 20));
 		const dialog = new LoginDialogComponent(tui, "anthropic", () => {}, "Anthropic");
-		dialog.showPrompt("请输入 API key：", "sk-ant-...");
+		dialog.showPrompt("请输入 API 密钥：", "sk-ant-...");
 
 		const output = stripAnsi(dialog.render(80).join("\n"));
 		expect(output).toContain("登录 Anthropic");

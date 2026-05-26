@@ -45,10 +45,10 @@ describe("core progress surface", () => {
 		});
 
 		expect(output).toMatch(/[⣻⣽⣾⣷⣯⣟⢿⡿] 正在接入数据源\.\.\./);
-		expect(output).toContain("Plan");
+		expect(output).toContain("计划");
 		expect(output).toContain("◐ 接入数据源");
 		expect(output).toContain("☐ 数据清洗");
-		expect(output).toContain("Next: 数据清洗");
+		expect(output).toContain("下一步：数据清洗");
 	});
 
 	it("renders task execution above todo plan when both exist", () => {
@@ -106,10 +106,10 @@ describe("core progress surface", () => {
 
 		expect(output).toContain("正在实现支付模块...");
 		expect(output).not.toContain("@worker 正在实现支付模块...");
-		expect(output).toContain("@worker: edit src/payment.ts · 3 uses · 640 tokens");
-		expect(output).toContain("@tester: 补回归测试 · pending");
-		expect(output).toContain("1 running task");
-		expect(output).toContain("Plan");
+		expect(output).toContain("@worker: 实现支付模块 · 当前工具：edit src/payment.ts · 3 次调用 · 640 tokens");
+		expect(output).toContain("@tester: 补回归测试 · 等待中");
+		expect(output).toContain("1 个运行中的任务");
+		expect(output).toContain("计划");
 		expect(output).toContain("☒ 需求梳理");
 		expect(output).toContain("☐ 补回归测试");
 	});
@@ -147,7 +147,7 @@ describe("core progress surface", () => {
 
 		expect(output).toContain("抽取公共工具类...");
 		expect(output).not.toContain("@explore 读取 CONTRIBUTING.md...");
-		expect(output).toContain("@explore: read CONTRIBUTING.md");
+		expect(output).toContain("@explore: 读取 CONTRIBUTING.md · 当前工具：read CONTRIBUTING.md");
 	});
 
 	it("aggregates multi-agent execution in the headline while keeping detail rows below", () => {
@@ -185,9 +185,9 @@ describe("core progress surface", () => {
 			expanded: false,
 		});
 
-		expect(output).toContain("2 running tasks...");
-		expect(output).toContain("@explore: read CONTRIBUTING.md");
-		expect(output).toContain("@review: grep retry logic");
+		expect(output).toContain("2 个运行中的任务...");
+		expect(output).toContain("@explore: 读取 CONTRIBUTING.md · 当前工具：read CONTRIBUTING.md");
+		expect(output).toContain("@review: 扫描错误处理路径 · 当前工具：grep retry logic");
 	});
 
 	it("keeps execution row text stable when a running task briefly loses meta", () => {
@@ -238,9 +238,65 @@ describe("core progress surface", () => {
 			expanded: false,
 		});
 
-		expect(withMeta).toContain("@explore: 分析审批和用户判断流程实现 · 55 uses · 26k tokens · 3m 29s");
-		expect(withoutMeta).toContain("@explore: 分析审批和用户判断流程实现 · 55 uses · 26k tokens · 3m 30s");
+		expect(withMeta).toContain("@explore: 分析审批和用户判断流程实现 · 55 次调用 · 26k tokens · 3m 29s");
+		expect(withoutMeta).toContain("@explore: 分析审批和用户判断流程实现 · 55 次调用 · 26k tokens · 3m 30s");
 		expect(withoutMeta).not.toContain("@explore: 分析审批和用户判断流程实现...");
+	});
+
+	it("keeps execution row primary text stable when the current tool changes", () => {
+		const readPhase = render({
+			tasks: [
+				{
+					id: "task:explore-1",
+					content: "分析审批和用户判断流程实现",
+					subject: "分析审批和用户判断流程实现",
+					status: "running",
+					group: "explore",
+					meta: "read approval-flow.ts",
+					toolCount: 55,
+					tokens: 26_000,
+					durationMs: 3 * 60_000 + 29_000,
+				},
+			],
+			queued: undefined,
+			spinner: {
+				elapsedMs: 3 * 60_000 + 57_000,
+				outputTokens: 502,
+				mode: "tool-use",
+			},
+			expanded: false,
+		});
+
+		const grepPhase = render({
+			tasks: [
+				{
+					id: "task:explore-1",
+					content: "分析审批和用户判断流程实现",
+					subject: "分析审批和用户判断流程实现",
+					status: "running",
+					group: "explore",
+					meta: "grep approvalState",
+					toolCount: 56,
+					tokens: 26_300,
+					durationMs: 3 * 60_000 + 31_000,
+				},
+			],
+			queued: undefined,
+			spinner: {
+				elapsedMs: 3 * 60_000 + 59_000,
+				outputTokens: 520,
+				mode: "tool-use",
+			},
+			expanded: false,
+		});
+
+		expect(readPhase).toContain(
+			"@explore: 分析审批和用户判断流程实现 · 当前工具：read approval-flow.ts · 55 次调用 · 26k tokens · 3m 29s",
+		);
+		expect(grepPhase).toContain(
+			"@explore: 分析审批和用户判断流程实现 · 当前工具：grep approvalState · 56 次调用 · 26k tokens · 3m 31s",
+		);
+		expect(grepPhase).not.toContain("@explore: grep approvalState");
 	});
 
 	it("keeps the generic working verb when there is no active todo and the leader is just streaming", () => {
@@ -278,9 +334,9 @@ describe("core progress surface", () => {
 			expanded: false,
 		});
 
-		expect(output).not.toContain("2 running tasks...");
-		expect(output).toContain("@explore: read CONTRIBUTING.md");
-		expect(output).toContain("@review: grep retry logic");
+		expect(output).not.toContain("2 个运行中的任务...");
+		expect(output).toContain("@explore: 读取 CONTRIBUTING.md · 当前工具：read CONTRIBUTING.md");
+		expect(output).toContain("@review: 扫描错误处理路径 · 当前工具：grep retry logic");
 	});
 
 	it("keeps a live multi-agent execution headline instead of falling back to idle", () => {
@@ -318,10 +374,10 @@ describe("core progress surface", () => {
 			expanded: false,
 		});
 
-		expect(output).toMatch(/[⣻⣽⣾⣷⣯⣟⢿⡿] 2 running tasks\.\.\./);
-		expect(output).toContain("@explore: git branch --show-current");
-		expect(output).toContain("@explore: read tsconfig.json");
-		expect(output).not.toContain("Idle");
+		expect(output).toMatch(/[⣻⣽⣾⣷⣯⣟⢿⡿] 2 个运行中的任务\.\.\./);
+		expect(output).toContain("@explore: 查看Git分支信息 · 当前工具：git branch --show-current");
+		expect(output).toContain("@explore: 读取tsconfig配置 · 当前工具：read tsconfig.json");
+		expect(output).not.toContain("空转");
 	});
 
 	it("renders banner headline without mixing queued commands into the status surface", () => {
@@ -545,9 +601,9 @@ describe("core progress surface", () => {
 		});
 
 		expect(output).toContain("实现分页查询...");
-		expect(output).toContain("Plan");
+		expect(output).toContain("计划");
 		expect(output).toContain("◐ 实现分页查询");
 		expect(output).toContain("☐ 添加参数校验");
-		expect(output).toContain("Next: 添加参数校验");
+		expect(output).toContain("下一步：添加参数校验");
 	});
 });

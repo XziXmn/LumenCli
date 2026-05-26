@@ -5,7 +5,7 @@ const UNKNOWN_PROVIDER = "unknown";
 
 export function getProviderLoginHelp(): string {
 	return [
-		"使用 /login 登录 provider（OAuth 或 API key）。参考：",
+		"使用 /login 登录模型提供方（OAuth 或 API 密钥）。参考：",
 		`  ${join(getDocsPath(), "providers.md")}`,
 		`  ${join(getDocsPath(), "models.md")}`,
 	].join("\n");
@@ -21,5 +21,5 @@ export function formatNoModelSelectedMessage(): string {
 
 export function formatNoApiKeyFoundMessage(provider: string): string {
 	const providerDisplay = provider === UNKNOWN_PROVIDER ? "当前模型" : provider;
-	return `未找到 ${providerDisplay} 的 API key。\n\n${getProviderLoginHelp()}`;
+	return `未找到 ${providerDisplay} 的 API 密钥。\n\n${getProviderLoginHelp()}`;
 }

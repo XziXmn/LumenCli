@@ -2,6 +2,7 @@ import type { Component } from "@earendil-works/pi-tui";
 import type { QueuedUiState, SpinnerUiState, TaskUiItem } from "../../../core/extensions/types.js";
 import { CLAUDE_SPINNER_VERBS } from "../spinner-verbs.js";
 import type { Theme } from "../theme/theme.js";
+import { TUI_COPY } from "./tui-copy.js";
 
 export interface ProgressSurfaceSnapshot {
 	tasks: TaskUiItem[];
@@ -227,7 +228,7 @@ function buildHeadlineText(
 	const runningExecution = executionItems.filter((item) => item.status === "running" || item.status === "in_progress");
 
 	if (runningExecution.length > 1) {
-		return `${runningExecution.length} running tasks`;
+		return TUI_COPY.progressSurface.runningTask(runningExecution.length);
 	}
 
 	if (runningExecution.length === 1) {
@@ -270,10 +271,10 @@ function updateWorkingMetrics(snapshot: ProgressSurfaceSnapshot, working: Progre
 	}
 
 	if (spinner?.isThinking) {
-		parts.push("thinking");
+		parts.push(TUI_COPY.progressSurface.thinking);
 	} else if (spinner?.lastThinkingDurationMs !== undefined) {
 		const seconds = Math.max(1, Math.round(spinner.lastThinkingDurationMs / 1000));
-		parts.push(`thought for ${seconds}s`);
+		parts.push(TUI_COPY.progressSurface.thinkingDuration(seconds));
 	}
 
 	return { elapsed, outputTokens, parts };
@@ -316,6 +317,19 @@ function buildExecutionActivity(item: TaskUiItem, working: ProgressSurfaceWorkin
 	return nextActivity;
 }
 
+function buildExecutionPrimaryLabel(item: TaskUiItem): string {
+	return inlineText(item.subject ?? item.content, 72);
+}
+
+function buildExecutionDetailLabel(item: TaskUiItem, working: ProgressSurfaceWorkingState): string | undefined {
+	const activity = buildExecutionActivity(item, working).trim();
+	const primary = (item.activeForm ?? item.subject ?? item.content ?? "").trim();
+	if (!activity || activity === primary) {
+		return undefined;
+	}
+	return inlineText(activity, 56);
+}
+
 function pruneExecutionActivityCache(items: TaskUiItem[], working: ProgressSurfaceWorkingState): void {
 	const liveIds = new Set(items.map((item) => item.id));
 	for (const key of working.executionActivityCache.keys()) {
@@ -338,28 +352,32 @@ function renderExecutionLines(
 	pruneExecutionActivityCache(liveItems, working);
 
 	const runningCount = liveItems.filter((item) => item.status === "running" || item.status === "in_progress").length;
-	const header = runningCount <= 1 ? `${runningCount} running task` : `${runningCount} running tasks`;
+	const header = TUI_COPY.progressSurface.runningTask(runningCount);
 
 	const lines: string[] = [theme.fg("dim", `  ⎿ ${header}`)];
 	const capped = expanded ? liveItems : liveItems.slice(0, MAX_EXECUTION_ITEMS);
 	for (const item of capped) {
 		const prefix = item.status === "pending" && capped.length === 1 ? "└─" : item.status === "pending" ? "├─" : "├─";
 		const agent = item.group ? `@${item.group}` : item.id;
-		const activity = buildExecutionActivity(item, working);
+		const primary = buildExecutionPrimaryLabel(item);
+		const detail = buildExecutionDetailLabel(item, working);
 		const stats: string[] = [];
-		if (item.toolCount) stats.push(`${item.toolCount} uses`);
+		if (item.toolCount) stats.push(TUI_COPY.progressSurface.toolUses(item.toolCount));
 		if (item.tokens) stats.push(`${formatTokens(item.tokens)} tokens`);
 		if (item.durationMs) stats.push(formatElapsed(item.durationMs));
 		if (item.status === "failed" || item.status === "aborted") stats.push("failed");
-		if (item.status === "pending") stats.push("pending");
+		if (item.status === "pending") stats.push(TUI_COPY.progressSurface.pending);
 		const statsSuffix = stats.length > 0 ? ` · ${stats.join(" · ")}` : "";
+		const detailSuffix = detail ? ` · ${TUI_COPY.progressSurface.executionDetailPrefix}：${detail}` : "";
 		lines.push(
-			`${theme.fg("dim", `    ${prefix} `)}${theme.fg("accent", agent)}${theme.fg("dim", `: ${inlineText(activity, 72)}${statsSuffix}`)}`,
+			`${theme.fg("dim", `    ${prefix} `)}${theme.fg("accent", agent)}${theme.fg("dim", `: ${primary}${detailSuffix}${statsSuffix}`)}`,
 		);
 	}
 
 	if (!expanded && liveItems.length > capped.length) {
-		lines.push(theme.fg("dim", `    ⎿ +${liveItems.length - capped.length} more execution items`));
+		lines.push(
+			theme.fg("dim", `    ⎿ +${TUI_COPY.progressSurface.moreExecutionItems(liveItems.length - capped.length)}`),
+		);
 	}
 
 	return lines;
@@ -380,7 +398,7 @@ function renderPlanLines(items: TaskUiItem[], expanded: boolean, theme: Theme): 
 	const visible = expanded ? items : focusItems.slice(0, MAX_PLAN_ITEMS);
 
 	const lines: string[] = [
-		`${theme.fg("dim", "  ⎿ Plan")} ${theme.fg("muted", `${items.length} tasks · ${completed} done · ${inProgress} in progress · ${open} open`)}`,
+		`${theme.fg("dim", `  ⎿ ${TUI_COPY.progressSurface.plan}`)} ${theme.fg("muted", `${items.length} tasks · ${completed} done · ${inProgress} in progress · ${open} open`)}`,
 	];
 
 	let lastGroup: string | undefined;
@@ -410,7 +428,7 @@ function renderPlanLines(items: TaskUiItem[], expanded: boolean, theme: Theme): 
 	}
 
 	if (!expanded && items.length > visible.length) {
-		lines.push(theme.fg("dim", `    ⎿ +${items.length - visible.length} more tasks`));
+		lines.push(theme.fg("dim", `    ⎿ +${TUI_COPY.progressSurface.moreTasks(items.length - visible.length)}`));
 	}
 
 	return lines;
@@ -472,8 +490,8 @@ function renderProgressSurfaceLines(
 
 	if (current || snapshot.spinner) {
 		if (working.isIdle) {
-			const suffix = runningExecutionCount === 1 ? "1 running task" : `${runningExecutionCount} running tasks`;
-			lines.push(theme.fg("dim", `✽ Idle · ${suffix}`));
+			const suffix = TUI_COPY.progressSurface.runningTask(runningExecutionCount);
+			lines.push(theme.fg("dim", `✽ ${TUI_COPY.progressSurface.idle} · ${suffix}`));
 		} else {
 			const headlineText = `${buildHeadlineText(planCurrent, execution, snapshot.spinner, working)}...`;
 			const headlineColor = working.isStalled ? "error" : "accent";
@@ -508,11 +526,11 @@ function renderProgressSurfaceLines(
 
 	if (next) {
 		const nextText = inlineText(next.subject ?? next.content, MAX_WORKING_PREVIEW_CHARS);
-		lines.push(theme.fg("dim", "  ⎿ ") + theme.fg("muted", `Next: ${nextText}`));
+		lines.push(theme.fg("dim", "  ⎿ ") + theme.fg("muted", `${TUI_COPY.progressSurface.next}：${nextText}`));
 	} else if (elapsed >= SHOW_TIP_AFTER_MS) {
 		const tip = selectTip(elapsed, snapshot, working.tipState) ?? snapshot.spinner?.tip;
 		if (tip) {
-			lines.push(theme.fg("dim", "  ⎿ ") + theme.fg("muted", `Tip: ${tip}`));
+			lines.push(theme.fg("dim", "  ⎿ ") + theme.fg("muted", `${TUI_COPY.progressSurface.tip}：${tip}`));
 		}
 	}
 	return lines;

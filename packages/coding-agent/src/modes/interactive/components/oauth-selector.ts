@@ -66,7 +66,7 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 		this.addChild(new Spacer(1));
 
 		// Add title
-		const title = mode === "login" ? "选择要配置的 provider：" : "选择要退出登录的 provider：";
+		const title = mode === "login" ? "选择要配置的模型提供方：" : "选择要退出登录的模型提供方：";
 		this.addChild(new TruncatedText(theme.fg("accent", theme.bold(title)), 1, 0));
 		this.addChild(new Spacer(1));
 
@@ -141,9 +141,9 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 			const message =
 				this.allProviders.length === 0
 					? this.mode === "login"
-						? "当前没有可用 provider"
-						: "当前没有已登录的 provider，请先使用 /login。"
-					: "没有匹配的 provider";
+						? "当前没有可用的模型提供方"
+						: "当前没有已登录的模型提供方，请先使用 /login。"
+					: "没有匹配的模型提供方";
 			this.listContainer.addChild(new TruncatedText(theme.fg("muted", `  ${message}`), 1, 0));
 		}
 	}
@@ -152,7 +152,7 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 		const credential = this.authStorage.get(provider.id);
 		if (credential?.type === provider.authType) return theme.fg("success", " ✓ 已配置");
 		if (credential) {
-			const label = credential.type === "oauth" ? "订阅已配置" : "API key 已配置";
+			const label = credential.type === "oauth" ? "订阅已配置" : "API 密钥已配置";
 			return theme.fg("muted", " • ") + theme.fg("warning", label);
 		}
 		if (provider.authType !== "api_key") return theme.fg("muted", " • 未配置");
@@ -160,13 +160,13 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 		const status = this.getAuthStatus(provider.id);
 		switch (status.source) {
 			case "environment":
-				return theme.fg("success", ` ✓ 环境变量: ${status.label ?? "API key"}`);
+				return theme.fg("success", ` ✓ 环境变量: ${status.label ?? "API 密钥"}`);
 			case "runtime":
-				return theme.fg("success", " ✓ 运行时 API key");
+				return theme.fg("success", " ✓ 运行时 API 密钥");
 			case "fallback":
-				return theme.fg("success", " ✓ 自定义 API key");
+				return theme.fg("success", " ✓ 自定义 API 密钥");
 			case "models_json_key":
-				return theme.fg("success", " ✓ models.json 中的 key");
+				return theme.fg("success", " ✓ models.json 中的密钥");
 			case "models_json_command":
 				return theme.fg("success", " ✓ models.json 中的命令");
 			default:

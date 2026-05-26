@@ -3,6 +3,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { processFileArguments } from "../src/cli/file-processor.js";
+import { CODEX_COMPACTION_PROMPT } from "../src/core/compaction/compaction.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { createReadTool } from "../src/core/tools/read.js";
 
@@ -50,6 +51,36 @@ describe("blockImages setting", () => {
 
 			expect(manager.getCompactionPrompt()).toBe("使用 Codex 风格压缩提示词");
 			expect(manager.getCompactionSettings().compactPrompt).toBe("使用 Codex 风格压缩提示词");
+		});
+
+		it("should prefer compactPromptFile over inline compactPrompt", () => {
+			const testDir = join(tmpdir(), `compact-prompt-file-test-${Date.now()}`);
+			mkdirSync(testDir, { recursive: true });
+			try {
+				const promptFile = join(testDir, "compact-prompt.md");
+				writeFileSync(promptFile, "  来自文件的 Codex 风格压缩提示词  ");
+
+				const manager = SettingsManager.inMemory({
+					compaction: {
+						compactPrompt: "内联提示词",
+						compactPromptFile: promptFile,
+					},
+				});
+
+				expect(manager.getCompactionPromptFile()).toBe(promptFile);
+				expect(manager.getCompactionPrompt()).toBe("来自文件的 Codex 风格压缩提示词");
+				expect(manager.getCompactionSettings().compactPrompt).toBe("来自文件的 Codex 风格压缩提示词");
+				expect(manager.getCompactionSettings().compactPromptFile).toBe(promptFile);
+			} finally {
+				rmSync(testDir, { recursive: true, force: true });
+			}
+		});
+
+		it("should expose Codex compaction prompt as the core default", () => {
+			expect(CODEX_COMPACTION_PROMPT).toContain("structured coding-session checkpoint");
+			expect(CODEX_COMPACTION_PROMPT).toContain("## Goal");
+			expect(CODEX_COMPACTION_PROMPT).toContain("## Progress");
+			expect(CODEX_COMPACTION_PROMPT).toContain("## Next Steps");
 		});
 	});
 

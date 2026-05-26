@@ -10,6 +10,7 @@ export interface CompactionSettings {
 	reserveTokens?: number; // default: 16384
 	keepRecentTokens?: number; // default: 20000
 	compactPrompt?: string; // Optional override for the default compaction prompt
+	compactPromptFile?: string; // Optional file path containing the compaction prompt
 }
 
 export interface BranchSummarySettings {
@@ -697,17 +698,41 @@ export class SettingsManager {
 		reserveTokens: number;
 		keepRecentTokens: number;
 		compactPrompt?: string;
+		compactPromptFile?: string;
 	} {
 		return {
 			enabled: this.getCompactionEnabled(),
 			reserveTokens: this.getCompactionReserveTokens(),
 			keepRecentTokens: this.getCompactionKeepRecentTokens(),
 			compactPrompt: this.getCompactionPrompt(),
+			compactPromptFile: this.getCompactionPromptFile(),
 		};
 	}
 
 	getCompactionPrompt(): string | undefined {
+		const promptFromFile = this.getCompactionPromptFromFile();
+		if (promptFromFile) {
+			return promptFromFile;
+		}
 		return this.settings.compaction?.compactPrompt?.trim() || undefined;
+	}
+
+	getCompactionPromptFile(): string | undefined {
+		return this.settings.compaction?.compactPromptFile?.trim() || undefined;
+	}
+
+	private getCompactionPromptFromFile(): string | undefined {
+		const compactPromptFile = this.getCompactionPromptFile();
+		if (!compactPromptFile) {
+			return undefined;
+		}
+
+		try {
+			const fileContent = readFileSync(compactPromptFile, "utf-8").trim();
+			return fileContent || undefined;
+		} catch {
+			return undefined;
+		}
 	}
 
 	getBranchSummarySettings(): { reserveTokens: number; skipPrompt: boolean } {

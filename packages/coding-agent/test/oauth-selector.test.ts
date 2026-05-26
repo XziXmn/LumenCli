@@ -59,6 +59,7 @@ describe("OAuthSelectorComponent", () => {
 
 		const output = stripAnsi(selector.render(120).join("\n"));
 
+		expect(output).toContain("选择要配置的模型提供方：");
 		expect(output).toContain("Anthropic");
 		expect(output).toContain("订阅已配置");
 	});
@@ -113,7 +114,7 @@ describe("OAuthSelectorComponent", () => {
 		const output = stripAnsi(selector.render(120).join("\n"));
 
 		expect(output).toContain("local-proxy");
-		expect(output).toContain("✓ models.json 中的 key");
+		expect(output).toContain("✓ models.json 中的密钥");
 		expect(output).not.toContain("未配置");
 	});
 

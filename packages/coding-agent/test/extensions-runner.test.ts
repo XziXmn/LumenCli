@@ -594,9 +594,18 @@ describe("ExtensionRunner", () => {
 			runner.onError((error) => errors.push(error.error));
 			runner.bindCore(extensionActions, extensionContextActions);
 
-			const chained = await runner.emitBeforeAgentStart("hello", undefined, "base", {
-				cwd: tempDir,
-			});
+			const chained = await runner.emitBeforeAgentStart(
+				"hello",
+				undefined,
+				"base",
+				{
+					cwd: tempDir,
+				},
+				{
+					basePrompt: "base",
+					runtimeContext: `\nCurrent date: 2026-05-26\nCurrent working directory: ${tempDir.replace(/\\/g, "/")}`,
+				},
+			);
 
 			expect(errors).toEqual([]);
 

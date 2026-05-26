@@ -67,8 +67,8 @@ describe("CollapsedToolGroupComponent", () => {
 		const component = new CollapsedToolGroupComponent(process.cwd(), group);
 		const rendered = renderGroup(component);
 
-		expect(rendered).toContain("Read 1 file, Searched 1 pattern");
-		expect(rendered).toContain("⎿ src");
+		expect(rendered).toContain("已读取 1 个文件, 已搜索 1 个模式");
+		expect(rendered).toContain("src");
 	});
 
 	it("renders individual tool lines when expanded", () => {
@@ -126,9 +126,9 @@ describe("CollapsedToolGroupComponent", () => {
 		component.setExpanded(true);
 		const rendered = renderGroup(component);
 
-		expect(rendered).toContain("⎿ ✓ Read");
+		expect(rendered).toContain("⎿ ✓ 读取");
 		expect(rendered).toContain("README.md");
-		expect(rendered).toContain("⎿ ✓ List");
+		expect(rendered).toContain("⎿ ✓ 列目录");
 		expect(rendered).toContain("src");
 	});
 });

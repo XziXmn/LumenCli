@@ -94,7 +94,11 @@ import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader }
 import type { SettingsManager } from "./settings-manager.js";
 import type { SlashCommandInfo } from "./slash-commands.js";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.js";
-import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.js";
+import {
+	type BuildSystemPromptOptions,
+	type BuiltSystemPrompt,
+	buildSystemPromptWithSections,
+} from "./system-prompt.js";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.js";
 import { createAllToolDefinitions } from "./tools/index.js";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.js";
@@ -322,6 +326,7 @@ export class AgentSession {
 	// Base system prompt (without extension appends) - used to apply fresh appends each turn
 	private _baseSystemPrompt = "";
 	private _baseSystemPromptOptions!: BuildSystemPromptOptions;
+	private _baseSystemPromptSections: BuiltSystemPrompt["sections"] = {};
 	private _spinnerBudgetUsage: SpinnerBudgetUsage | undefined = undefined;
 
 	constructor(config: AgentSessionConfig) {
@@ -1056,7 +1061,9 @@ export class AgentSession {
 			toolSnippets,
 			promptGuidelines,
 		};
-		return buildSystemPrompt(this._baseSystemPromptOptions);
+		const builtPrompt = buildSystemPromptWithSections(this._baseSystemPromptOptions);
+		this._baseSystemPromptSections = builtPrompt.sections;
+		return builtPrompt.text;
 	}
 
 	// =========================================================================
@@ -1201,6 +1208,7 @@ export class AgentSession {
 				currentImages,
 				this._baseSystemPrompt,
 				this._baseSystemPromptOptions,
+				this._baseSystemPromptSections,
 			);
 			// Add all custom messages from extensions
 			if (result?.messages) {
@@ -1663,7 +1671,7 @@ export class AgentSession {
 	 */
 	async setModel(model: Model<any>): Promise<void> {
 		if (!this._modelRegistry.hasConfiguredAuth(model)) {
-			throw new Error(`No API key for ${model.provider}/${model.id}`);
+			throw new Error(formatNoApiKeyFoundMessage(model.provider));
 		}
 
 		const previousModel = this.model;
@@ -1910,6 +1918,7 @@ export class AgentSession {
 			let firstKeptEntryId: string;
 			let tokensBefore: number;
 			let summaryPlacement: "before-kept" | "after-kept" | undefined;
+			let replacementMessages: AgentMessage[] | undefined;
 			let details: unknown;
 
 			if (extensionCompaction) {
@@ -1918,6 +1927,7 @@ export class AgentSession {
 				firstKeptEntryId = extensionCompaction.firstKeptEntryId;
 				tokensBefore = extensionCompaction.tokensBefore;
 				summaryPlacement = extensionCompaction.summaryPlacement;
+				replacementMessages = extensionCompaction.replacementMessages;
 				details = extensionCompaction.details;
 			} else {
 				// Generate compaction result
@@ -1929,11 +1939,13 @@ export class AgentSession {
 					customInstructions,
 					this._compactionAbortController.signal,
 					this.thinkingLevel,
+					"manual",
 				);
 				summary = result.summary;
 				firstKeptEntryId = result.firstKeptEntryId;
 				tokensBefore = result.tokensBefore;
 				summaryPlacement = result.summaryPlacement;
+				replacementMessages = result.replacementMessages;
 				details = result.details;
 			}
 
@@ -1949,7 +1961,7 @@ export class AgentSession {
 				summaryPlacement,
 				details,
 				fromHook: fromExtension,
-				replacementMessages: extensionCompaction?.replacementMessages,
+				replacementMessages,
 			});
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
@@ -2194,6 +2206,7 @@ export class AgentSession {
 			let firstKeptEntryId: string;
 			let tokensBefore: number;
 			let summaryPlacement: "before-kept" | "after-kept" | undefined;
+			let replacementMessages: AgentMessage[] | undefined;
 			let details: unknown;
 
 			if (extensionCompaction) {
@@ -2202,6 +2215,7 @@ export class AgentSession {
 				firstKeptEntryId = extensionCompaction.firstKeptEntryId;
 				tokensBefore = extensionCompaction.tokensBefore;
 				summaryPlacement = extensionCompaction.summaryPlacement;
+				replacementMessages = extensionCompaction.replacementMessages;
 				details = extensionCompaction.details;
 			} else {
 				// Generate compaction result
@@ -2213,11 +2227,13 @@ export class AgentSession {
 					undefined,
 					this._autoCompactionAbortController.signal,
 					this.thinkingLevel,
+					reason,
 				);
 				summary = compactResult.summary;
 				firstKeptEntryId = compactResult.firstKeptEntryId;
 				tokensBefore = compactResult.tokensBefore;
 				summaryPlacement = compactResult.summaryPlacement;
+				replacementMessages = compactResult.replacementMessages;
 				details = compactResult.details;
 			}
 
@@ -2240,7 +2256,7 @@ export class AgentSession {
 				summaryPlacement,
 				details,
 				fromHook: fromExtension,
-				replacementMessages: extensionCompaction?.replacementMessages,
+				replacementMessages,
 			});
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();

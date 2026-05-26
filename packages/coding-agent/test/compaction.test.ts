@@ -5,6 +5,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+	CODEX_COMPACTION_PROMPT,
 	type CompactionSettings,
 	calculateContextTokens,
 	compact,
@@ -461,6 +462,14 @@ describe("prepareCompaction with previous compaction", () => {
 		expect(summarizedText).not.toContain("First summary");
 		expect(keptText).toContain("user msg 4 (new after compaction1)");
 		expect(preparation!.previousSummary).toBe("First summary");
+	});
+});
+
+describe("Codex-style compaction defaults", () => {
+	it("uses the Codex prompt as the default summarization template", () => {
+		expect(CODEX_COMPACTION_PROMPT).toContain("structured coding-session checkpoint");
+		expect(CODEX_COMPACTION_PROMPT).toContain("## Goal");
+		expect(CODEX_COMPACTION_PROMPT).toContain("## Critical Context");
 	});
 });
 

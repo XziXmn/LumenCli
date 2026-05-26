@@ -513,6 +513,14 @@ The `systemPromptOptions` field gives extensions access to the same structured d
 
 Inside `before_agent_start`, `event.systemPrompt` and `ctx.getSystemPrompt()` both reflect the chained system prompt as of the current handler. Later `before_agent_start` handlers can still modify it again.
 
+Important boundary:
+
+- `before_agent_start` and `appendSystemPrompt` only affect the main conversation system prompt
+- They do not change the compaction summary prompt
+- Custom compaction behavior belongs in `session_before_compact`
+
+In other words, extension prompt overlays are for normal turns, not for `compact_prompt` governance.
+
 #### agent_start / agent_end
 
 Fired once per user prompt.

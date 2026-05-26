@@ -11,53 +11,6 @@ import {
 const SUMMARY_SYSTEM_PROMPT =
 	"You summarize coding conversations into high-signal continuation checkpoints. Preserve exact file paths, error messages, tool outcomes, and next steps.";
 
-const HISTORY_PROMPT = `Create a structured coding-session checkpoint.
-
-Use this exact section structure:
-
-## Goal
-[Main objective]
-
-## Constraints & Preferences
-- [...]
-
-## Progress
-### Done
-- [x] ...
-
-### In Progress
-- [ ] ...
-
-### Blocked
-- ...
-
-## Key Decisions
-- **Decision**: rationale
-
-## Next Steps
-1. ...
-
-## Critical Context
-- ...
-
-Keep the summary compact but continuation-ready.`;
-
-const TURN_PREFIX_PROMPT = `This is the early part of a turn that was too large to keep in full.
-
-Summarize only what is needed so the later retained part of the same turn still makes sense.
-
-Use this exact structure:
-
-## Original Request
-[What the user asked in this turn]
-
-## Early Progress
-- ...
-
-## Context for Retained Suffix
-- ...
-`;
-
 const BRANCH_PROMPT = `Create a branch-return summary so another model can resume this abandoned branch later.
 
 Use this exact structure:
@@ -95,11 +48,6 @@ interface CodexStyleBranchSummaryDetails {
 	modifiedFiles: string[];
 }
 
-interface CodexStyleCompactionDetails {
-	readFiles: string[];
-	modifiedFiles: string[];
-}
-
 function applyCustomInstructions(
 	prompt: string,
 	customInstructions?: string,
@@ -117,38 +65,6 @@ function applyCustomInstructions(
 
 function countCompactionEntries(entries: Array<{ type?: string }>): number {
 	return entries.filter((entry) => entry?.type === "compaction").length;
-}
-
-function mergePriorCompactionFileOps(
-	fileOps: {
-		read: Set<string>;
-		written: Set<string>;
-		edited: Set<string>;
-	},
-	branchEntries: Array<{
-		type?: string;
-		details?: unknown;
-	}>,
-): void {
-	for (let i = branchEntries.length - 1; i >= 0; i--) {
-		const entry = branchEntries[i];
-		if (entry?.type !== "compaction" || !entry.details || typeof entry.details !== "object") {
-			continue;
-		}
-
-		const details = entry.details as CodexStyleCompactionDetails;
-		if (Array.isArray(details.readFiles)) {
-			for (const file of details.readFiles) {
-				fileOps.read.add(file);
-			}
-		}
-		if (Array.isArray(details.modifiedFiles)) {
-			for (const file of details.modifiedFiles) {
-				fileOps.edited.add(file);
-			}
-		}
-		break;
-	}
 }
 
 function mergePriorBranchSummaryFileOps(
@@ -209,55 +125,6 @@ function formatFileOperations(readFiles: string[], modifiedFiles: string[]): str
 		sections.push(`<modified-files>\n${modifiedFiles.join("\n")}\n</modified-files>`);
 	}
 	return sections.length > 0 ? `\n\n${sections.join("\n\n")}` : "";
-}
-
-function extractRecentUserMessages(messages: AgentMessage[], count: number): string[] {
-	const result: string[] = [];
-	for (let i = messages.length - 1; i >= 0 && result.length < count; i--) {
-		const message = messages[i];
-		if (message.role !== "user") continue;
-		const content = message.content;
-		if (typeof content === "string" && content.trim()) {
-			result.push(content.trim());
-			continue;
-		}
-		if (Array.isArray(content)) {
-			const text = content
-				.filter((block): block is { type: "text"; text: string } => block.type === "text")
-				.map((block) => block.text)
-				.join("\n")
-				.trim();
-			if (text) {
-				result.push(text);
-			}
-		}
-	}
-	return result.reverse();
-}
-
-function createReplacementMessages(
-	recentUserMessages: string[],
-	summaryBridge: string | undefined,
-	tokensBefore: number,
-	maxRecentUserMessages: number,
-): AgentMessage[] | undefined {
-	if (recentUserMessages.length === 0 && !summaryBridge) {
-		return undefined;
-	}
-
-	const replacementMessages: AgentMessage[] = recentUserMessages
-		.slice(Math.max(0, recentUserMessages.length - maxRecentUserMessages))
-		.map((text, index) => ({
-		role: "user",
-		content: text,
-		timestamp: Date.now() + index,
-	}));
-
-	if (summaryBridge) {
-		replacementMessages.push(createCompactionSummaryMessage(summaryBridge, tokensBefore, new Date().toISOString()));
-	}
-
-	return replacementMessages;
 }
 
 async function summarizeWithModel(
@@ -412,81 +279,6 @@ function selectBranchMessagesWithinBudget(
 }
 
 export default function codexStyleCompactionExtension(pi: ExtensionAPI) {
-	pi.on("session_before_compact", async (event, ctx) => {
-		const { preparation, reason, signal, customInstructions, branchEntries } = event;
-		const {
-			messagesToSummarize,
-			turnPrefixMessages,
-			keptMessages,
-			isSplitTurn,
-			firstKeptEntryId,
-			tokensBefore,
-			previousSummary,
-		} = preparation;
-
-		mergePriorCompactionFileOps(preparation.fileOps, branchEntries);
-
-		const recentUserMessages = extractRecentUserMessages(
-			keptMessages.length > 0 ? keptMessages : [...messagesToSummarize, ...turnPrefixMessages],
-			reason === "overflow" ? 5 : 3,
-		);
-		const historySummary =
-			(await summarizeWithModel(
-				ctx.model,
-				ctx.modelRegistry,
-				messagesToSummarize,
-				applyCustomInstructions(HISTORY_PROMPT, customInstructions),
-				signal,
-				previousSummary,
-			)) ??
-			previousSummary;
-		const turnPrefixSummary = isSplitTurn && reason === "manual"
-			? await summarizeWithModel(
-					ctx.model,
-					ctx.modelRegistry,
-					turnPrefixMessages,
-					applyCustomInstructions(TURN_PREFIX_PROMPT, customInstructions),
-					signal,
-				)
-			: undefined;
-
-		if (!historySummary && !turnPrefixSummary) {
-			return;
-		}
-
-		const sections: string[] = [];
-		if (historySummary) {
-			sections.push(historySummary);
-		}
-		if (turnPrefixSummary) {
-			sections.push(`## Split Turn Context\n${turnPrefixSummary}`);
-		}
-
-		const { readFiles, modifiedFiles } = computeFileLists(preparation.fileOps);
-		const fileOperations = formatFileOperations(readFiles, modifiedFiles);
-		const summaryBridge = `${sections.join("\n\n")}${fileOperations}`;
-		const replacementMessages = createReplacementMessages(
-			recentUserMessages,
-			summaryBridge,
-			tokensBefore,
-			reason === "overflow" ? 3 : 2,
-		);
-
-		return {
-			compaction: {
-				summary: summaryBridge,
-				firstKeptEntryId,
-				tokensBefore,
-				summaryPlacement: "after-kept",
-				replacementMessages,
-				details: {
-					readFiles,
-					modifiedFiles,
-				} satisfies CodexStyleCompactionDetails,
-			},
-		};
-	});
-
 	pi.on("compaction_end", async (event, ctx) => {
 		if (event.aborted || !event.result) {
 			return;

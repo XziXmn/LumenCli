@@ -3,6 +3,7 @@ import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.js";
 import type { RenderableCollapsedToolGroup } from "../output-flow/types.js";
 import { theme } from "../theme/theme.js";
 import { renderToolHintLine, renderToolResponseLine, renderToolStatusDot } from "./assistant-tool-summary.js";
+import { TUI_COPY } from "./tui-copy.js";
 
 type CollapsedKind = "read" | "search" | "list";
 
@@ -12,10 +13,6 @@ interface CollapsedRuntimeItem {
 	kind: CollapsedKind;
 	arguments: Record<string, unknown>;
 	completed: boolean;
-}
-
-function plural(count: number, singular: string, pluralForm: string): string {
-	return `${count} ${count === 1 ? singular : pluralForm}`;
 }
 
 function classifyToolName(toolName: string): CollapsedKind {
@@ -31,11 +28,26 @@ function buildSummary(items: CollapsedRuntimeItem[]): string {
 	const allCompleted = items.length > 0 && items.every((item) => item.completed);
 	const parts: string[] = [];
 
-	if (readCount > 0) parts.push(`${allCompleted ? "Read" : "Reading"} ${plural(readCount, "file", "files")}`);
+	if (readCount > 0) {
+		parts.push(
+			allCompleted
+				? TUI_COPY.collapsedToolGroup.readCompleted(readCount)
+				: TUI_COPY.collapsedToolGroup.reading(readCount),
+		);
+	}
 	if (searchCount > 0)
-		parts.push(`${allCompleted ? "Searched" : "Searching"} ${plural(searchCount, "pattern", "patterns")}`);
-	if (listCount > 0)
-		parts.push(`${allCompleted ? "Listed" : "Listing"} ${plural(listCount, "directory", "directories")}`);
+		parts.push(
+			allCompleted
+				? TUI_COPY.collapsedToolGroup.searchCompleted(searchCount)
+				: TUI_COPY.collapsedToolGroup.searching(searchCount),
+		);
+	if (listCount > 0) {
+		parts.push(
+			allCompleted
+				? TUI_COPY.collapsedToolGroup.listCompleted(listCount)
+				: TUI_COPY.collapsedToolGroup.listing(listCount),
+		);
+	}
 
 	return parts.join(", ") + (allCompleted ? "" : "…");
 }
@@ -57,9 +69,9 @@ function latestHint(items: CollapsedRuntimeItem[], cwd: string): string | undefi
 }
 
 function describeToolCallName(toolName: string): string {
-	if (toolName === "read") return "Read";
-	if (toolName === "grep" || toolName === "find") return "Search";
-	if (toolName === "ls") return "List";
+	if (toolName === "read") return TUI_COPY.collapsedToolGroup.readLabel;
+	if (toolName === "grep" || toolName === "find") return TUI_COPY.collapsedToolGroup.searchLabel;
+	if (toolName === "ls") return TUI_COPY.collapsedToolGroup.listLabel;
 	return toolName;
 }
 

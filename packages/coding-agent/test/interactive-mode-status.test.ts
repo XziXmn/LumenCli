@@ -18,7 +18,7 @@ import {
 } from "../src/modes/interactive/components/progress-surface.js";
 import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.js";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.js";
-import { initTheme, theme } from "../src/modes/interactive/theme/theme.js";
+import { getMarkdownTheme, initTheme, theme } from "../src/modes/interactive/theme/theme.js";
 
 function renderLastLine(container: Container, width = 120): string {
 	const last = container.children[container.children.length - 1];
@@ -154,6 +154,34 @@ describe("InteractiveMode compatibility helpers", () => {
 		expect(fakeThis.formatCompatibilityDiagnostics).toHaveBeenCalledTimes(1);
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toContain("Everything is fine.");
 		expect(fakeThis.requestRenderRespectingInput).toHaveBeenCalledTimes(1);
+	});
+
+	test("handleHotkeysCommand renders the hotkeys help in Chinese", () => {
+		const fakeThis: any = {
+			chatContainer: new Container(),
+			requestRenderRespectingInput: vi.fn(),
+			getEditorKeyDisplay: vi.fn((action: string) => action),
+			getAppKeyDisplay: vi.fn((action: string) => action),
+			session: {
+				extensionRunner: {
+					getShortcuts: () => new Map(),
+				},
+			},
+			keybindings: {
+				getEffectiveConfig: () => ({}),
+			},
+			getMarkdownThemeWithSettings: vi.fn(() => getMarkdownTheme()),
+		};
+
+		(InteractiveMode as any).prototype.handleHotkeysCommand.call(fakeThis);
+
+		const output = normalizeRenderedOutput(fakeThis.chatContainer);
+		expect(output).toContain("快捷键说明");
+		expect(output).toContain("移动");
+		expect(output).toContain("编辑");
+		expect(output).toContain("其他");
+		expect(output).toContain("发送消息");
+		expect(output).toContain("运行 bash 命令");
 	});
 
 	test("showCompatibilityReminderIfNeeded warns when package, extension, or skill issues exist", async () => {
@@ -296,6 +324,31 @@ describe("InteractiveMode.setToolsExpanded", () => {
 describe("InteractiveMode main layout", () => {
 	test("attaches the core-owned surface in the expected top-to-bottom order", () => {
 		const ui = { addChild: vi.fn() };
+		const taskbarRowContainer = {
+			id: "taskbar-row",
+			clear: vi.fn(),
+			addChild: vi.fn(),
+		};
+		const pendingRowContainer = {
+			id: "pending-row",
+			clear: vi.fn(),
+			addChild: vi.fn(),
+		};
+		const composerFrameContainer = {
+			id: "composer-frame",
+			clear: vi.fn(),
+			addChild: vi.fn(),
+		};
+		const extensionRowContainer = {
+			id: "extension-row",
+			clear: vi.fn(),
+			addChild: vi.fn(),
+		};
+		const passiveFooterRowContainer = {
+			id: "passive-footer-row",
+			clear: vi.fn(),
+			addChild: vi.fn(),
+		};
 		const fakeThis: any = {
 			ui,
 			chatContainer: { id: "chat" },
@@ -304,11 +357,17 @@ describe("InteractiveMode main layout", () => {
 				clear: vi.fn(),
 				addChild: vi.fn(),
 			},
+			taskbarRowContainer,
+			pendingRowContainer,
+			composerFrameContainer,
+			extensionRowContainer,
+			passiveFooterRowContainer,
 			bottomPaneGapContainer: { id: "bottom-gap" },
 			statusContainer: { id: "status" },
 			pendingMessagesContainer: { id: "pending" },
 			editorContainer: { id: "editor" },
 			extensionAreaContainer: { id: "extension-area" },
+			customFooter: undefined,
 			footer: { id: "footer" },
 			renderWidgets: vi.fn(),
 			syncBottomPaneGap: vi.fn(),
@@ -319,12 +378,22 @@ describe("InteractiveMode main layout", () => {
 		expect(fakeThis.renderWidgets).toHaveBeenCalledTimes(1);
 		expect(fakeThis.bottomPaneContainer.clear).toHaveBeenCalledTimes(1);
 		const addedChildren = fakeThis.bottomPaneContainer.addChild.mock.calls.map((call: unknown[]) => call[0]);
-		expect(addedChildren[0]).toBe(fakeThis.statusContainer);
-		expect(addedChildren[1]).toBe(fakeThis.pendingMessagesContainer);
-		expect(addedChildren[2]).toBe(fakeThis.bottomPaneGapContainer);
-		expect(addedChildren[3]).toBe(fakeThis.editorContainer);
-		expect(addedChildren[4]).toBe(fakeThis.extensionAreaContainer);
-		expect(addedChildren[5]).toBe(fakeThis.footer);
+		expect(addedChildren[0]).toBe(taskbarRowContainer);
+		expect(addedChildren[1]).toBe(pendingRowContainer);
+		expect(addedChildren[2]).toBe(composerFrameContainer);
+		expect(addedChildren[3]).toBe(extensionRowContainer);
+		expect(addedChildren[4]).toBe(passiveFooterRowContainer);
+		expect(taskbarRowContainer.clear).toHaveBeenCalledTimes(1);
+		expect(taskbarRowContainer.addChild).toHaveBeenCalledWith(fakeThis.statusContainer);
+		expect(pendingRowContainer.clear).toHaveBeenCalledTimes(1);
+		expect(pendingRowContainer.addChild).toHaveBeenCalledWith(fakeThis.pendingMessagesContainer);
+		expect(composerFrameContainer.clear).toHaveBeenCalledTimes(1);
+		expect(composerFrameContainer.addChild).toHaveBeenNthCalledWith(1, fakeThis.bottomPaneGapContainer);
+		expect(composerFrameContainer.addChild).toHaveBeenNthCalledWith(2, fakeThis.editorContainer);
+		expect(extensionRowContainer.clear).toHaveBeenCalledTimes(1);
+		expect(extensionRowContainer.addChild).toHaveBeenCalledWith(fakeThis.extensionAreaContainer);
+		expect(passiveFooterRowContainer.clear).toHaveBeenCalledTimes(1);
+		expect(passiveFooterRowContainer.addChild).toHaveBeenCalledWith(fakeThis.footer);
 		expect(fakeThis.syncBottomPaneGap).toHaveBeenCalledTimes(1);
 		expect(ui.addChild.mock.calls.map((call: unknown[]) => call[0])).toEqual([
 			fakeThis.chatContainer,
@@ -390,19 +459,15 @@ describe("InteractiveMode main layout", () => {
 		expect(normalizeRenderedOutput(widgetContainerBelow)).not.toContain("Passive widget");
 	});
 
-	test("setExtensionFooter swaps the footer inside bottomPaneContainer", () => {
+	test("setExtensionFooter swaps the footer inside the passive footer row", () => {
 		const builtInFooter = { id: "built-in-footer" };
-		const bottomPaneContainer = new Container();
-		bottomPaneContainer.addChild({ id: "status" } as any);
-		bottomPaneContainer.addChild({ id: "pending" } as any);
-		bottomPaneContainer.addChild({ id: "editor" } as any);
-		bottomPaneContainer.addChild({ id: "extension-area" } as any);
-		bottomPaneContainer.addChild(builtInFooter as any);
+		const passiveFooterRowContainer = new Container();
+		passiveFooterRowContainer.addChild(builtInFooter as any);
 
 		const customFooter = { id: "custom-footer", dispose: vi.fn() };
 		const factory = vi.fn(() => customFooter as any);
 		const fakeThis: any = {
-			bottomPaneContainer,
+			passiveFooterRowContainer,
 			customFooter: undefined,
 			footer: builtInFooter,
 			footerDataProvider: {},
@@ -411,12 +476,12 @@ describe("InteractiveMode main layout", () => {
 
 		(InteractiveMode as any).prototype.setExtensionFooter.call(fakeThis, factory);
 		expect(factory).toHaveBeenCalledTimes(1);
-		expect(bottomPaneContainer.children[4]).toBe(customFooter);
+		expect(passiveFooterRowContainer.children[0]).toBe(customFooter);
 		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(1);
 
 		(InteractiveMode as any).prototype.setExtensionFooter.call(fakeThis, undefined);
 		expect(customFooter.dispose).toHaveBeenCalledTimes(1);
-		expect(bottomPaneContainer.children[4]).toBe(builtInFooter);
+		expect(passiveFooterRowContainer.children[0]).toBe(builtInFooter);
 		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(2);
 	});
 });
@@ -842,7 +907,7 @@ describe("InteractiveMode spinner helpers", () => {
 
 		const output = normalizeRenderedOutput(statusContainer);
 		expect(output).toContain("整理接口定义...");
-		expect(output).toContain("Plan");
+		expect(output).toContain("计划");
 		expect(output).not.toContain("LOADER ROW");
 	});
 
@@ -1089,7 +1154,7 @@ describe("InteractiveMode spinner helpers", () => {
 			fakeThis.renderWorkingArea();
 			output = normalizeRenderedOutput(statusContainer);
 			expect(output).toContain("整理接口定义...");
-			expect(output).toContain("Plan");
+			expect(output).toContain("计划");
 			expect(output).not.toContain("接口已恢复");
 		} finally {
 			vi.useRealTimers();

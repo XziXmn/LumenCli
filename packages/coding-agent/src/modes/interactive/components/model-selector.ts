@@ -14,6 +14,7 @@ import type { SettingsManager } from "../../../core/settings-manager.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint } from "./keybinding-hints.js";
+import { TUI_COPY } from "./tui-copy.js";
 
 interface ModelItem {
 	provider: string;
@@ -93,7 +94,7 @@ export class ModelSelectorComponent extends Container implements Focusable {
 			this.scopeHintText = new Text(this.getScopeHintText(), 0, 0);
 			this.addChild(this.scopeHintText);
 		} else {
-			const hintText = "当前只显示已配置 provider 的模型。可用 /login 添加新的 provider。";
+			const hintText = "当前只显示已配置模型提供方的模型。可用 /login 添加新的模型提供方。";
 			this.addChild(new Text(theme.fg("warning", hintText), 0, 0));
 		}
 		this.addChild(new Spacer(1));
@@ -276,11 +277,13 @@ export class ModelSelectorComponent extends Container implements Focusable {
 				this.listContainer.addChild(new Text(theme.fg("error", line), 0, 0));
 			}
 		} else if (this.filteredModels.length === 0) {
-			this.listContainer.addChild(new Text(theme.fg("muted", "  没有匹配的模型"), 0, 0));
+			this.listContainer.addChild(new Text(theme.fg("muted", TUI_COPY.scopedModelsSelector.noMatches), 0, 0));
 		} else {
 			const selected = this.filteredModels[this.selectedIndex];
 			this.listContainer.addChild(new Spacer(1));
-			this.listContainer.addChild(new Text(theme.fg("muted", `  模型名称: ${selected.model.name}`), 0, 0));
+			this.listContainer.addChild(
+				new Text(theme.fg("muted", TUI_COPY.scopedModelsSelector.modelName(selected.model.name)), 0, 0),
+			);
 		}
 	}
 

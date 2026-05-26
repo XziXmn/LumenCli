@@ -222,6 +222,64 @@ describe("AgentSession compaction characterization", () => {
 		expect(seenReasons).toEqual(["threshold"]);
 	});
 
+	it("core threshold compaction keeps a compact recent-user bridge without extension override", async () => {
+		const harness = await createHarness({
+			settings: { compaction: { keepRecentTokens: 2 } },
+		});
+		harnesses.push(harness);
+
+		harness.setResponses([
+			fauxAssistantMessage("one"),
+			fauxAssistantMessage("two"),
+			fauxAssistantMessage("## Goal\nthreshold summary"),
+		]);
+		await harness.session.prompt("first");
+		await harness.session.prompt("second");
+
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		await sessionInternals._runAutoCompaction("threshold", false);
+
+		const compactionEntries = harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction");
+		expect(compactionEntries).toHaveLength(1);
+		expect((compactionEntries[0] as any).replacementMessages).toHaveLength(2);
+		const messages = harness.session.messages;
+		expect(messages[0]?.role).toBe("user");
+		expect((messages[0] as any).content).toBe("second");
+		expect(messages[1]?.role).toBe("compactionSummary");
+	});
+
+	it("core overflow compaction keeps a deeper recent-user bridge without extension override", async () => {
+		const harness = await createHarness({
+			settings: { compaction: { keepRecentTokens: 8 } },
+		});
+		harnesses.push(harness);
+
+		harness.setResponses([
+			fauxAssistantMessage("one"),
+			fauxAssistantMessage("two"),
+			fauxAssistantMessage("three"),
+			fauxAssistantMessage("four"),
+			fauxAssistantMessage("## Goal\noverflow summary"),
+		]);
+		await harness.session.prompt("u1");
+		await harness.session.prompt("u2");
+		await harness.session.prompt("u3");
+		await harness.session.prompt("u4");
+
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		await sessionInternals._runAutoCompaction("overflow", false);
+
+		const compactionEntries = harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction");
+		expect(compactionEntries).toHaveLength(1);
+		expect((compactionEntries[0] as any).replacementMessages).toHaveLength(4);
+		const userMessages = harness.session.messages.filter((message) => message.role === "user");
+		expect(userMessages.length).toBeGreaterThanOrEqual(3);
+		expect((userMessages[0] as any).content).toBe("u2");
+		expect((userMessages[1] as any).content).toBe("u3");
+		expect((userMessages[2] as any).content).toBe("u4");
+		expect(harness.session.messages.some((message) => message.role === "compactionSummary")).toBe(true);
+	});
+
 	it("throws when compacting without a model", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
@@ -234,7 +292,7 @@ describe("AgentSession compaction characterization", () => {
 		const harness = await createHarness({ withConfiguredAuth: false });
 		harnesses.push(harness);
 
-		await expect(harness.session.compact()).rejects.toThrow(`未找到 ${harness.getModel().provider} 的 API key`);
+		await expect(harness.session.compact()).rejects.toThrow(`未找到 ${harness.getModel().provider} 的 API 密钥`);
 	});
 
 	it("cancels in-progress manual compaction when abortCompaction is called", async () => {

@@ -24,74 +24,44 @@ export interface BuildSystemPromptOptions {
 	skills?: Skill[];
 }
 
-/** Build the system prompt with tools, guidelines, and context */
-export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
-	const {
-		customPrompt,
-		selectedTools,
-		toolSnippets,
-		promptGuidelines,
-		appendSystemPrompt,
-		cwd,
-		contextFiles: providedContextFiles,
-		skills: providedSkills,
-	} = options;
-	const resolvedCwd = cwd;
-	const promptCwd = resolvedCwd.replace(/\\/g, "/");
+export type SystemPromptSection = "basePrompt" | "appendPrompt" | "projectContext" | "skills" | "runtimeContext";
 
-	const now = new Date();
-	const year = now.getFullYear();
-	const month = String(now.getMonth() + 1).padStart(2, "0");
-	const day = String(now.getDate()).padStart(2, "0");
-	const date = `${year}-${month}-${day}`;
+export interface BuiltSystemPrompt {
+	text: string;
+	sections: Partial<Record<SystemPromptSection, string>>;
+}
 
-	const appendSection = appendSystemPrompt ? `\n\n${appendSystemPrompt}` : "";
-
-	const contextFiles = providedContextFiles ?? [];
-	const skills = providedSkills ?? [];
-
-	if (customPrompt) {
-		let prompt = customPrompt;
-
-		if (appendSection) {
-			prompt += appendSection;
-		}
-
-		// Append project context files
-		if (contextFiles.length > 0) {
-			prompt += "\n\n# Project Context\n\n";
-			prompt += "Project-specific instructions and guidelines:\n\n";
-			for (const { path: filePath, content } of contextFiles) {
-				prompt += `## ${filePath}\n\n${content}\n\n`;
-			}
-		}
-
-		// Append skills section (only if read tool is available)
-		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
-		if (customPromptHasRead && skills.length > 0) {
-			prompt += formatSkillsForPrompt(skills);
-		}
-
-		// Add date and working directory last
-		prompt += `\nCurrent date: ${date}`;
-		prompt += `\nCurrent working directory: ${promptCwd}`;
-
-		return prompt;
+function buildProjectContextSection(contextFiles: Array<{ path: string; content: string }>): string {
+	if (contextFiles.length === 0) {
+		return "";
 	}
 
-	// Get absolute paths to documentation and examples
+	let section = "\n\n# Project Context\n\n";
+	section += "Project-specific instructions and guidelines:\n\n";
+	for (const { path: filePath, content } of contextFiles) {
+		section += `## ${filePath}\n\n${content}\n\n`;
+	}
+	return section;
+}
+
+function buildRuntimeContextSection(date: string, promptCwd: string): string {
+	return `\nCurrent date: ${date}\nCurrent working directory: ${promptCwd}`;
+}
+
+function buildDefaultBasePrompt(
+	selectedTools: string[] | undefined,
+	toolSnippets: Record<string, string> | undefined,
+	promptGuidelines: string[] | undefined,
+): string {
 	const readmePath = getReadmePath();
 	const docsPath = getDocsPath();
 	const examplesPath = getExamplesPath();
 
-	// Build tools list based on selected tools.
-	// A tool appears in Available tools only when the caller provides a one-line snippet.
 	const tools = selectedTools || ["read", "bash", "edit", "write"];
 	const visibleTools = tools.filter((name) => !!toolSnippets?.[name]);
 	const toolsList =
 		visibleTools.length > 0 ? visibleTools.map((name) => `- ${name}: ${toolSnippets![name]}`).join("\n") : "(none)";
 
-	// Build guidelines based on which tools are actually available
 	const guidelinesList: string[] = [];
 	const guidelinesSet = new Set<string>();
 	const addGuideline = (guideline: string): void => {
@@ -106,9 +76,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	const hasGrep = tools.includes("grep");
 	const hasFind = tools.includes("find");
 	const hasLs = tools.includes("ls");
-	const hasRead = tools.includes("read");
 
-	// File exploration guidelines
 	if (hasBash && !hasGrep && !hasFind && !hasLs) {
 		addGuideline("Use bash for file operations like ls, rg, find");
 	} else if (hasBash && (hasGrep || hasFind || hasLs)) {
@@ -122,13 +90,12 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		}
 	}
 
-	// Always include these
 	addGuideline("Be concise in your responses");
 	addGuideline("Show file paths clearly when working with files");
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
 
-	let prompt = `You are an expert coding assistant operating inside Lumen, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
+	return `You are an expert coding assistant operating inside Lumen, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
 
 Available tools:
 ${toolsList}
@@ -150,28 +117,63 @@ Lumen documentation (read only when the user asks about Lumen itself, its SDK, e
 - Respond in Chinese (Simplified) by default unless the user explicitly uses another language
 - Code comments may remain in English for readability
 - Error messages and status output should be in Chinese`;
+}
 
+/** Build the system prompt with explicit section boundaries. */
+export function buildSystemPromptWithSections(options: BuildSystemPromptOptions): BuiltSystemPrompt {
+	const {
+		customPrompt,
+		selectedTools,
+		toolSnippets,
+		promptGuidelines,
+		appendSystemPrompt,
+		cwd,
+		contextFiles: providedContextFiles,
+		skills: providedSkills,
+	} = options;
+	const promptCwd = cwd.replace(/\\/g, "/");
+
+	const now = new Date();
+	const year = now.getFullYear();
+	const month = String(now.getMonth() + 1).padStart(2, "0");
+	const day = String(now.getDate()).padStart(2, "0");
+	const date = `${year}-${month}-${day}`;
+
+	const contextFiles = providedContextFiles ?? [];
+	const skills = providedSkills ?? [];
+	const hasRead = !selectedTools || selectedTools.includes("read");
+
+	const basePrompt = customPrompt ?? buildDefaultBasePrompt(selectedTools, toolSnippets, promptGuidelines);
+	const appendSection = appendSystemPrompt ? `\n\n${appendSystemPrompt}` : "";
+	const projectContextSection = buildProjectContextSection(contextFiles);
+	const skillsSection = hasRead && skills.length > 0 ? formatSkillsForPrompt(skills) : "";
+	const runtimeContextSection = buildRuntimeContextSection(date, promptCwd);
+
+	let text = basePrompt;
 	if (appendSection) {
-		prompt += appendSection;
+		text += appendSection;
 	}
-
-	// Append project context files
-	if (contextFiles.length > 0) {
-		prompt += "\n\n# Project Context\n\n";
-		prompt += "Project-specific instructions and guidelines:\n\n";
-		for (const { path: filePath, content } of contextFiles) {
-			prompt += `## ${filePath}\n\n${content}\n\n`;
-		}
+	if (projectContextSection) {
+		text += projectContextSection;
 	}
-
-	// Append skills section (only if read tool is available)
-	if (hasRead && skills.length > 0) {
-		prompt += formatSkillsForPrompt(skills);
+	if (skillsSection) {
+		text += skillsSection;
 	}
+	text += runtimeContextSection;
 
-	// Add date and working directory last
-	prompt += `\nCurrent date: ${date}`;
-	prompt += `\nCurrent working directory: ${promptCwd}`;
+	return {
+		text,
+		sections: {
+			basePrompt,
+			...(appendSection ? { appendPrompt: appendSection } : {}),
+			...(projectContextSection ? { projectContext: projectContextSection } : {}),
+			...(skillsSection ? { skills: skillsSection } : {}),
+			runtimeContext: runtimeContextSection,
+		},
+	};
+}
 
-	return prompt;
+/** Build the final main system prompt text. */
+export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
+	return buildSystemPromptWithSections(options).text;
 }

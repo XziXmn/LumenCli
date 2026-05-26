@@ -89,7 +89,7 @@ describe("AgentSession model and extension characterization", () => {
 		harnesses.push(harness);
 
 		await expect(harness.session.setModel(harness.getModel("faux-2")!)).rejects.toThrow(
-			`No API key for ${harness.getModel().provider}/faux-2`,
+			`未找到 ${harness.getModel().provider} 的 API 密钥。`,
 		);
 	});
 
