@@ -147,6 +147,8 @@ export interface BashToolOptions {
 	shellPath?: string;
 	/** Hook to adjust command, cwd, or env before execution */
 	spawnHook?: BashSpawnHook;
+	/** If true, show the command that would be executed without actually running it */
+	dryRun?: boolean;
 }
 
 const BASH_PREVIEW_LINES = 5;
@@ -368,6 +370,13 @@ export function createBashToolDefinition(
 			};
 
 			const appendStatus = (text: string, status: string) => `${text ? `${text}\n\n` : ""}${status}`;
+
+			if (options?.dryRun) {
+				return {
+					content: [{ type: "text", text: `[Dry Run] Would execute: ${spawnContext.command}` }],
+					details: undefined,
+				};
+			}
 
 			try {
 				let exitCode: number | null;

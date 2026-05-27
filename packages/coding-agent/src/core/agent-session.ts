@@ -155,6 +155,10 @@ export type AgentSessionEvent =
 			aborted: boolean;
 			willRetry: boolean;
 			errorMessage?: string;
+			notices?: Array<{
+				level: "info" | "warning";
+				message: string;
+			}>;
 	  }
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
@@ -181,6 +185,8 @@ export interface AgentSessionConfig {
 	modelRegistry: ModelRegistry;
 	/** Initial active built-in tool names. Default: [read, bash, edit, write] */
 	initialActiveToolNames?: string[];
+	/** If true, bash tool will show commands without executing them */
+	dryRun?: boolean;
 	/** Optional allowlist of tool names. When provided, only these tool names are exposed. */
 	allowedToolNames?: string[];
 	/**
@@ -299,6 +305,7 @@ export class AgentSession {
 	// Bash execution state
 	private _bashAbortController: AbortController | undefined = undefined;
 	private _pendingBashMessages: BashExecutionMessage[] = [];
+	private _dryRun: boolean;
 
 	// Extension system
 	private _extensionRunner!: ExtensionRunner;
@@ -347,6 +354,7 @@ export class AgentSession {
 		this._initialActiveToolNames = config.initialActiveToolNames;
 		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
 		this._baseToolsOverride = config.baseToolsOverride;
+		this._dryRun = config.dryRun ?? false;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
 
 		// Always subscribe to agent events for internal handling
@@ -2008,12 +2016,14 @@ export class AgentSession {
 				tokensBefore,
 				details,
 			};
+			const notices = this._buildCompactionNotices("manual");
 			this._emit({
 				type: "compaction_end",
 				reason: "manual",
 				result: compactionResult,
 				aborted: false,
 				willRetry: false,
+				notices,
 			});
 			return compactionResult;
 		} catch (error) {
@@ -2303,7 +2313,8 @@ export class AgentSession {
 				tokensBefore,
 				details,
 			};
-			this._emit({ type: "compaction_end", reason, result, aborted: false, willRetry });
+			const notices = this._buildCompactionNotices(reason);
+			this._emit({ type: "compaction_end", reason, result, aborted: false, willRetry, notices });
 
 			if (willRetry) {
 				const messages = this.agent.state.messages;
@@ -2338,6 +2349,30 @@ export class AgentSession {
 		} finally {
 			this._autoCompactionAbortController = undefined;
 		}
+	}
+
+	private _buildCompactionNotices(
+		reason: "manual" | "threshold" | "overflow",
+	): Array<{ level: "info" | "warning"; message: string }> | undefined {
+		const notices: Array<{ level: "info" | "warning"; message: string }> = [];
+		const compactionCount = this.sessionManager.getBranch().filter((entry) => entry.type === "compaction").length;
+
+		if (reason === "overflow") {
+			notices.push({
+				level: "warning",
+				message:
+					"Context overflow recovery compaction was triggered. Consider starting a new session soon to avoid stacking more summary bridges.",
+			});
+		}
+
+		if (compactionCount >= 2) {
+			notices.push({
+				level: "warning",
+				message: `This branch has been compacted ${compactionCount} times. Consider starting a new session soon to reduce stacked summaries.`,
+			});
+		}
+
+		return notices.length > 0 ? notices : undefined;
 	}
 
 	/**
@@ -2664,7 +2699,7 @@ export class AgentSession {
 				)
 			: createAllToolDefinitions(this._cwd, {
 					read: { autoResizeImages },
-					bash: { commandPrefix: shellCommandPrefix, shellPath },
+					bash: { commandPrefix: shellCommandPrefix, shellPath, dryRun: this._dryRun },
 				});
 
 		this._baseToolDefinitions = new Map(

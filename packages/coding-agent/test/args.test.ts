@@ -350,6 +350,18 @@ describe("parseArgs", () => {
 		});
 	});
 
+	describe("--dry-run flag", () => {
+		test("parses --dry-run flag", () => {
+			const result = parseArgs(["--dry-run"]);
+			expect(result.dryRun).toBe(true);
+		});
+
+		test("--dry-run defaults to undefined when not provided", () => {
+			const result = parseArgs([]);
+			expect(result.dryRun).toBeUndefined();
+		});
+	});
+
 	describe("complex combinations", () => {
 		test("parses multiple flags together", () => {
 			const result = parseArgs([

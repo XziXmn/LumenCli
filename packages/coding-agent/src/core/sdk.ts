@@ -67,7 +67,8 @@ export interface CreateAgentSessionOptions {
 	tools?: string[];
 	/** Custom tools to register (in addition to built-in tools). */
 	customTools?: ToolDefinition[];
-
+	/** If true, bash tool will show commands without executing them */
+	dryRun?: boolean;
 	/** Resource loader. When omitted, DefaultResourceLoader is used. */
 	resourceLoader?: ResourceLoader;
 
@@ -413,6 +414,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		modelRegistry,
 		initialActiveToolNames,
 		allowedToolNames,
+		dryRun: options.dryRun,
 		extensionRunnerRef,
 		sessionStartEvent: options.sessionStartEvent,
 	});

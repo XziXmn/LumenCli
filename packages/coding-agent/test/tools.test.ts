@@ -684,6 +684,23 @@ describe("Coding Agent Tools", () => {
 		});
 	});
 
+	describe("bash tool dry-run", () => {
+		it("should return dry-run message without executing command", async () => {
+			const bash = createBashTool(testDir, { dryRun: true });
+			const result = await bash.execute("test-call-dry-run", { command: "echo 'should not run'" });
+
+			expect(getTextOutput(result)).toContain("[Dry Run] Would execute: echo 'should not run'");
+			expect(result.details).toBeUndefined();
+		});
+
+		it("should include command prefix in dry-run message", async () => {
+			const bash = createBashTool(testDir, { dryRun: true, commandPrefix: "source /tmp/setup.sh" });
+			const result = await bash.execute("test-call-dry-run-prefix", { command: "ls -la" });
+
+			expect(getTextOutput(result)).toContain("[Dry Run] Would execute: source /tmp/setup.sh\nls -la");
+		});
+	});
+
 	describe("grep tool", () => {
 		it("should include filename when searching a single file", async () => {
 			const testFile = join(testDir, "example.txt");
