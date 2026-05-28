@@ -12,8 +12,8 @@ import {
 import { stripAnsi } from "../../../utils/ansi.ts";
 import { theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
+import { TUI_COPY } from "./interactive-strings.ts";
 import { keyHint, keyText } from "./keybinding-hints.ts";
-import { TUI_COPY } from "./tui-copy.ts";
 import { truncateToVisualLines } from "./visual-truncate.ts";
 
 // Preview line limit when not expanded (matches tool execution behavior)
@@ -179,10 +179,10 @@ export class BashExecutionComponent extends Container {
 			// Show how many lines are hidden (collapsed preview)
 			if (hiddenLineCount > 0) {
 				if (this.expanded) {
-					statusParts.push(`(${keyHint("app.tools.expand", "收起")})`);
+					statusParts.push(`(${keyHint("app.tools.expand", TUI_COPY.bashExecution.collapseHint)})`);
 				} else {
 					statusParts.push(
-						`${theme.fg("muted", TUI_COPY.bashExecution.moreLines(hiddenLineCount))} (${keyHint("app.tools.expand", "展开")})`,
+						`${theme.fg("muted", TUI_COPY.bashExecution.moreLines(hiddenLineCount))} (${keyHint("app.tools.expand", TUI_COPY.bashExecution.expandHint)})`,
 					);
 				}
 			}
@@ -196,7 +196,7 @@ export class BashExecutionComponent extends Container {
 			// Add truncation warning (context truncation, not preview truncation)
 			const wasTruncated = this.truncationResult?.truncated || contextTruncation.truncated;
 			if (wasTruncated && this.fullOutputPath) {
-				statusParts.push(theme.fg("warning", `输出已截断，完整输出见：${this.fullOutputPath}`));
+				statusParts.push(theme.fg("warning", TUI_COPY.bashExecution.truncatedOutput(this.fullOutputPath)));
 			}
 
 			if (statusParts.length > 0) {

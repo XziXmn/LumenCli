@@ -3,7 +3,7 @@ import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.ts";
 import type { RenderableCollapsedToolGroup } from "../output-flow/types.ts";
 import { theme } from "../theme/theme.ts";
 import { renderToolHintLine, renderToolResponseLine, renderToolStatusDot } from "./assistant-tool-summary.ts";
-import { TUI_COPY } from "./tui-copy.ts";
+import { TUI_COPY } from "./interactive-strings.ts";
 
 type CollapsedKind = "read" | "search" | "list";
 
@@ -92,10 +92,12 @@ export class CollapsedToolGroupComponent extends Container {
 	private expanded = false;
 	private items: CollapsedRuntimeItem[] = [];
 	private readonly cwd: string;
+	private readonly addLeadingMargin: boolean;
 
-	constructor(cwd: string, group?: RenderableCollapsedToolGroup) {
+	constructor(cwd: string, group?: RenderableCollapsedToolGroup, options?: { addLeadingMargin?: boolean }) {
 		super();
 		this.cwd = cwd;
+		this.addLeadingMargin = options?.addLeadingMargin ?? true;
 		if (group) {
 			this.items = group.items.map((item) => ({
 				id: item.toolCall.id,
@@ -165,8 +167,14 @@ export class CollapsedToolGroupComponent extends Container {
 		const hint = latestHint(this.items, this.cwd);
 		const status = this.isComplete() ? "success" : "pending";
 
-		this.addChild(new Spacer(1));
-		this.addChild(new Text(`${renderToolStatusDot(status)} ${theme.bold(summary)}`, 1, 0));
+		if (this.addLeadingMargin) {
+			this.addChild(new Spacer(1));
+		}
+		const isActive = !this.isComplete();
+		const summaryStyle = isActive
+			? `${renderToolStatusDot(status)} ${theme.bold(summary)}`
+			: theme.fg("dim", `${renderToolStatusDot(status)} ${summary}`);
+		this.addChild(new Text(summaryStyle, 1, 0));
 
 		if (!this.expanded && hint) {
 			this.addChild(new Text(renderToolHintLine(hint), 0, 0));

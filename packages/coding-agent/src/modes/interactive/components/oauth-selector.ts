@@ -10,6 +10,7 @@ import {
 import type { AuthStatus, AuthStorage } from "../../../core/auth-storage.ts";
 import { theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
+import { TUI_COPY } from "./interactive-strings.ts";
 
 export type AuthSelectorProvider = {
 	id: string;
@@ -66,7 +67,7 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 		this.addChild(new Spacer(1));
 
 		// Add title
-		const title = mode === "login" ? "选择要配置的模型提供方：" : "选择要退出登录的模型提供方：";
+		const title = mode === "login" ? TUI_COPY.oauthSelector.loginTitle : TUI_COPY.oauthSelector.logoutTitle;
 		this.addChild(new TruncatedText(theme.fg("accent", theme.bold(title)), 1, 0));
 		this.addChild(new Spacer(1));
 
@@ -141,36 +142,42 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 			const message =
 				this.allProviders.length === 0
 					? this.mode === "login"
-						? "当前没有可用的模型提供方"
-						: "当前没有已登录的模型提供方，请先使用 /login。"
-					: "没有匹配的模型提供方";
+						? TUI_COPY.oauthSelector.noAvailableProviders
+						: TUI_COPY.oauthSelector.noLoggedInProviders
+					: TUI_COPY.oauthSelector.noMatchingProviders;
 			this.listContainer.addChild(new TruncatedText(theme.fg("muted", `  ${message}`), 1, 0));
 		}
 	}
 
 	private formatStatusIndicator(provider: AuthSelectorProvider): string {
 		const credential = this.authStorage.get(provider.id);
-		if (credential?.type === provider.authType) return theme.fg("success", " ✓ 已配置");
+		if (credential?.type === provider.authType) return theme.fg("success", TUI_COPY.oauthSelector.configured);
 		if (credential) {
-			const label = credential.type === "oauth" ? "订阅已配置" : "API 密钥已配置";
+			const label =
+				credential.type === "oauth"
+					? TUI_COPY.oauthSelector.subscriptionConfigured
+					: TUI_COPY.oauthSelector.apiKeyConfigured;
 			return theme.fg("muted", " • ") + theme.fg("warning", label);
 		}
-		if (provider.authType !== "api_key") return theme.fg("muted", " • 未配置");
+		if (provider.authType !== "api_key") return theme.fg("muted", TUI_COPY.oauthSelector.notConfigured);
 
 		const status = this.getAuthStatus(provider.id);
 		switch (status.source) {
 			case "environment":
-				return theme.fg("success", ` ✓ 环境变量: ${status.label ?? "API 密钥"}`);
+				return theme.fg(
+					"success",
+					TUI_COPY.oauthSelector.envApiKey(status.label ?? TUI_COPY.oauthSelector.defaultApiKeyLabel),
+				);
 			case "runtime":
-				return theme.fg("success", " ✓ 运行时 API 密钥");
+				return theme.fg("success", TUI_COPY.oauthSelector.runtimeApiKey);
 			case "fallback":
-				return theme.fg("success", " ✓ 自定义 API 密钥");
+				return theme.fg("success", TUI_COPY.oauthSelector.customApiKey);
 			case "models_json_key":
-				return theme.fg("success", " ✓ models.json 中的密钥");
+				return theme.fg("success", TUI_COPY.oauthSelector.modelsJsonKey);
 			case "models_json_command":
-				return theme.fg("success", " ✓ models.json 中的命令");
+				return theme.fg("success", TUI_COPY.oauthSelector.modelsJsonCommand);
 			default:
-				return theme.fg("muted", " • 未配置");
+				return theme.fg("muted", TUI_COPY.oauthSelector.notConfigured);
 		}
 	}
 

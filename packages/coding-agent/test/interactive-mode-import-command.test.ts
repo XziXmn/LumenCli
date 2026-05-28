@@ -11,12 +11,11 @@ type InteractiveModePrototype = {
 
 type ImportCommandContext = {
 	loadingAnimation?: { stop: () => void };
-	statusContainer: { clear: () => void };
+	renderWorkingArea: () => void;
 	runtimeHost: { importFromJsonl: (inputPath: string, cwdOverride?: string) => Promise<{ cancelled: boolean }> };
 	showError: (message: string) => void;
-	showStatus: (message: string) => void;
+	showTaskbarNotice: (message: string, tone?: "dim" | "warning", durationMs?: number) => void;
 	showExtensionConfirm: (title: string, message: string) => Promise<boolean>;
-	handleRuntimeSessionChange: () => Promise<void>;
 	renderCurrentSessionState: () => void;
 	handleFatalRuntimeError: (prefix: string, error: unknown) => Promise<never>;
 	promptForMissingSessionCwd: (error: unknown) => Promise<string | undefined>;
@@ -54,16 +53,15 @@ describe("InteractiveMode /import parsing", () => {
 	it("passes unquoted path to runtimeHost.importFromJsonl", async () => {
 		const importFromJsonl = vi.fn(async () => ({ cancelled: false }));
 		const showExtensionConfirm = vi.fn(async () => true);
-		const showStatus = vi.fn();
+		const showTaskbarNotice = vi.fn();
 		const showError = vi.fn();
 
 		const context: ImportCommandContext = {
-			statusContainer: { clear: vi.fn() },
+			renderWorkingArea: vi.fn(),
 			runtimeHost: { importFromJsonl },
 			showError,
-			showStatus,
+			showTaskbarNotice,
 			showExtensionConfirm,
-			handleRuntimeSessionChange: vi.fn(async () => {}),
 			renderCurrentSessionState: vi.fn(),
 			handleFatalRuntimeError: vi.fn(async () => {
 				throw new Error("unexpected fatal error");
@@ -74,28 +72,24 @@ describe("InteractiveMode /import parsing", () => {
 
 		await interactiveModePrototype.handleImportCommand.call(context, '/import "path/to/session.jsonl"');
 
-		expect(showExtensionConfirm).toHaveBeenCalledWith(
-			"Import session",
-			"Replace current session with path/to/session.jsonl?",
-		);
+		expect(showExtensionConfirm).toHaveBeenCalledWith("导入会话", "要用 path/to/session.jsonl 替换当前会话吗？");
 		expect(importFromJsonl).toHaveBeenCalledWith("path/to/session.jsonl");
 		expect(showError).not.toHaveBeenCalled();
-		expect(showStatus).toHaveBeenCalledWith("Session imported from: path/to/session.jsonl");
+		expect(showTaskbarNotice).toHaveBeenCalledWith("Imported session from: path/to/session.jsonl", "dim", 3200);
 	});
 
 	it("passes unquoted apostrophe path to runtimeHost.importFromJsonl unchanged", async () => {
 		const importFromJsonl = vi.fn(async () => ({ cancelled: false }));
 		const showExtensionConfirm = vi.fn(async () => true);
-		const showStatus = vi.fn();
+		const showTaskbarNotice = vi.fn();
 		const showError = vi.fn();
 
 		const context: ImportCommandContext = {
-			statusContainer: { clear: vi.fn() },
+			renderWorkingArea: vi.fn(),
 			runtimeHost: { importFromJsonl },
 			showError,
-			showStatus,
+			showTaskbarNotice,
 			showExtensionConfirm,
-			handleRuntimeSessionChange: vi.fn(async () => {}),
 			renderCurrentSessionState: vi.fn(),
 			handleFatalRuntimeError: vi.fn(async () => {
 				throw new Error("unexpected fatal error");
@@ -108,7 +102,7 @@ describe("InteractiveMode /import parsing", () => {
 
 		expect(importFromJsonl).toHaveBeenCalledWith("john's/session.jsonl");
 		expect(showError).not.toHaveBeenCalled();
-		expect(showStatus).toHaveBeenCalledWith("Session imported from: john's/session.jsonl");
+		expect(showTaskbarNotice).toHaveBeenCalledWith("Imported session from: john's/session.jsonl", "dim", 3200);
 	});
 
 	it("shows a non-fatal error when /import path does not exist", async () => {
@@ -116,19 +110,18 @@ describe("InteractiveMode /import parsing", () => {
 			throw new SessionImportFileNotFoundError("/tmp/missing-session.jsonl");
 		});
 		const showExtensionConfirm = vi.fn(async () => true);
-		const showStatus = vi.fn();
+		const showTaskbarNotice = vi.fn();
 		const showError = vi.fn();
 		const handleFatalRuntimeError = vi.fn(async () => {
 			throw new Error("unexpected fatal error");
 		});
 
 		const context: ImportCommandContext = {
-			statusContainer: { clear: vi.fn() },
+			renderWorkingArea: vi.fn(),
 			runtimeHost: { importFromJsonl },
 			showError,
-			showStatus,
+			showTaskbarNotice,
 			showExtensionConfirm,
-			handleRuntimeSessionChange: vi.fn(async () => {}),
 			renderCurrentSessionState: vi.fn(),
 			handleFatalRuntimeError,
 			promptForMissingSessionCwd: vi.fn(async () => undefined),
@@ -138,7 +131,7 @@ describe("InteractiveMode /import parsing", () => {
 		await interactiveModePrototype.handleImportCommand.call(context, "/import /tmp/missing-session.jsonl");
 
 		expect(showError).toHaveBeenCalledWith("Failed to import session: File not found: /tmp/missing-session.jsonl");
-		expect(showStatus).not.toHaveBeenCalled();
+		expect(showTaskbarNotice).not.toHaveBeenCalled();
 		expect(handleFatalRuntimeError).not.toHaveBeenCalled();
 	});
 });

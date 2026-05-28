@@ -14,25 +14,19 @@ import {
 import type { WarningSettings } from "../../../core/settings-manager.ts";
 import { getSelectListTheme, getSettingsListTheme, theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
+import { TUI_COPY } from "./interactive-strings.ts";
 import { keyDisplayText } from "./keybinding-hints.ts";
-import { TUI_COPY } from "./tui-copy.ts";
 
 const SETTINGS_SUBMENU_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
 	minPrimaryColumnWidth: 12,
 	maxPrimaryColumnWidth: 32,
 };
 
-const THINKING_DESCRIPTIONS: Record<ThinkingLevel, string> = {
-	off: "不推理",
-	minimal: "极简推理（~1k tokens）",
-	low: "轻度推理（~2k tokens）",
-	medium: "中等推理（~8k tokens）",
-	high: "深度推理（~16k tokens）",
-	xhigh: "最大推理（~32k tokens）",
-};
+const THINKING_DESCRIPTIONS: Record<ThinkingLevel, string> = TUI_COPY.settingsSelector.thinkingLevelDescriptions;
 
 export interface SettingsConfig {
 	autoCompact: boolean;
+	autoCompactThresholdPercent: number | undefined;
 	showImages: boolean;
 	imageWidthCells: number;
 	autoResizeImages: boolean;
@@ -46,6 +40,7 @@ export interface SettingsConfig {
 	currentTheme: string;
 	availableThemes: string[];
 	hideThinkingBlock: boolean;
+	toolDisplayMode: "collapsed" | "expanded";
 	collapseChangelog: boolean;
 	enableInstallTelemetry: boolean;
 	doubleEscapeAction: "fork" | "tree" | "none";
@@ -61,6 +56,7 @@ export interface SettingsConfig {
 
 export interface SettingsCallbacks {
 	onAutoCompactChange: (enabled: boolean) => void;
+	onAutoCompactThresholdPercentChange: (percent: number | undefined) => void;
 	onShowImagesChange: (enabled: boolean) => void;
 	onImageWidthCellsChange: (width: number) => void;
 	onAutoResizeImagesChange: (enabled: boolean) => void;
@@ -73,6 +69,7 @@ export interface SettingsCallbacks {
 	onThemeChange: (theme: string) => void;
 	onThemePreview?: (theme: string) => void;
 	onHideThinkingBlockChange: (hidden: boolean) => void;
+	onToolDisplayModeChange: (mode: "collapsed" | "expanded") => void;
 	onCollapseChangelogChange: (collapsed: boolean) => void;
 	onEnableInstallTelemetryChange: (enabled: boolean) => void;
 	onDoubleEscapeActionChange: (action: "fork" | "tree" | "none") => void;
@@ -102,8 +99,8 @@ class WarningSettingsSubmenu extends Container {
 		const items: SettingItem[] = [
 			{
 				id: "anthropic-extra-usage",
-				label: "Anthropic 额外用量",
-				description: "Anthropic 订阅认证可能产生付费额外用量时警告",
+				label: TUI_COPY.settingsSelector.anthropicExtraUsageLabel,
+				description: TUI_COPY.settingsSelector.anthropicExtraUsageDescription,
 				currentValue: (this.state.anthropicExtraUsage ?? true) ? "true" : "false",
 				values: ["true", "false"],
 			},
@@ -221,78 +218,94 @@ export class SettingsSelectorComponent extends Container {
 		const items: SettingItem[] = [
 			{
 				id: "autocompact",
-				label: "自动压缩",
-				description: "上下文过大时自动压缩",
+				label: TUI_COPY.settingsSelector.autoCompactLabel,
+				description: TUI_COPY.settingsSelector.autoCompactDescription,
 				currentValue: config.autoCompact ? "true" : "false",
 				values: ["true", "false"],
 			},
 			{
+				id: "autocompact-threshold-percent",
+				label: TUI_COPY.settingsSelector.autoCompactThresholdLabel,
+				description: TUI_COPY.settingsSelector.autoCompactThresholdDescription,
+				currentValue: config.autoCompactThresholdPercent
+					? `${config.autoCompactThresholdPercent}%`
+					: TUI_COPY.settingsSelector.autoCompactThresholdOff,
+				values: [...TUI_COPY.settingsSelector.autoCompactThresholdOptions],
+			},
+			{
 				id: "steering-mode",
-				label: "消息模式",
-				description: "流式输出时按 Enter 排队消息。'one-at-a-time': 逐条发送等回复。'all': 一次全发。",
+				label: TUI_COPY.settingsSelector.steeringModeLabel,
+				description: TUI_COPY.settingsSelector.steeringModeDescription,
 				currentValue: config.steeringMode,
 				values: ["one-at-a-time", "all"],
 			},
 			{
 				id: "follow-up-mode",
-				label: "后续消息模式",
-				description: `${followUpKey} 排队后续消息。'one-at-a-time': 逐条发送等回复。'all': 一次全发。`,
+				label: TUI_COPY.settingsSelector.followUpModeLabel,
+				description: TUI_COPY.settingsSelector.followUpModeDescription(followUpKey),
 				currentValue: config.followUpMode,
 				values: ["one-at-a-time", "all"],
 			},
 			{
 				id: "transport",
-				label: "传输协议",
-				description: "支持多种传输的 provider 优先使用的协议",
+				label: TUI_COPY.settingsSelector.transportLabel,
+				description: TUI_COPY.settingsSelector.transportDescription,
 				currentValue: config.transport,
 				values: ["sse", "websocket", "websocket-cached", "auto"],
 			},
 			{
 				id: "hide-thinking",
-				label: "隐藏思考",
-				description: "隐藏助手回复中的思考内容",
+				label: TUI_COPY.settingsSelector.hideThinkingLabel,
+				description: TUI_COPY.settingsSelector.hideThinkingDescription,
 				currentValue: config.hideThinkingBlock ? "true" : "false",
 				values: ["true", "false"],
 			},
 			{
+				id: "tool-display-mode",
+				label: TUI_COPY.settingsSelector.toolDisplayModeLabel,
+				description: TUI_COPY.settingsSelector.toolDisplayModeDescription,
+				currentValue: config.toolDisplayMode === "collapsed" ? "true" : "false",
+				values: ["true", "false"],
+			},
+			{
 				id: "collapse-changelog",
-				label: "折叠更新日志",
-				description: "更新后显示精简版 changelog",
+				label: TUI_COPY.settingsSelector.collapseChangelogLabel,
+				description: TUI_COPY.settingsSelector.collapseChangelogDescription,
 				currentValue: config.collapseChangelog ? "true" : "false",
 				values: ["true", "false"],
 			},
 			{
 				id: "quiet-startup",
-				label: "安静启动",
-				description: "启动时不显示详细信息",
+				label: TUI_COPY.settingsSelector.quietStartupLabel,
+				description: TUI_COPY.settingsSelector.quietStartupDescription,
 				currentValue: config.quietStartup ? "true" : "false",
 				values: ["true", "false"],
 			},
 			{
 				id: "install-telemetry",
-				label: "安装遥测",
-				description: "更新后发送匿名版本 ping",
+				label: TUI_COPY.settingsSelector.installTelemetryLabel,
+				description: TUI_COPY.settingsSelector.installTelemetryDescription,
 				currentValue: config.enableInstallTelemetry ? "true" : "false",
 				values: ["true", "false"],
 			},
 			{
 				id: "double-escape-action",
-				label: "双击 Escape 动作",
-				description: "编辑器为空时连按两次 Escape 的行为",
+				label: TUI_COPY.settingsSelector.doubleEscapeActionLabel,
+				description: TUI_COPY.settingsSelector.doubleEscapeActionDescription,
 				currentValue: config.doubleEscapeAction,
 				values: ["tree", "fork", "none"],
 			},
 			{
 				id: "tree-filter-mode",
-				label: "树过滤模式",
-				description: "打开 /tree 时的默认过滤",
+				label: TUI_COPY.settingsSelector.treeFilterModeLabel,
+				description: TUI_COPY.settingsSelector.treeFilterModeDescription,
 				currentValue: config.treeFilterMode,
 				values: ["default", "no-tools", "user-only", "labeled-only", "all"],
 			},
 			{
 				id: "warnings",
-				label: "警告设置",
-				description: "启用或禁用各类警告",
+				label: TUI_COPY.settingsSelector.warningsLabel,
+				description: TUI_COPY.settingsSelector.warningsDescription,
 				currentValue: TUI_COPY.settingsSelector.warningsConfigure,
 				submenu: (_currentValue, done) =>
 					new WarningSettingsSubmenu(
@@ -306,19 +319,19 @@ export class SettingsSelectorComponent extends Container {
 			},
 			{
 				id: "thinking",
-				label: "思考等级",
-				description: "支持思考的模型的推理深度",
+				label: TUI_COPY.settingsSelector.thinkingLabel,
+				description: TUI_COPY.settingsSelector.thinkingLabelDescription,
 				currentValue: config.thinkingLevel,
-				submenu: (currentValue, done) =>
+				submenu: (_currentValue, done) =>
 					new SelectSubmenu(
-						"思考等级",
-						"选择推理深度（token 消耗越高，思考越深入）",
+						TUI_COPY.settingsSelector.thinkingTitle,
+						TUI_COPY.settingsSelector.thinkingDescription,
 						config.availableThinkingLevels.map((level) => ({
 							value: level,
 							label: level,
 							description: THINKING_DESCRIPTIONS[level],
 						})),
-						currentValue,
+						config.thinkingLevel,
 						(value) => {
 							callbacks.onThinkingLevelChange(value as ThinkingLevel);
 							done(value);
@@ -328,13 +341,13 @@ export class SettingsSelectorComponent extends Container {
 			},
 			{
 				id: "theme",
-				label: "主题",
-				description: "界面颜色主题",
+				label: TUI_COPY.settingsSelector.themeLabel,
+				description: TUI_COPY.settingsSelector.themeLabelDescription,
 				currentValue: config.currentTheme,
 				submenu: (currentValue, done) =>
 					new SelectSubmenu(
-						"主题",
-						"选择颜色主题",
+						TUI_COPY.settingsSelector.themeTitle,
+						TUI_COPY.settingsSelector.themeDescription,
 						config.availableThemes.map((t) => ({
 							value: t,
 							label: t,
@@ -362,15 +375,15 @@ export class SettingsSelectorComponent extends Container {
 			// Insert after autocompact
 			items.splice(1, 0, {
 				id: "show-images",
-				label: "显示图片",
-				description: "在终端内联渲染图片",
+				label: TUI_COPY.settingsSelector.showImagesLabel,
+				description: TUI_COPY.settingsSelector.showImagesDescription,
 				currentValue: config.showImages ? "true" : "false",
 				values: ["true", "false"],
 			});
 			items.splice(2, 0, {
 				id: "image-width-cells",
-				label: "图片宽度",
-				description: "内联图片的终端字符宽度",
+				label: TUI_COPY.settingsSelector.imageWidthLabel,
+				description: TUI_COPY.settingsSelector.imageWidthDescription,
 				currentValue: String(config.imageWidthCells),
 				values: ["60", "80", "120"],
 			});
@@ -379,8 +392,8 @@ export class SettingsSelectorComponent extends Container {
 		// Image auto-resize toggle (always available, affects both attached and read images)
 		items.splice(supportsImages ? 3 : 1, 0, {
 			id: "auto-resize-images",
-			label: "自动缩放图片",
-			description: "大图自动缩放到 2000x2000 以提高模型兼容性",
+			label: TUI_COPY.settingsSelector.autoResizeImagesLabel,
+			description: TUI_COPY.settingsSelector.autoResizeImagesDescription,
 			currentValue: config.autoResizeImages ? "true" : "false",
 			values: ["true", "false"],
 		});
@@ -389,8 +402,8 @@ export class SettingsSelectorComponent extends Container {
 		const autoResizeIndex = items.findIndex((item) => item.id === "auto-resize-images");
 		items.splice(autoResizeIndex + 1, 0, {
 			id: "block-images",
-			label: "屏蔽图片",
-			description: "阻止图片发送给 LLM",
+			label: TUI_COPY.settingsSelector.blockImagesLabel,
+			description: TUI_COPY.settingsSelector.blockImagesDescription,
 			currentValue: config.blockImages ? "true" : "false",
 			values: ["true", "false"],
 		});
@@ -399,18 +412,30 @@ export class SettingsSelectorComponent extends Container {
 		const blockImagesIndex = items.findIndex((item) => item.id === "block-images");
 		items.splice(blockImagesIndex + 1, 0, {
 			id: "skill-commands",
-			label: "技能命令",
-			description: "将技能注册为 /skill:name 命令",
+			label: TUI_COPY.settingsSelector.skillCommandsLabel,
+			description: TUI_COPY.settingsSelector.skillCommandsDescription,
 			currentValue: config.enableSkillCommands ? "true" : "false",
 			values: ["true", "false"],
 		});
+
+		// Keep the auto-compaction threshold directly below the auto-compaction toggle.
+		const autoCompactIndex = items.findIndex((item) => item.id === "autocompact");
+		const autoCompactThresholdIndex = items.findIndex((item) => item.id === "autocompact-threshold-percent");
+		if (
+			autoCompactIndex !== -1 &&
+			autoCompactThresholdIndex !== -1 &&
+			autoCompactThresholdIndex !== autoCompactIndex + 1
+		) {
+			const [thresholdItem] = items.splice(autoCompactThresholdIndex, 1);
+			items.splice(autoCompactIndex + 1, 0, thresholdItem);
+		}
 
 		// Hardware cursor toggle (insert after skill-commands)
 		const skillCommandsIndex = items.findIndex((item) => item.id === "skill-commands");
 		items.splice(skillCommandsIndex + 1, 0, {
 			id: "show-hardware-cursor",
-			label: "显示硬件光标",
-			description: "显示终端光标（支持 IME 输入法定位）",
+			label: TUI_COPY.settingsSelector.hardwareCursorLabel,
+			description: TUI_COPY.settingsSelector.hardwareCursorDescription,
 			currentValue: config.showHardwareCursor ? "true" : "false",
 			values: ["true", "false"],
 		});
@@ -419,8 +444,8 @@ export class SettingsSelectorComponent extends Container {
 		const hardwareCursorIndex = items.findIndex((item) => item.id === "show-hardware-cursor");
 		items.splice(hardwareCursorIndex + 1, 0, {
 			id: "editor-padding",
-			label: "编辑器边距",
-			description: "输入框水平边距（0-3）",
+			label: TUI_COPY.settingsSelector.editorPaddingLabel,
+			description: TUI_COPY.settingsSelector.editorPaddingDescription,
 			currentValue: String(config.editorPaddingX),
 			values: ["0", "1", "2", "3"],
 		});
@@ -429,8 +454,8 @@ export class SettingsSelectorComponent extends Container {
 		const editorPaddingIndex = items.findIndex((item) => item.id === "editor-padding");
 		items.splice(editorPaddingIndex + 1, 0, {
 			id: "autocomplete-max-visible",
-			label: "自动补全条数",
-			description: "自动补全下拉框最大显示条数（3-20）",
+			label: TUI_COPY.settingsSelector.autocompleteMaxVisibleLabel,
+			description: TUI_COPY.settingsSelector.autocompleteMaxVisibleDescription,
 			currentValue: String(config.autocompleteMaxVisible),
 			values: ["3", "5", "7", "10", "15", "20"],
 		});
@@ -439,8 +464,8 @@ export class SettingsSelectorComponent extends Container {
 		const autocompleteIndex = items.findIndex((item) => item.id === "autocomplete-max-visible");
 		items.splice(autocompleteIndex + 1, 0, {
 			id: "clear-on-shrink",
-			label: "收缩时清空",
-			description: "内容缩短时清除空行（可能闪烁）",
+			label: TUI_COPY.settingsSelector.clearOnShrinkLabel,
+			description: TUI_COPY.settingsSelector.clearOnShrinkDescription,
 			currentValue: config.clearOnShrink ? "true" : "false",
 			values: ["true", "false"],
 		});
@@ -449,8 +474,8 @@ export class SettingsSelectorComponent extends Container {
 		const clearOnShrinkIndex = items.findIndex((item) => item.id === "clear-on-shrink");
 		items.splice(clearOnShrinkIndex + 1, 0, {
 			id: "terminal-progress",
-			label: "终端进度条",
-			description: "在终端标签栏显示 OSC 9;4 进度指示器",
+			label: TUI_COPY.settingsSelector.terminalProgressLabel,
+			description: TUI_COPY.settingsSelector.terminalProgressDescription,
 			currentValue: config.showTerminalProgress ? "true" : "false",
 			values: ["true", "false"],
 		});
@@ -466,6 +491,13 @@ export class SettingsSelectorComponent extends Container {
 				switch (id) {
 					case "autocompact":
 						callbacks.onAutoCompactChange(newValue === "true");
+						break;
+					case "autocompact-threshold-percent":
+						callbacks.onAutoCompactThresholdPercentChange(
+							newValue === TUI_COPY.settingsSelector.autoCompactThresholdOff
+								? undefined
+								: parseInt(newValue.replace("%", ""), 10),
+						);
 						break;
 					case "show-images":
 						callbacks.onShowImagesChange(newValue === "true");
@@ -494,6 +526,9 @@ export class SettingsSelectorComponent extends Container {
 					case "hide-thinking":
 						callbacks.onHideThinkingBlockChange(newValue === "true");
 						break;
+					case "tool-display-mode":
+						callbacks.onToolDisplayModeChange(newValue === "true" ? "collapsed" : "expanded");
+						break;
 					case "collapse-changelog":
 						callbacks.onCollapseChangelogChange(newValue === "true");
 						break;
@@ -504,7 +539,7 @@ export class SettingsSelectorComponent extends Container {
 						callbacks.onEnableInstallTelemetryChange(newValue === "true");
 						break;
 					case "double-escape-action":
-						callbacks.onDoubleEscapeActionChange(newValue as "fork" | "tree");
+						callbacks.onDoubleEscapeActionChange(newValue as "fork" | "tree" | "none");
 						break;
 					case "tree-filter-mode":
 						callbacks.onTreeFilterModeChange(

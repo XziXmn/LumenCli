@@ -22,7 +22,7 @@ describe("FooterComponent progress status filtering", () => {
 		cleanup = ctx.cleanup;
 
 		const footerData = new FooterDataProvider(ctx.tempDir);
-		footerData.setExtensionStatus("ui", "waiting · 等待输入");
+		footerData.setExtensionStatus("ui", "waiting · Awaiting input");
 		footerData.setExtensionStatus("task", "task running");
 		footerData.setExtensionStatus("todo", "todo 1/4");
 		footerData.setExtensionStatus("queue", "queued 2");
@@ -32,7 +32,7 @@ describe("FooterComponent progress status filtering", () => {
 		const rendered = stripAnsi(footer.render(160).join("\n"));
 
 		expect(rendered).toContain("custom passive state");
-		expect(rendered).not.toContain("waiting · 等待输入");
+		expect(rendered).not.toContain("waiting · Awaiting input");
 		expect(rendered).not.toContain("task running");
 		expect(rendered).not.toContain("todo 1/4");
 		expect(rendered).not.toContain("queued 2");
@@ -46,7 +46,7 @@ describe("FooterComponent progress status filtering", () => {
 		cleanup = ctx.cleanup;
 
 		const footerData = new FooterDataProvider(ctx.tempDir);
-		footerData.setExtensionStatus("ui", "waiting · 等待审批确认");
+		footerData.setExtensionStatus("ui", "waiting · Awaiting approval");
 		footerData.setExtensionStatus("queue", "queued 1");
 		footerData.setExtensionStatus("custom", "passive footer note");
 
@@ -54,7 +54,7 @@ describe("FooterComponent progress status filtering", () => {
 		const rendered = stripAnsi(footer.render(160).join("\n"));
 
 		expect(rendered).toContain("passive footer note");
-		expect(rendered).not.toContain("等待审批确认");
+		expect(rendered).not.toContain("Awaiting approval");
 		expect(rendered).not.toContain("queued 1");
 
 		footer.dispose();

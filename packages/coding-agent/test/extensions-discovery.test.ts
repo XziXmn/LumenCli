@@ -491,15 +491,15 @@ describe("extensions discovery", () => {
 		expect(result.extensions).toHaveLength(0);
 	});
 
-	it("loads the codex-style compaction extension as a coverage layer without initialization errors", async () => {
-		const extPath = path.resolve(__dirname, "../../../.lumen/extensions/codex-style-compaction.ts");
+	it("loads the prompt-url-widget project extension without initialization errors", async () => {
+		const extPath = path.resolve(__dirname, "../../../.lumen/extensions/prompt-url-widget.ts");
 
 		const result = await discoverAndLoadExtensions([extPath], tempDir, tempDir);
 
 		expect(result.errors).toHaveLength(0);
 		expect(result.extensions).toHaveLength(1);
-		expect(result.extensions[0].path).toContain("codex-style-compaction.ts");
-		expect(result.extensions[0].handlers.has("session_before_tree")).toBe(true);
-		expect(result.extensions[0].handlers.has("compaction_end")).toBe(true);
+		expect(result.extensions[0].path).toContain("prompt-url-widget.ts");
+		expect(result.extensions[0].handlers.has("before_agent_start")).toBe(true);
+		expect(result.extensions[0].handlers.has("session_start")).toBe(true);
 	});
 });

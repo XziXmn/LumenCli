@@ -46,11 +46,25 @@ describe("blockImages setting", () => {
 			const manager = SettingsManager.inMemory({
 				compaction: {
 					compactPrompt: "  使用 Codex 风格压缩提示词  ",
+					thresholdPercent: 80,
 				},
 			});
 
 			expect(manager.getCompactionPrompt()).toBe("使用 Codex 风格压缩提示词");
 			expect(manager.getCompactionSettings().compactPrompt).toBe("使用 Codex 风格压缩提示词");
+			expect(manager.getCompactionSettings().thresholdPercent).toBe(80);
+		});
+
+		it("should persist compaction threshold percent", () => {
+			const manager = SettingsManager.inMemory({});
+			expect(manager.getCompactionThresholdPercent()).toBeUndefined();
+
+			manager.setCompactionThresholdPercent(80);
+			expect(manager.getCompactionThresholdPercent()).toBe(80);
+			expect(manager.getCompactionSettings().thresholdPercent).toBe(80);
+
+			manager.setCompactionThresholdPercent(undefined);
+			expect(manager.getCompactionThresholdPercent()).toBeUndefined();
 		});
 
 		it("should prefer compactPromptFile over inline compactPrompt", () => {

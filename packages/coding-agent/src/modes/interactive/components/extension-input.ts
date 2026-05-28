@@ -6,6 +6,7 @@ import { Container, type Focusable, getKeybindings, Input, Spacer, Text, type TU
 import { theme } from "../theme/theme.ts";
 import { CountdownTimer } from "./countdown-timer.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
+import { TUI_COPY } from "./interactive-strings.ts";
 import { keyHint } from "./keybinding-hints.ts";
 
 export interface ExtensionInputOptions {
@@ -64,7 +65,11 @@ export class ExtensionInputComponent extends Container implements Focusable {
 		this.addChild(this.input);
 		this.addChild(new Spacer(1));
 		this.addChild(
-			new Text(`${keyHint("tui.select.confirm", "submit")}  ${keyHint("tui.select.cancel", "cancel")}`, 1, 0),
+			new Text(
+				`${keyHint("tui.select.confirm", TUI_COPY.extensionInput.submit)}  ${keyHint("tui.select.cancel", TUI_COPY.extensionInput.cancel)}`,
+				1,
+				0,
+			),
 		);
 		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder());

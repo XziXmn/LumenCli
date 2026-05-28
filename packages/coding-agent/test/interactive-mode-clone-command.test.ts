@@ -8,7 +8,7 @@ type CloneCommandContext = {
 	};
 	renderCurrentSessionState: () => void;
 	editor: { setText: (text: string) => void };
-	showStatus: (message: string) => void;
+	showTaskbarNotice: (message: string) => void;
 	showError: (message: string) => void;
 	ui: { requestRender: () => void };
 };
@@ -24,7 +24,7 @@ describe("InteractiveMode /clone", () => {
 		const fork = vi.fn(async () => ({ cancelled: false }));
 		const renderCurrentSessionState = vi.fn();
 		const setText = vi.fn();
-		const showStatus = vi.fn();
+		const showTaskbarNotice = vi.fn();
 		const showError = vi.fn();
 		const requestRender = vi.fn();
 
@@ -33,7 +33,7 @@ describe("InteractiveMode /clone", () => {
 			runtimeHost: { fork },
 			renderCurrentSessionState,
 			editor: { setText },
-			showStatus,
+			showTaskbarNotice,
 			showError,
 			ui: { requestRender },
 		};
@@ -43,14 +43,14 @@ describe("InteractiveMode /clone", () => {
 		expect(fork).toHaveBeenCalledWith("leaf-123", { position: "at" });
 		expect(renderCurrentSessionState).toHaveBeenCalled();
 		expect(setText).toHaveBeenCalledWith("");
-		expect(showStatus).toHaveBeenCalledWith("已克隆到新会话");
+		expect(showTaskbarNotice).toHaveBeenCalledWith("Cloned into a new session");
 		expect(showError).not.toHaveBeenCalled();
 		expect(requestRender).not.toHaveBeenCalled();
 	});
 
 	it("shows a status message when there is nothing to clone", async () => {
 		const fork = vi.fn(async () => ({ cancelled: false }));
-		const showStatus = vi.fn();
+		const showTaskbarNotice = vi.fn();
 		const showError = vi.fn();
 
 		const context: CloneCommandContext = {
@@ -58,7 +58,7 @@ describe("InteractiveMode /clone", () => {
 			runtimeHost: { fork },
 			renderCurrentSessionState: vi.fn(),
 			editor: { setText: vi.fn() },
-			showStatus,
+			showTaskbarNotice,
 			showError,
 			ui: { requestRender: vi.fn() },
 		};
@@ -66,7 +66,7 @@ describe("InteractiveMode /clone", () => {
 		await interactiveModePrototype.handleCloneCommand.call(context);
 
 		expect(fork).not.toHaveBeenCalled();
-		expect(showStatus).toHaveBeenCalledWith("当前没有可克隆的内容");
+		expect(showTaskbarNotice).toHaveBeenCalledWith("No content available to clone");
 		expect(showError).not.toHaveBeenCalled();
 	});
 });

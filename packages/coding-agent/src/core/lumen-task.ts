@@ -414,14 +414,14 @@ function filterToolsForAgent(allTools: AgentTool<any>[], allowedNames?: string[]
 	return allTools.filter((t) => allowed.has(t.name));
 }
 
-function buildSubagentSystemPrompt(agentConfig: AgentConfig, context?: string): string {
+export function buildSubagentSystemPrompt(agentConfig: AgentConfig, context?: string): string {
 	const parts: string[] = [];
 	parts.push(agentConfig.systemPrompt);
 	if (context) {
 		parts.push(`\n\n## Context\n\n${context}`);
 	}
 	parts.push(
-		"\n\nIMPORTANT: You are a sub-agent executing a specific task. Focus only on the assigned task. Be concise in your final response — summarize what you did and any findings.",
+		"\n\nIMPORTANT: You are a sub-agent executing a specific task. Focus only on the assigned task. Keep working notes, tool-facing narration, and progress wording in English so the shared runtime surface stays visually consistent. Be concise in your final response — summarize what you did and any findings.",
 	);
 	return parts.join("");
 }
@@ -502,10 +502,14 @@ function summarizeTaskSuccess(details: TaskToolDetails): string | undefined {
 
 const TaskItemSchema = Type.Object({
 	id: Type.String({ description: "CamelCase identifier for this task (max 48 chars)" }),
-	description: Type.String({ description: "Short one-liner for UI display" }),
+	description: Type.String({
+		description:
+			"Short English one-liner for UI display (for example: 'Review retry flow' or 'Read CONTRIBUTING.md')",
+	}),
 	activeForm: Type.Optional(
 		Type.String({
-			description: "Present-continuous label for spinner headline when this task is active",
+			description:
+				"Short English active label for the headline when this task is active (for example: 'Reviewing retry flow')",
 		}),
 	),
 	assignment: Type.String({ description: "Full task instructions for the sub-agent" }),
@@ -559,6 +563,7 @@ export default function lumenTaskExtension(pi: ExtensionAPI): void {
 			"Each task gets its own agent with independent context — keep assignments self-contained.",
 			"Use the context field for shared background that all tasks need.",
 			"Prefer fewer, well-scoped tasks over many tiny ones.",
+			"Keep task descriptions, active labels, and tool-facing progress wording in concise English.",
 		],
 		parameters: TaskParams,
 

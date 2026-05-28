@@ -280,6 +280,87 @@ describe("AgentSession compaction characterization", () => {
 		expect(harness.session.messages.some((message) => message.role === "compactionSummary")).toBe(true);
 	});
 
+	it("emits overflow recovery guidance as a core compaction notice", async () => {
+		const harness = await createHarness({
+			settings: { compaction: { keepRecentTokens: 8 } },
+		});
+		harnesses.push(harness);
+
+		const compactionEndEvents: Array<
+			Extract<Awaited<ReturnType<typeof createHarness>>["events"][number], { type: "compaction_end" }>
+		> = [];
+		harness.session.subscribe((event) => {
+			if (event.type === "compaction_end") {
+				compactionEndEvents.push(event);
+			}
+		});
+
+		harness.setResponses([
+			fauxAssistantMessage("one"),
+			fauxAssistantMessage("two"),
+			fauxAssistantMessage("three"),
+			fauxAssistantMessage("four"),
+			fauxAssistantMessage("## Goal\noverflow summary"),
+		]);
+		await harness.session.prompt("u1");
+		await harness.session.prompt("u2");
+		await harness.session.prompt("u3");
+		await harness.session.prompt("u4");
+
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		await sessionInternals._runAutoCompaction("overflow", false);
+
+		const event = compactionEndEvents.find((entry) => entry.reason === "overflow" && entry.result);
+		expect(event?.notices).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					level: "warning",
+					message: expect.stringContaining("上下文溢出恢复压缩"),
+				}),
+			]),
+		);
+	});
+
+	it("emits repeated-compaction guidance from core after multiple compactions", async () => {
+		const harness = await createHarness({
+			settings: { compaction: { keepRecentTokens: 2 } },
+		});
+		harnesses.push(harness);
+
+		const compactionEndEvents: Array<
+			Extract<Awaited<ReturnType<typeof createHarness>>["events"][number], { type: "compaction_end" }>
+		> = [];
+		harness.session.subscribe((event) => {
+			if (event.type === "compaction_end") {
+				compactionEndEvents.push(event);
+			}
+		});
+
+		harness.setResponses([
+			fauxAssistantMessage("one"),
+			fauxAssistantMessage("two"),
+			fauxAssistantMessage("## Goal\nfirst summary"),
+			fauxAssistantMessage("three"),
+			fauxAssistantMessage("## Goal\nsecond summary"),
+			fauxAssistantMessage("turn prefix summary"),
+		]);
+		await harness.session.prompt("first");
+		await harness.session.prompt("second");
+		await harness.session.compact();
+		await harness.session.prompt("third");
+		await harness.session.compact();
+
+		const latestEvent = compactionEndEvents.filter((entry) => entry.reason === "manual" && entry.result).at(-1);
+		expect(latestEvent?.notices).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					level: "warning",
+					message: expect.stringContaining("已累计压缩 2 次"),
+				}),
+			]),
+		);
+	});
+
 	it("throws when compacting without a model", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);

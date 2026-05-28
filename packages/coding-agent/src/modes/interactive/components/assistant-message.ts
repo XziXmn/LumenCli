@@ -1,12 +1,84 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@earendil-works/pi-tui";
+import {
+	type Component,
+	Container,
+	Markdown,
+	type MarkdownTheme,
+	Spacer,
+	Text,
+	truncateToWidth,
+	visibleWidth,
+} from "@earendil-works/pi-tui";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
+import { TUI_COPY } from "./interactive-strings.ts";
 
 const LEADING_MARGIN = 1;
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
+
+const GUTTER_WIDTH = 2;
+const THINKING_PREFIX = "∴ ";
+
+/**
+ * Wrapper around Markdown that adds a left-rail gutter.
+ * First line gets a colored dot; subsequent lines get plain spacing.
+ * This implements the Claude-style assistant body text left rail.
+ */
+class GutterMarkdown implements Component {
+	private readonly markdown: Markdown;
+
+	constructor(text: string, markdownTheme: MarkdownTheme) {
+		this.markdown = new Markdown(text, 0, 0, markdownTheme);
+	}
+
+	render(width: number): string[] {
+		const contentWidth = Math.max(0, width - GUTTER_WIDTH);
+		const lines = this.markdown.render(contentWidth);
+		// Use ● to match Claude's BLACK_CIRCLE platform-adaptive glyph.
+		const dotPrefix = theme.fg("text", "●");
+		return lines.map((line, i) => {
+			const prefix = i === 0 ? `${dotPrefix} ` : "  ";
+			const remainingWidth = Math.max(0, width - visibleWidth(prefix));
+			return prefix + truncateToWidth(line, remainingWidth);
+		});
+	}
+
+	invalidate(): void {
+		this.markdown.invalidate();
+	}
+}
+
+class PrefixedWrappedText implements Component {
+	private readonly text: string;
+	private readonly prefix: string;
+	private readonly style: (text: string) => string;
+
+	constructor(text: string, prefix: string, style: (text: string) => string) {
+		this.text = text;
+		this.prefix = prefix;
+		this.style = style;
+	}
+
+	render(width: number): string[] {
+		const prefixWidth = visibleWidth(this.prefix);
+		const contentWidth = Math.max(1, width - prefixWidth);
+		const lines = this.text
+			? this.text.split("\n").flatMap((line) => {
+					const value = line.trim();
+					return value.length > 0 ? [truncateToWidth(value, contentWidth)] : [""];
+				})
+			: [""];
+
+		return lines.map((line, index) => {
+			const prefix = index === 0 ? this.prefix : " ".repeat(prefixWidth);
+			return this.style(truncateToWidth(`${prefix}${line}`, width));
+		});
+	}
+
+	invalidate(): void {}
+}
 
 /**
  * Thinking display mode:
@@ -118,11 +190,11 @@ export class AssistantMessageComponent extends Container {
 		for (let i = 0; i < message.content.length; i++) {
 			const content = message.content[i];
 			if (content.type === "text" && content.text.trim()) {
-				// Assistant text messages with no background - trim the text
-				// Set paddingY=0 to avoid extra spacing before tool executions
-				this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, this.markdownTheme));
+				// Assistant body text with left-rail dot on the first visual line.
+				// GutterMarkdown renders a • at column 0 on line 1, plain indent on wrapped lines.
+				this.contentContainer.addChild(new GutterMarkdown(content.text.trim(), this.markdownTheme));
 			} else if (content.type === "thinking" && content.thinking.trim()) {
-				const hasVisibleContentAfter = message.content
+				const hasVisibleAssistantContentAfter = message.content
 					.slice(i + 1)
 					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
 
@@ -147,21 +219,20 @@ export class AssistantMessageComponent extends Container {
 							.trim()
 							.slice(0, 160);
 						const previewLine = firstMeaningfulLine ?? fallbackLine;
-						this.contentContainer.addChild(new Text(theme.italic(theme.fg("thinkingText", "∴ Thinking…")), 1, 0));
-						if (previewLine) {
-							this.contentContainer.addChild(new Spacer(1));
-							this.contentContainer.addChild(
-								new Text(
-									theme.fg("thinkingText", `  ${previewLine}${previewLine.length >= 160 ? "..." : ""}`),
-									0,
-									0,
-								),
-							);
-						}
+						const summaryText = previewLine?.trim() || TUI_COPY.thinkingBlock.thinkingPlaceholder;
+						this.contentContainer.addChild(
+							new PrefixedWrappedText(
+								`${summaryText}${previewLine && previewLine.length >= 160 ? "..." : ""}`,
+								THINKING_PREFIX,
+								(text) => theme.italic(theme.fg("thinkingText", text)),
+							),
+						);
 						break;
 					}
 					case "full": {
-						this.contentContainer.addChild(new Text(theme.italic(theme.fg("thinkingText", "∴ Thinking…")), 1, 0));
+						this.contentContainer.addChild(
+							new Text(theme.italic(theme.fg("thinkingText", TUI_COPY.thinkingBlock.fullTitle)), 1, 0),
+						);
 						this.contentContainer.addChild(new Spacer(1));
 						this.contentContainer.addChild(
 							new Markdown(content.thinking.trim(), 2, 0, this.markdownTheme, {
@@ -173,7 +244,7 @@ export class AssistantMessageComponent extends Container {
 					}
 				}
 
-				if (hasVisibleContentAfter) {
+				if (hasVisibleAssistantContentAfter) {
 					this.contentContainer.addChild(new Spacer(1));
 				}
 			}
@@ -188,17 +259,19 @@ export class AssistantMessageComponent extends Container {
 				const abortMessage =
 					message.errorMessage && message.errorMessage !== "Request was aborted"
 						? message.errorMessage
-						: "Operation aborted";
+						: TUI_COPY.thinkingBlock.aborted;
 				if (hasVisibleContent) {
 					this.contentContainer.addChild(new Spacer(0));
 				}
 				this.contentContainer.addChild(new Text(theme.fg("error", abortMessage), 1, 0));
 			} else if (message.stopReason === "error") {
-				const errorMsg = message.errorMessage || "Unknown error";
+				const errorMsg = message.errorMessage || TUI_COPY.interactiveNotices.unknownError;
 				if (hasVisibleContent) {
 					this.contentContainer.addChild(new Spacer(0));
 				}
-				this.contentContainer.addChild(new Text(theme.fg("error", `Error: ${errorMsg}`), 1, 0));
+				this.contentContainer.addChild(
+					new Text(theme.fg("error", `${TUI_COPY.thinkingBlock.errorPrefix}${errorMsg}`), 1, 0),
+				);
 			}
 		}
 	}

@@ -31,7 +31,8 @@
 |---|---|---|---|---|---|---|
 | core-owned progress surface | 进行中 | core | 输入框上方任务栏作为唯一主动进度面 | 主骨架已落地，仍在精修 | superpowers/plans, 当前主线 commits | 继续完善 teardown、复杂场景和执行树 |
 | Claude-aligned workflow layering | 进行中 | core | 将 headline / execution / plan / queue / transcript 分层对齐 Claude | 已有专题计划和实现基础 | superpowers/plans | 避免为了样式继续扩大冲突面 |
-| BottomPane 统一下半区结构 | 已规划 | core | 将当前分裂的状态区与输入区收口为统一下半区容器，并固定 `Taskbar / Pending / Composer / Extension / Footer` 五层 | 已有正式设计稿、总计划和专项子计划，尚未进入实现 | 2026-05-26 next-phase 设计与计划 | 下一步按子计划推进结构收口，并同时解决状态区贴近和任务栏闪动 |
+| BottomPane 统一下半区结构 | 进行中 | core | 将当前分裂的状态区与输入区收口为统一下半区容器，并固定 `Taskbar / Pending / Composer / Extension / Footer` 五层 | 统一 `bottomPane` 结构已经进入 core，当前主要是在继续收口职责边界、测试心智和少量旧出口 | 2026-05-26 next-phase 设计与计划，当前 interactive-mode 实现 | 继续清理旧 `status/pending` 心智，并完成最终 IME / teardown / 门禁审计 |
+| 运行时英文 / 二级界面中文文案分层 | 进行中 | core + docs-process | 任务栏 headline、progress surface 主状态、tool runtime 等主动运行时状态优先使用英文表达；selector、dialog、settings、tree 等二级界面继续中文化；`Tip` 这类辅助提示允许按体验需要保留更自然的中文 | 当前运行时主状态大多已统一到英文 copy；`Tip` 已按当前体验回调为中文；登录、settings、tree、session selector 等二级界面仍保持中文 | 当前 interactive-mode / tui-copy / localization tests | 后续继续收口剩余运行时文案时，以“主状态英文、辅助提示可中文、二级界面中文”为准，避免再次混乱 |
 | queue 独立展示槽位 | 进行中 | core | 待发送命令放在输入框上方，不污染 headline 语义 | 已从任务栏下方分离 | superpowers/plans, recent taskbar work | 继续验证 queued / steer / follow-up 语义 |
 | approval / input / retry / reconnect 统一状态语义 | 进行中 | core | 把审批、用户输入、自动重试、流恢复都纳入统一 progress 语义 | 已进入当前验证矩阵，但仍需补齐 | superpowers/plans | 必须靠测试和 smoke 验证，不靠目测 |
 | completion teardown | 进行中 | core | 会话完成后任务栏可靠消失 | 近期已修多轮，仍是重点回归项 | recent commits, regression checklist | 继续列为高优先级回归行为 |
@@ -82,7 +83,7 @@
 | Config Discovery | 已完成 | compatibility | 兼容发现 Claude / Cursor / MCP 等外部配置 | 已上线 | fork-bootstrap/tasks | 必须继续保持低优先级加载与 native 优先 |
 | Memory summary / lesson | 已完成 | core | 会话结束提取摘要与 lesson 进入 memory | 已上线 | fork-bootstrap/tasks | 继续优化 relevance 与噪声控制 |
 | Memory pipeline 2-phase | 已完成 | core | 先抽取再全局整合的记忆管线 | 已上线 | fork-bootstrap/tasks, reference policy | 后续重点是质量和长期维护成本 |
-| Compaction core 化 | 已规划 | core | 将当前 `core + codex-style-compaction` 混合态演进为正式 compaction 子系统，统一 policy / prompt / summarizer / history rebuilder | 已有正式设计稿、总计划与子计划，当前仍以插件桥接为主 | 2026-05-26 next-phase 设计与计划 | 下一步将 `compact_prompt`、摘要桥和历史重建边界收口进 core |
+| Compaction core 化 | 已完成 | core | 默认会话压缩、branch summary、摘要桥接、重复压缩提醒都由 core 持有 | 默认主行为已从项目扩展回收到 core；旧 shim 已删除 | 2026-05-26 next-phase 设计与计划，当前主线实现 | 后续继续优化 replacement history 粒度与更高阶上下文重建策略 |
 | `.novel` 场景上下文 | 已完成 | compatibility | 针对写作/小说项目注入特定上下文 | 已存在 | manifest, early Lumen design | 后续看是否需要和 rules / prompts 统一管理 |
 | 写作工作流命令包（旧 `lumen-writing`） | 已放弃 | compatibility | 早期曾有独立写作命令包路线 | 现已不再作为独立核心能力保留 | deprecated-core archive, old design | 只保留其中有价值的上下文/场景能力，不恢复旧文件形态 |
 | 条件化 instruction 统一体系 | 暂缓 | docs-process | 把 TTSR、Config Discovery、skills、rules 统一成更清晰的注入体系 | 只有分析结论，未正式立项 | deep-analysis | 先等当前文档真源和主交互面收口 |
@@ -94,7 +95,7 @@
 |---|---|---|---|---|---|---|
 | 当前 model registry / selector | 已完成 | core | 提供基本模型选择、provider 注册与运行时解析 | 已稳定存在 | existing code, fork-bootstrap/tasks | 持续随 provider 演进维护 |
 | 本地 MiMo 默认工作流 | 已完成 | compatibility | 面向本地推理服务的默认模型配置和说明 | 已有文档与默认配置 | README, docs/models, installation | 后续和更广模型策略区分开 |
-| Codex 风格 `compact_prompt` 治理 | 已规划 | core | 将压缩提示词提升为正式配置与上下文能力，并优先对齐 Codex 风格 | 已确认 Codex 本地实现存在 `compact_prompt` 配置入口，Lumen 侧已有正式设计与子计划 | codex core source, 2026-05-26 next-phase docs | 下一步在 compaction core 化时引入默认 prompt、覆盖与文件入口 |
+| Codex 风格 `compact_prompt` 治理 | 进行中 | core | 将压缩提示词提升为正式配置与上下文能力，并优先对齐 Codex 风格 | `compactPrompt` / `compactPromptFile` 已进入 core 设置与默认压缩链路，当前重点转向治理边界与继续优化默认模板 | codex core source, settings-manager.ts, compaction.ts | 后续继续完善 prompt 分层说明与高阶覆盖策略 |
 | Model Preset / Routing | 暂缓 | core | 让不同能力自动路由到不同模型 | 旧规划里较完整，但当前未重新立项 | fork-bootstrap/requirements, lumen-archive model spec | 当前不是主线，保留为中长期方向 |
 | vision fallback / capability routing | 暂缓 | core | 为视觉、多能力模型做自动降级或路由 | 有概念层方案 | model preset spec | 等模型使用场景更复杂时再升优先级 |
 | Claude 生态 drop-in | 已规划 | compatibility | 更深层兼容 Claude 生态中的 prompts / skills / commands 习惯 | 当前只做到部分兼容 | lumen-archive reference policy | 保留规划，但不应破坏当前 Lumen 主权 |
@@ -110,7 +111,7 @@
 | CUSTOMIZATION_MANIFEST | 已完成 | docs-process | 作为 merge-intent 高层清单 | 已重写为更稳定结构 | CUSTOMIZATION_MANIFEST | 随核心定制面变化维护，不再写成 changelog |
 | Planning rules / 文档治理 | 进行中 | docs-process | 定义规划真源、专题计划与 archive 的边界 | 本次正在建立 | 当前文档重构 | 后续要严格执行，避免体系再次发散 |
 | TUI 二级界面中文化 | 已规划 | docs-process | 为 selector、dialog、login flow、session / hotkeys / changelog 等二级界面建立统一文案层并清理英文遗留 | 已有正式设计稿、总计划与子计划，但尚未开始统一抽离文案 | 2026-05-26 next-phase docs | 应在结构与 compaction 收口后按文案层方式推进，而不是继续零散翻译 |
-| 系统提示词治理 | 已规划 | docs-process | 明确主系统 prompt、overlay、project context、skills/rules/prompts、extension append 与 `compact_prompt` 的边界 | 已确认当前不是 Pi 原生直出，且已形成正式设计稿与专项子计划 | system-prompt.ts, 2026-05-26 next-phase docs | 下一步在 compaction core 化之后固定 prompt 分层真源 |
+| 系统提示词治理 | 已规划 | docs-process | 明确主系统 prompt、overlay、project context、skills/rules/prompts、extension append 与 `compact_prompt` 的边界 | 已确认当前不是 Pi 原生直出，且 compaction prompt 已进入 core 正式链路 | system-prompt.ts, 2026-05-26 next-phase docs | 下一步固定 prompt 分层真源，并同步文档与配置入口 |
 | Upstream intake / merge workflow | 已规划 | docs-process | 建立更系统的上游跟踪、升级、记录和回滚纪律 | 有旧 spec 和脚本基础 | fork-bootstrap/tasks, lumen-archive upstream policy | 当前可先维持轻量流程，后续再决定是否正式化 |
 
 ## 已放弃或明确不再作为主线

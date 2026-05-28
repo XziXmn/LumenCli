@@ -113,11 +113,11 @@ describe("AgentSession auto-compaction queue resume", () => {
 
 		const runAutoCompaction = (
 			session as unknown as {
-				_runAutoCompaction: (reason: "overflow" | "threshold", willRetry: boolean) => Promise<boolean>;
+				_runAutoCompaction: (reason: "overflow" | "threshold", willRetry: boolean) => Promise<void>;
 			}
 		)._runAutoCompaction.bind(session);
 
-		await expect(runAutoCompaction("threshold", false)).resolves.toBe(true);
+		await expect(runAutoCompaction("threshold", false)).resolves.toBeUndefined();
 
 		expect(continueSpy).not.toHaveBeenCalled();
 	});

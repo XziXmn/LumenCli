@@ -8,12 +8,17 @@
   - `header`
   - `chatContainer`
   - `bottomPaneContainer`
-    - `statusContainer`
-    - `pendingMessagesContainer`
-    - `bottomPaneGapContainer`
-    - `editorContainer`
-    - `extensionAreaContainer`
-    - `footer`
+    - `taskbarRow`
+      - `taskbarContent`
+    - `pendingRow`
+      - `pendingContent`
+    - `composerRow`
+      - `gap`
+      - `editorContainer`
+    - `extensionRow`
+      - `extensionAreaContainer`
+    - `passiveFooterRow`
+      - `footerContent`
 - 这意味着“输入框上方任务栏 + 待发送消息区 + 固定输入框 + footer”的主骨架已经在 core 内，而不是继续交给扩展层。
 - 当前这轮工作重点不是继续发明新的光标恢复技巧，而是压住“输入中文拼音时，上方动画和定时刷新抢刷界面”。
 
@@ -78,10 +83,9 @@
 - 本仓库当前唯一实际启用的 `aboveEditor` 被动 widget（`prompt-url-widget`）已下移到 `belowEditor`
   - 这样默认配置下，输入框上方更集中为“任务栏 + 待发送消息区”
 - `attachMainLayout()` 已继续收口：
-  - `taskbar + pending` 已收进统一的 `promptAreaContainer`
-  - `editor + 下方扩展区 + footer` 已收进统一的 `interactionAreaContainer`
+  - 下半区已由统一 `bottomPane` 承载，而不是 `promptAreaContainer + interactionAreaContainer` 的分裂模型
   - 当前顶层顺序为：
-  - `chat -> promptArea(taskbar + pending) -> interactionArea(editor + extensionArea + footer)`
+  - `chat -> bottomPane(taskbar + pending + gap + editor + extensionArea + footer)`
 
 ### 2. TUI 回归测试
 
@@ -125,7 +129,7 @@
 - `InteractiveMode` widget / footer 边界
   - `setExtensionWidget keeps belowEditor widgets out of the pending message slot`
   - `footer-progress-filter` 继续验证 ui/queue 等主动进度状态不会泄漏到 footer
-  - `setExtensionFooter swaps the footer inside interactionAreaContainer`
+  - `setExtensionFooter swaps the footer inside bottomPane passive footer content`
 - `InteractiveMode` terminal progress 行为
   - `syncTerminalProgressIndicator disables terminal progress while input suppression is active`
   - `syncTerminalProgressIndicator restores terminal progress after input suppression ends`

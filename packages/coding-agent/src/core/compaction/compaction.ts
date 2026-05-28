@@ -120,6 +120,7 @@ export interface CompactionSettings {
 	enabled: boolean;
 	reserveTokens: number;
 	keepRecentTokens: number;
+	thresholdPercent?: number;
 	compactPrompt?: string;
 }
 
@@ -225,6 +226,10 @@ export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEst
  */
 export function shouldCompact(contextTokens: number, contextWindow: number, settings: CompactionSettings): boolean {
 	if (!settings.enabled) return false;
+	if (settings.thresholdPercent !== undefined) {
+		const ratio = contextWindow > 0 ? contextTokens / contextWindow : 0;
+		return ratio >= settings.thresholdPercent / 100;
+	}
 	return contextTokens > contextWindow - settings.reserveTokens;
 }
 

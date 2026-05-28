@@ -1,6 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import {
 	__renderProgressSurfaceLinesForTest,
+	__renderProgressSurfaceLinesWithStateForTest,
+	createProgressSurfaceWorkingState,
 	type ProgressSurfaceSnapshot,
 } from "../src/modes/interactive/components/progress-surface.ts";
 import { initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
@@ -45,10 +47,10 @@ describe("core progress surface", () => {
 		});
 
 		expect(output).toMatch(/[⣻⣽⣾⣷⣯⣟⢿⡿] 正在接入数据源\.\.\./);
-		expect(output).toContain("计划");
+		expect(output).toContain("Plan");
 		expect(output).toContain("◐ 接入数据源");
 		expect(output).toContain("☐ 数据清洗");
-		expect(output).toContain("下一步：数据清洗");
+		expect(output).toContain("Next: 数据清洗");
 	});
 
 	it("renders task execution above todo plan when both exist", () => {
@@ -106,10 +108,10 @@ describe("core progress surface", () => {
 
 		expect(output).toContain("正在实现支付模块...");
 		expect(output).not.toContain("@worker 正在实现支付模块...");
-		expect(output).toContain("@worker: 实现支付模块 · 当前工具：edit src/payment.ts · 3 次调用 · 640 tokens");
-		expect(output).toContain("@tester: 补回归测试 · 等待中");
-		expect(output).toContain("1 个运行中的任务");
-		expect(output).toContain("计划");
+		expect(output).toContain("@worker: 实现支付模块 · tool: edit src/payment.ts · 3 uses · 640 tokens");
+		expect(output).toContain("@tester: 补回归测试 · pending");
+		expect(output).toContain("1 running task");
+		expect(output).toContain("Plan");
 		expect(output).toContain("☒ 需求梳理");
 		expect(output).toContain("☐ 补回归测试");
 	});
@@ -119,8 +121,8 @@ describe("core progress surface", () => {
 			tasks: [
 				{
 					id: "task:explore-1",
-					content: "读取 CONTRIBUTING.md",
-					subject: "读取 CONTRIBUTING.md",
+					content: "Read CONTRIBUTING.md",
+					subject: "Read CONTRIBUTING.md",
 					status: "running",
 					group: "explore",
 					meta: "read CONTRIBUTING.md",
@@ -146,8 +148,8 @@ describe("core progress surface", () => {
 		});
 
 		expect(output).toContain("抽取公共工具类...");
-		expect(output).not.toContain("@explore 读取 CONTRIBUTING.md...");
-		expect(output).toContain("@explore: 读取 CONTRIBUTING.md · 当前工具：read CONTRIBUTING.md");
+		expect(output).not.toContain("@explore Read CONTRIBUTING.md...");
+		expect(output).toContain("@explore: Read CONTRIBUTING.md · tool: read CONTRIBUTING.md · 1 use · 406 tokens");
 	});
 
 	it("aggregates multi-agent execution in the headline while keeping detail rows below", () => {
@@ -155,8 +157,8 @@ describe("core progress surface", () => {
 			tasks: [
 				{
 					id: "task:explore-1",
-					content: "读取 CONTRIBUTING.md",
-					subject: "读取 CONTRIBUTING.md",
+					content: "Read CONTRIBUTING.md",
+					subject: "Read CONTRIBUTING.md",
 					status: "running",
 					group: "explore",
 					meta: "read CONTRIBUTING.md",
@@ -185,9 +187,9 @@ describe("core progress surface", () => {
 			expanded: false,
 		});
 
-		expect(output).toContain("2 个运行中的任务...");
-		expect(output).toContain("@explore: 读取 CONTRIBUTING.md · 当前工具：read CONTRIBUTING.md");
-		expect(output).toContain("@review: 扫描错误处理路径 · 当前工具：grep retry logic");
+		expect(output).toContain("2 running tasks...");
+		expect(output).toContain("@explore: Read CONTRIBUTING.md · tool: read CONTRIBUTING.md");
+		expect(output).toContain("@review: 扫描错误处理路径 · tool: grep retry logic");
 	});
 
 	it("keeps execution row text stable when a running task briefly loses meta", () => {
@@ -195,12 +197,12 @@ describe("core progress surface", () => {
 			tasks: [
 				{
 					id: "task:explore-1",
-					content: "分析审批和用户判断流程实现",
-					subject: "分析审批和用户判断流程实现",
-					activeForm: "分析审批和用户判断流程实现",
+					content: "Analyze approval and user-decision flow",
+					subject: "Analyze approval and user-decision flow",
+					activeForm: "Analyze approval and user-decision flow",
 					status: "running",
 					group: "explore",
-					meta: "分析审批和用户判断流程实现",
+					meta: "Analyze approval and user-decision flow",
 					toolCount: 55,
 					tokens: 26_000,
 					durationMs: 3 * 60_000 + 29_000,
@@ -219,9 +221,9 @@ describe("core progress surface", () => {
 			tasks: [
 				{
 					id: "task:explore-1",
-					content: "分析审批和用户判断流程实现",
-					subject: "分析审批和用户判断流程实现",
-					activeForm: "分析审批和用户判断流程实现",
+					content: "Analyze approval and user-decision flow",
+					subject: "Analyze approval and user-decision flow",
+					activeForm: "Analyze approval and user-decision flow",
 					status: "running",
 					group: "explore",
 					toolCount: 55,
@@ -238,9 +240,11 @@ describe("core progress surface", () => {
 			expanded: false,
 		});
 
-		expect(withMeta).toContain("@explore: 分析审批和用户判断流程实现 · 55 次调用 · 26k tokens · 3m 29s");
-		expect(withoutMeta).toContain("@explore: 分析审批和用户判断流程实现 · 55 次调用 · 26k tokens · 3m 30s");
-		expect(withoutMeta).not.toContain("@explore: 分析审批和用户判断流程实现...");
+		expect(withMeta).toContain("@explore: Analyze approval and user-decision flow · 55 uses · 26k tokens · 3m 29s");
+		expect(withoutMeta).toContain(
+			"@explore: Analyze approval and user-decision flow · 55 uses · 26k tokens · 3m 30s",
+		);
+		expect(withoutMeta).not.toContain("@explore: Analyze approval and user-decision flow...");
 	});
 
 	it("keeps execution row primary text stable when the current tool changes", () => {
@@ -248,8 +252,8 @@ describe("core progress surface", () => {
 			tasks: [
 				{
 					id: "task:explore-1",
-					content: "分析审批和用户判断流程实现",
-					subject: "分析审批和用户判断流程实现",
+					content: "Analyze approval and user-decision flow",
+					subject: "Analyze approval and user-decision flow",
 					status: "running",
 					group: "explore",
 					meta: "read approval-flow.ts",
@@ -271,8 +275,8 @@ describe("core progress surface", () => {
 			tasks: [
 				{
 					id: "task:explore-1",
-					content: "分析审批和用户判断流程实现",
-					subject: "分析审批和用户判断流程实现",
+					content: "Analyze approval and user-decision flow",
+					subject: "Analyze approval and user-decision flow",
 					status: "running",
 					group: "explore",
 					meta: "grep approvalState",
@@ -291,12 +295,78 @@ describe("core progress surface", () => {
 		});
 
 		expect(readPhase).toContain(
-			"@explore: 分析审批和用户判断流程实现 · 当前工具：read approval-flow.ts · 55 次调用 · 26k tokens · 3m 29s",
+			"@explore: Analyze approval and user-decision flow · tool: read approval-flow.ts · 55 uses · 26k tokens · 3m 29s",
 		);
 		expect(grepPhase).toContain(
-			"@explore: 分析审批和用户判断流程实现 · 当前工具：grep approvalState · 56 次调用 · 26k tokens · 3m 31s",
+			"@explore: Analyze approval and user-decision flow · tool: grep approvalState · 56 uses · 26k tokens · 3m 31s",
 		);
 		expect(grepPhase).not.toContain("@explore: grep approvalState");
+	});
+
+	it("keeps execution row primary text stable when a later frame temporarily loses subject text", () => {
+		const working = createProgressSurfaceWorkingState(0);
+		const first = stripAnsi(
+			__renderProgressSurfaceLinesWithStateForTest(
+				{
+					tasks: [
+						{
+							id: "task:explore-1",
+							content: "Analyze approval and user-decision flow",
+							subject: "Analyze approval and user-decision flow",
+							activeForm: "Analyze approval and user-decision flow",
+							status: "running",
+							group: "explore",
+							meta: "read approval-flow.ts",
+							toolCount: 55,
+							tokens: 26_000,
+							durationMs: 3 * 60_000 + 29_000,
+						},
+					],
+					queued: undefined,
+					spinner: {
+						elapsedMs: 3 * 60_000 + 57_000,
+						outputTokens: 502,
+						mode: "tool-use",
+					},
+					expanded: false,
+				},
+				theme,
+				working,
+			).join("\n"),
+		);
+
+		const second = stripAnsi(
+			__renderProgressSurfaceLinesWithStateForTest(
+				{
+					tasks: [
+						{
+							id: "task:explore-1",
+							content: "",
+							status: "running",
+							group: "explore",
+							meta: "read approval-flow.ts",
+							toolCount: 55,
+							tokens: 26_000,
+							durationMs: 3 * 60_000 + 30_000,
+						},
+					],
+					queued: undefined,
+					spinner: {
+						elapsedMs: 3 * 60_000 + 58_000,
+						outputTokens: 502,
+						mode: "tool-use",
+					},
+					expanded: false,
+				},
+				theme,
+				working,
+			).join("\n"),
+		);
+
+		expect(first).toContain("@explore: Analyze approval and user-decision flow · tool: read approval-flow.ts");
+		expect(second).toContain("@explore: Analyze approval and user-decision flow · tool: read approval-flow.ts");
+		expect(second).not.toContain("@explore: working");
+		expect(second).not.toContain("@explore:  · tool:");
 	});
 
 	it("keeps the generic working verb when there is no active todo and the leader is just streaming", () => {
@@ -304,8 +374,8 @@ describe("core progress surface", () => {
 			tasks: [
 				{
 					id: "task:explore-1",
-					content: "读取 CONTRIBUTING.md",
-					subject: "读取 CONTRIBUTING.md",
+					content: "Read CONTRIBUTING.md",
+					subject: "Read CONTRIBUTING.md",
 					status: "running",
 					group: "explore",
 					meta: "read CONTRIBUTING.md",
@@ -335,8 +405,8 @@ describe("core progress surface", () => {
 		});
 
 		expect(output).not.toContain("2 个运行中的任务...");
-		expect(output).toContain("@explore: 读取 CONTRIBUTING.md · 当前工具：read CONTRIBUTING.md");
-		expect(output).toContain("@review: 扫描错误处理路径 · 当前工具：grep retry logic");
+		expect(output).toContain("@explore: Read CONTRIBUTING.md · tool: read CONTRIBUTING.md");
+		expect(output).toContain("@review: 扫描错误处理路径 · tool: grep retry logic");
 	});
 
 	it("keeps a live multi-agent execution headline instead of falling back to idle", () => {
@@ -344,8 +414,8 @@ describe("core progress surface", () => {
 			tasks: [
 				{
 					id: "task:explore-1",
-					content: "查看Git分支信息",
-					subject: "查看Git分支信息",
+					content: "Check git branch",
+					subject: "Check git branch",
 					status: "running",
 					group: "explore",
 					meta: "git branch --show-current",
@@ -355,8 +425,8 @@ describe("core progress surface", () => {
 				},
 				{
 					id: "task:explore-2",
-					content: "读取tsconfig配置",
-					subject: "读取tsconfig配置",
+					content: "Read tsconfig",
+					subject: "Read tsconfig",
 					status: "running",
 					group: "explore",
 					meta: "read tsconfig.json",
@@ -374,10 +444,10 @@ describe("core progress surface", () => {
 			expanded: false,
 		});
 
-		expect(output).toMatch(/[⣻⣽⣾⣷⣯⣟⢿⡿] 2 个运行中的任务\.\.\./);
-		expect(output).toContain("@explore: 查看Git分支信息 · 当前工具：git branch --show-current");
-		expect(output).toContain("@explore: 读取tsconfig配置 · 当前工具：read tsconfig.json");
-		expect(output).not.toContain("空转");
+		expect(output).toMatch(/[⣻⣽⣾⣷⣯⣟⢿⡿] 2 running tasks\.\.\./);
+		expect(output).toContain("@explore: Check git branch · tool: git branch --show-current");
+		expect(output).toContain("@explore: Read tsconfig · tool: read tsconfig.json");
+		expect(output).not.toContain("Idle");
 	});
 
 	it("renders banner headline without mixing queued commands into the status surface", () => {
@@ -396,8 +466,8 @@ describe("core progress surface", () => {
 			spinner: {
 				banner: {
 					kind: "warning",
-					title: "接口不稳定，正在自动重试",
-					detail: "第 1/3 次重试 · timeout",
+					title: "Request unstable, retrying automatically",
+					detail: "Attempt 1/3 · timeout",
 				},
 				overrideMessage: "Retrying request",
 				mode: "requesting",
@@ -405,8 +475,8 @@ describe("core progress surface", () => {
 			expanded: false,
 		});
 
-		expect(output).toContain("接口不稳定，正在自动重试");
-		expect(output).toContain("第 1/3 次重试 · timeout");
+		expect(output).toContain("Request unstable, retrying automatically");
+		expect(output).toContain("Attempt 1/3 · timeout");
 		expect(output).not.toContain("1 queued command");
 		expect(output).not.toContain("Follow-up: 完成后补文档");
 	});
@@ -418,14 +488,14 @@ describe("core progress surface", () => {
 			spinner: {
 				banner: {
 					kind: "approval",
-					title: "等待审批确认",
+					title: "Awaiting approval",
 					detail: "将修改 4 个文件，确认后继续",
 				},
 			},
 			expanded: false,
 		});
 
-		expect(output).toContain("等待审批确认");
+		expect(output).toContain("Awaiting approval");
 		expect(output).toContain("将修改 4 个文件，确认后继续");
 	});
 
@@ -445,7 +515,7 @@ describe("core progress surface", () => {
 			spinner: {
 				banner: {
 					kind: "approval",
-					title: "等待审批确认",
+					title: "Awaiting approval",
 					detail: "将修改 4 个文件，确认后继续",
 				},
 				overrideMessage: "Waiting for approval",
@@ -454,7 +524,7 @@ describe("core progress surface", () => {
 			expanded: false,
 		});
 
-		expect(output).toContain("等待审批确认");
+		expect(output).toContain("Awaiting approval");
 		expect(output).toContain("Waiting for approval...");
 		expect(output).not.toContain("实现核心功能...");
 	});
@@ -466,14 +536,14 @@ describe("core progress surface", () => {
 			spinner: {
 				banner: {
 					kind: "input",
-					title: "等待你的输入",
+					title: "Awaiting your input",
 					detail: "请选择：保守修复 / 一次性重构",
 				},
 			},
 			expanded: false,
 		});
 
-		expect(output).toContain("等待你的输入");
+		expect(output).toContain("Awaiting your input");
 		expect(output).toContain("请选择：保守修复 / 一次性重构");
 	});
 
@@ -493,14 +563,14 @@ describe("core progress surface", () => {
 			spinner: {
 				banner: {
 					kind: "input",
-					title: "等待你的输入",
+					title: "Awaiting your input",
 					detail: "请选择：保守修复 / 一次性重构",
 				},
 			},
 			expanded: false,
 		});
 
-		expect(output).toContain("等待你的输入...");
+		expect(output).toContain("Awaiting your input...");
 		expect(output).toContain("请选择：保守修复 / 一次性重构");
 		expect(output).not.toContain("整理接口定义...");
 	});
@@ -512,15 +582,15 @@ describe("core progress surface", () => {
 			spinner: {
 				banner: {
 					kind: "warning",
-					title: "网络连接不稳定，正在恢复会话流",
-					detail: "SSE reconnect · 第 2/10 次",
+					title: "Connection unstable, recovering stream",
+					detail: "SSE reconnect · attempt 2/10",
 				},
 			},
 			expanded: false,
 		});
 
-		expect(output).toContain("网络连接不稳定，正在恢复会话流");
-		expect(output).toContain("SSE reconnect · 第 2/10 次");
+		expect(output).toContain("Connection unstable, recovering stream");
+		expect(output).toContain("SSE reconnect · attempt 2/10");
 	});
 
 	it("lets reconnect banner dominate over a live todo headline", () => {
@@ -539,15 +609,15 @@ describe("core progress surface", () => {
 			spinner: {
 				banner: {
 					kind: "warning",
-					title: "网络连接不稳定，正在恢复会话流",
-					detail: "SSE reconnect · 第 2/10 次",
+					title: "Connection unstable, recovering stream",
+					detail: "SSE reconnect · attempt 2/10",
 				},
 			},
 			expanded: false,
 		});
 
-		expect(output).toContain("网络连接不稳定，正在恢复会话流...");
-		expect(output).toContain("SSE reconnect · 第 2/10 次");
+		expect(output).toContain("Connection unstable, recovering stream...");
+		expect(output).toContain("SSE reconnect · attempt 2/10");
 		expect(output).not.toContain("继续拉取接口结果...");
 	});
 
@@ -601,9 +671,9 @@ describe("core progress surface", () => {
 		});
 
 		expect(output).toContain("实现分页查询...");
-		expect(output).toContain("计划");
+		expect(output).toContain("Plan");
 		expect(output).toContain("◐ 实现分页查询");
 		expect(output).toContain("☐ 添加参数校验");
-		expect(output).toContain("下一步：添加参数校验");
+		expect(output).toContain("Next: 添加参数校验");
 	});
 });

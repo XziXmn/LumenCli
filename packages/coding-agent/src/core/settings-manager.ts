@@ -10,6 +10,7 @@ export interface CompactionSettings {
 	enabled?: boolean; // default: true
 	reserveTokens?: number; // default: 16384
 	keepRecentTokens?: number; // default: 20000
+	thresholdPercent?: number; // Optional context usage threshold percent (1-100). When set, compaction triggers at or above this usage.
 	compactPrompt?: string; // Optional override for the default compaction prompt
 	compactPromptFile?: string; // Optional file path containing the compaction prompt
 }
@@ -92,7 +93,8 @@ export interface Settings {
 	compaction?: CompactionSettings;
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
-	hideThinkingBlock?: boolean;
+	hideThinkingBlock?: boolean; // default: false
+	toolDisplayMode?: "collapsed" | "expanded"; // default: "collapsed"
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
 	quietStartup?: boolean;
 	shellCommandPrefix?: string; // Prefix prepended to every bash command (e.g., "shopt -s expand_aliases" for alias support)
@@ -692,6 +694,7 @@ export class SettingsManager {
 		enabled: boolean;
 		reserveTokens: number;
 		keepRecentTokens: number;
+		thresholdPercent?: number;
 		compactPrompt?: string;
 		compactPromptFile?: string;
 	} {
@@ -699,9 +702,35 @@ export class SettingsManager {
 			enabled: this.getCompactionEnabled(),
 			reserveTokens: this.getCompactionReserveTokens(),
 			keepRecentTokens: this.getCompactionKeepRecentTokens(),
+			thresholdPercent: this.getCompactionThresholdPercent(),
 			compactPrompt: this.getCompactionPrompt(),
 			compactPromptFile: this.getCompactionPromptFile(),
 		};
+	}
+
+	getCompactionThresholdPercent(): number | undefined {
+		const value = this.settings.compaction?.thresholdPercent;
+		if (typeof value !== "number" || !Number.isFinite(value)) {
+			return undefined;
+		}
+		const normalized = Math.floor(value);
+		if (normalized < 1 || normalized > 100) {
+			return undefined;
+		}
+		return normalized;
+	}
+
+	setCompactionThresholdPercent(percent: number | undefined): void {
+		if (!this.globalSettings.compaction) {
+			this.globalSettings.compaction = {};
+		}
+		if (percent === undefined) {
+			delete this.globalSettings.compaction.thresholdPercent;
+		} else {
+			this.globalSettings.compaction.thresholdPercent = Math.max(1, Math.min(100, Math.floor(percent)));
+		}
+		this.markModified("compaction", "thresholdPercent");
+		this.save();
 	}
 
 	getCompactionPrompt(): string | undefined {
@@ -801,6 +830,10 @@ export class SettingsManager {
 		this.save();
 	}
 
+	getToolDisplayMode(): "collapsed" | "expanded" {
+		return this.settings.toolDisplayMode ?? "collapsed";
+	}
+
 	getShellPath(): string | undefined {
 		return this.settings.shellPath;
 	}
@@ -818,6 +851,12 @@ export class SettingsManager {
 	setQuietStartup(quiet: boolean): void {
 		this.globalSettings.quietStartup = quiet;
 		this.markModified("quietStartup");
+		this.save();
+	}
+
+	setToolDisplayMode(mode: "collapsed" | "expanded"): void {
+		this.globalSettings.toolDisplayMode = mode;
+		this.markModified("toolDisplayMode");
 		this.save();
 	}
 

@@ -3,8 +3,8 @@ import { Container, type Focusable, getKeybindings, Input, Spacer, Text, type TU
 import { exec } from "child_process";
 import { theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
+import { TUI_COPY } from "./interactive-strings.ts";
 import { keyHint } from "./keybinding-hints.ts";
-import { TUI_COPY } from "./tui-copy.ts";
 
 /**
  * Login dialog component - replaces editor during OAuth login flow
@@ -77,7 +77,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 	private cancel(): void {
 		this.abortController.abort();
 		if (this.inputRejecter) {
-			this.inputRejecter(new Error("Login cancelled"));
+			this.inputRejecter(new Error(TUI_COPY.loginDialog.cancelled));
 			this.inputResolver = undefined;
 			this.inputRejecter = undefined;
 		}
@@ -158,9 +158,11 @@ export class LoginDialogComponent extends Container implements Focusable {
 		this.contentContainer.addChild(new Spacer(1));
 		this.contentContainer.addChild(new Text(theme.fg("accent", info.verificationUri), 1, 0));
 		this.contentContainer.addChild(new Spacer(1));
-		this.contentContainer.addChild(new Text(theme.fg("text", `验证码：${info.userCode}`), 1, 0));
+		this.contentContainer.addChild(new Text(theme.fg("text", TUI_COPY.loginDialog.deviceCode(info.userCode)), 1, 0));
 		if (typeof info.expiresInSeconds === "number" && info.expiresInSeconds > 0) {
-			this.contentContainer.addChild(new Text(theme.fg("dim", `请在 ${info.expiresInSeconds} 秒内完成认证`), 1, 0));
+			this.contentContainer.addChild(
+				new Text(theme.fg("dim", TUI_COPY.loginDialog.deviceExpiresIn(info.expiresInSeconds)), 1, 0),
+			);
 		}
 		this.contentContainer.addChild(new Spacer(1));
 		this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", TUI_COPY.loginDialog.cancel)})`, 1, 0));

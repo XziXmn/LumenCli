@@ -40,7 +40,7 @@ Lumen 现在最成熟的是这三块：
 | 功能主题 | 当前状态 | 用直白的话说 | 现在做到什么程度 | 下一步 |
 |---|---|---|---|---|
 | 自定义模型 | `已完成` | 你可以自己接入任意兼容模型，不被仓库里的默认模型绑死 | 已支持自定义 provider、API 端点、API key、模型 ID、上下文窗口、thinking 配置等；`mimo` 只是当前便于测试的默认示例 | 后续可以补更友好的配置向导，而不是只靠手改 JSON |
-| 会话压缩 | `待优化` | 对话太长时，系统会自动总结旧内容，避免上下文爆掉 | 已有自动压缩、手动 `/compact`、分支摘要；Codex 风格压缩插件已经能按 `manual / threshold / overflow` 分流，并用 replacement history 保留最近用户意图 | 继续提升 replacement history 控制粒度，并再评估是否需要显式 reinjection policy |
+| 会话压缩 | `待优化` | 对话太长时，系统会自动总结旧内容，避免上下文爆掉 | 已有自动压缩、手动 `/compact`、分支摘要、Codex 风格默认摘要桥、recent user bridge、重复压缩提醒；这些默认主行为都已经进入 core，项目扩展只保留 shim | 继续提升 replacement history 控制粒度，并再评估是否需要显式 reinjection policy |
 | 智能体提示词相关 | `进行中` | 系统提示词、项目规则、技能、提示模板这些都已经能参与 agent 行为 | 已支持 `SYSTEM.md`、`APPEND_SYSTEM.md`、`AGENTS.md`、skills、prompts、rules、按需规则注入；主系统提示词已由 Lumen 自己构造，不再是 Pi 原生直出 | 下一步是把主系统 prompt、extension append 和 `compact_prompt` 的边界讲清楚 |
 | 写作设计 | `暂缓` | 不是没有基础，而是“独立写作系统”这条路线当前没在主线上 | 已有 `.novel` 场景支持、prompt / skill / context 基础 | 保留场景能力，但不再单独恢复旧 `lumen-writing` 路线 |
 | 长久记忆设计 | `进行中` | 系统已经会提炼会话摘要和 lesson，但还不是完整知识库 | 已有 memory summary / lesson / 两阶段记忆管线 | 后续再考虑更稳定的跨会话长期知识系统 |
@@ -60,8 +60,8 @@ Lumen 现在最成熟的是这三块：
 | 旧 Pi 插件兼容审计 | `已完成` | 安装旧 Pi 插件后，会提示它是直接可用、轻适配，还是需要 AI 改写 |
 | 启动兼容复评估 | `进行中` | 新装插件后，下次启动会再次自动检查兼容性，并同时检查扩展加载和 skill 问题，再提示你去调试 | 已有启动复评估、风险提示和 `/compat` 调试入口；修完后可 `/reload`，还不行就移除插件或删除 skill | 继续把文案和首次安装后的引导做得更顺手 |
 | Claude 风格交互界面收口 | `进行中` | 主任务栏、待发送消息区、正文区、底栏已经有明确分工，但还在继续精修 |
-| BottomPane 统一下半区 | `已规划` | 现在的状态区和输入区虽然都在正文下方，但结构上还是分裂的；下一阶段要把它们真正收成一个统一下半区系统 | 已经有正式设计稿、总计划和专项子计划，方向是 `任务栏/状态区 + 待发送区 + 输入框 + footer` 统一收口 | 先做结构，再顺手解决状态区贴近和任务栏 execution 行跳帧问题 |
-| TUI 二级界面中文化 | `已规划` | 不是简单翻几个词，而是要给 model/login/settings/compact/tree 这些二级界面建立统一文案层 | 目前 slash command 多数已中文，但 selector、dialog、login flow 等路径仍有明显英文遗留 | 要在结构和压缩主线收口后统一抽离文案层，再批量中文化 |
+| BottomPane 统一下半区 | `进行中` | 现在的状态区和输入区已经进入统一 `BottomPane` 收口阶段，但测试、文档和少量控制反馈路径里还残着旧心智 | `bottomPane` 结构已经在 core 内落地，方向就是 `任务栏/状态区 + 待发送区 + 输入框 + footer` 统一收口 | 继续清旧心智，再顺手解决状态区贴近和任务栏 execution 行跳帧问题 |
+| TUI 二级界面中文化 | `进行中` | 当前方向不是“全中文覆盖”，而是把 selector、dialog、settings 这类二级界面继续保持中文，同时让任务栏 headline、进度主状态、工具运行时主文案保持更顺眼的英文；`Tip` 这类辅助提示可以保留中文 | slash command、多数 selector 和 settings 仍以中文为主；runtime progress / taskbar / thinking headline 已开始统一成英文口径；`Tip` 已回调为更自然的中文提示 | 后续继续按“主状态英文、辅助提示可中文、二级界面中文”收口剩余路径，并清理旧目标文字里的冲突表述 |
 
 ## 当前真正优先的事
 
@@ -70,8 +70,8 @@ Lumen 现在最成熟的是这三块：
 1. **先把下半区真正收口成统一 BottomPane**
    目标：把任务栏、待发送消息、输入框、扩展区、底栏变成一个稳定系统，并顺手修掉任务栏 execution 行闪动。
 
-2. **再把会话压缩内核化**
-   目标：从“core + 插件混合态”演进为正式 core compaction 子系统，并把 `compact_prompt` 提升为正式配置能力。
+2. **继续优化会话压缩**
+   目标：在已经 core 化的基础上，继续提升 replacement history、summary bridge 和 `compact_prompt` 的治理质量。
 
 3. **然后做 TUI 二级界面中文化**
    目标：建立统一文案层，系统清理 model/login/settings/compact/tree 等路径里的英文遗留。

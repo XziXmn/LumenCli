@@ -721,6 +721,10 @@ export interface CompactionEndEvent {
 	aborted: boolean;
 	willRetry: boolean;
 	errorMessage?: string;
+	notices?: Array<{
+		level: "info" | "warning";
+		message: string;
+	}>;
 }
 
 /** Fired when the session enters automatic retry. */

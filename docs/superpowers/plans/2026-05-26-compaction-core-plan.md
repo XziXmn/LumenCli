@@ -6,7 +6,7 @@
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将当前基于 `.lumen/extensions/codex-style-compaction.ts` 的主摘要桥接逻辑下沉到 core，建立正式的 compaction policy / prompt / summarizer / history rebuilder 分层，并优先采用 Codex 风格 `compact_prompt`。
+**Goal:** 将当时仍在 project compaction extension 中的主摘要桥接逻辑下沉到 core，建立正式的 compaction policy / prompt / summarizer / history rebuilder 分层，并优先采用 Codex 风格 `compact_prompt`。
 
 **Architecture:** compaction 将从“core + 插件主实现”演进为“core 正式拥有生命周期与历史重建，插件只做覆盖或实验策略”。架构上借 Codex 的 core ownership、`compact_prompt` 配置入口和历史重建边界，借 Claude 的 `boundaryMarker + summaryMessages + messagesToKeep + attachments + hookResults`，借 `oh-my-pi` 的阈值与策略配置。
 
@@ -27,7 +27,7 @@
 
 过渡触点：
 
-- `.lumen/extensions/codex-style-compaction.ts`
+- 旧 project compaction extension
 - `packages/coding-agent/examples/extensions/custom-compaction.ts`
 
 ## 主要问题
@@ -132,7 +132,7 @@ compaction 至少拆为四层：
 
 验收：
 
-- `.lumen/extensions/codex-style-compaction.ts` 可以保留为覆盖或实验层
+- 旧 project compaction extension 可以保留为覆盖或实验层，或在主行为完全内核化后删除
 
 ## 风险
 

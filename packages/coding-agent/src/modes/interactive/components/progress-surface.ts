@@ -2,7 +2,7 @@ import type { Component } from "@earendil-works/pi-tui";
 import type { QueuedUiState, SpinnerUiState, TaskUiItem } from "../../../core/extensions/types.ts";
 import { CLAUDE_SPINNER_VERBS } from "../spinner-verbs.ts";
 import type { Theme } from "../theme/theme.ts";
-import { TUI_COPY } from "./tui-copy.ts";
+import { TUI_COPY } from "./interactive-strings.ts";
 
 export interface ProgressSurfaceSnapshot {
 	tasks: TaskUiItem[];
@@ -19,6 +19,7 @@ export interface ProgressSurfaceWorkingState {
 	isStalled: boolean;
 	displayedTokens: number;
 	executionActivityCache: Map<string, string>;
+	executionLabelCache: Map<string, { subject: string; activeForm?: string }>;
 	tipState: TipState;
 	shimmerOffset: number;
 }
@@ -56,20 +57,20 @@ const BRAILLE_SPINNER_FRAMES = ["⣻", "⣽", "⣾", "⣷", "⣯", "⣟", "⢿",
 const TIP_POOL: TipCandidate[] = [
 	{
 		id: "clear-context",
-		text: "切换话题时可以用 /clear 重开会话，释放上下文",
+		text: TUI_COPY.progressSurface.tips.clearContext,
 		priority: 1,
 		condition: (elapsed) => elapsed >= 1_800_000,
 	},
 	{
 		id: "queue-hint",
-		text: "Enter 立即插入（工具间隙就发出），Alt+Enter 排队等本轮结束再发",
+		text: TUI_COPY.progressSurface.tips.queueHint,
 		priority: 2,
 		condition: (elapsed, _snapshot, tipState) => elapsed >= 30_000 && !tipState.shownIds.has("queue-hint"),
 		once: true,
 	},
 	{
 		id: "tasks-hint",
-		text: "任务栏展开/折叠能力会迁移到 core，当前先保持折叠视图",
+		text: TUI_COPY.progressSurface.tips.tasksHint,
 		priority: 3,
 		condition: (elapsed, snapshot, tipState) =>
 			elapsed >= 60_000 && snapshot.tasks.length > 0 && !tipState.shownIds.has("tasks-hint"),
@@ -86,6 +87,7 @@ export function createProgressSurfaceWorkingState(seed = Date.now()): ProgressSu
 		isStalled: false,
 		displayedTokens: 0,
 		executionActivityCache: new Map(),
+		executionLabelCache: new Map(),
 		tipState: { shownIds: new Set(), lastTipId: undefined, lastTipCycleStart: 0 },
 		shimmerOffset: 0,
 	};
@@ -233,7 +235,8 @@ function buildHeadlineText(
 
 	if (runningExecution.length === 1) {
 		const current = runningExecution[0]!;
-		const label = current.activeForm ?? current.subject ?? current.content;
+		const executionLabel = resolveExecutionLabel(current, working);
+		const label = executionLabel.activeForm ?? executionLabel.subject;
 		if (label) {
 			const agentPrefix = current.group ? `@${current.group} ` : "";
 			return inlineText(`${agentPrefix}${label}`, MAX_WORKING_PREVIEW_CHARS);
@@ -317,13 +320,25 @@ function buildExecutionActivity(item: TaskUiItem, working: ProgressSurfaceWorkin
 	return nextActivity;
 }
 
-function buildExecutionPrimaryLabel(item: TaskUiItem): string {
-	return inlineText(item.subject ?? item.content, 72);
+function resolveExecutionLabel(
+	item: TaskUiItem,
+	working: ProgressSurfaceWorkingState,
+): { subject: string; activeForm?: string } {
+	const cached = working.executionLabelCache.get(item.id);
+	const subject = item.subject?.trim() || item.content?.trim() || cached?.subject || "working";
+	const activeForm = item.activeForm?.trim() || cached?.activeForm;
+	working.executionLabelCache.set(item.id, { subject, activeForm });
+	return { subject, activeForm };
+}
+
+function buildExecutionPrimaryLabel(item: TaskUiItem, working: ProgressSurfaceWorkingState): string {
+	return inlineText(resolveExecutionLabel(item, working).subject, 72);
 }
 
 function buildExecutionDetailLabel(item: TaskUiItem, working: ProgressSurfaceWorkingState): string | undefined {
 	const activity = buildExecutionActivity(item, working).trim();
-	const primary = (item.activeForm ?? item.subject ?? item.content ?? "").trim();
+	const label = resolveExecutionLabel(item, working);
+	const primary = (label.activeForm ?? label.subject).trim();
 	if (!activity || activity === primary) {
 		return undefined;
 	}
@@ -335,6 +350,11 @@ function pruneExecutionActivityCache(items: TaskUiItem[], working: ProgressSurfa
 	for (const key of working.executionActivityCache.keys()) {
 		if (!liveIds.has(key)) {
 			working.executionActivityCache.delete(key);
+		}
+	}
+	for (const key of working.executionLabelCache.keys()) {
+		if (!liveIds.has(key)) {
+			working.executionLabelCache.delete(key);
 		}
 	}
 }
@@ -359,7 +379,7 @@ function renderExecutionLines(
 	for (const item of capped) {
 		const prefix = item.status === "pending" && capped.length === 1 ? "└─" : item.status === "pending" ? "├─" : "├─";
 		const agent = item.group ? `@${item.group}` : item.id;
-		const primary = buildExecutionPrimaryLabel(item);
+		const primary = buildExecutionPrimaryLabel(item, working);
 		const detail = buildExecutionDetailLabel(item, working);
 		const stats: string[] = [];
 		if (item.toolCount) stats.push(TUI_COPY.progressSurface.toolUses(item.toolCount));
@@ -368,7 +388,7 @@ function renderExecutionLines(
 		if (item.status === "failed" || item.status === "aborted") stats.push("failed");
 		if (item.status === "pending") stats.push(TUI_COPY.progressSurface.pending);
 		const statsSuffix = stats.length > 0 ? ` · ${stats.join(" · ")}` : "";
-		const detailSuffix = detail ? ` · ${TUI_COPY.progressSurface.executionDetailPrefix}：${detail}` : "";
+		const detailSuffix = detail ? ` · ${TUI_COPY.progressSurface.executionDetailPrefix}: ${detail}` : "";
 		lines.push(
 			`${theme.fg("dim", `    ${prefix} `)}${theme.fg("accent", agent)}${theme.fg("dim", `: ${primary}${detailSuffix}${statsSuffix}`)}`,
 		);
@@ -526,11 +546,11 @@ function renderProgressSurfaceLines(
 
 	if (next) {
 		const nextText = inlineText(next.subject ?? next.content, MAX_WORKING_PREVIEW_CHARS);
-		lines.push(theme.fg("dim", "  ⎿ ") + theme.fg("muted", `${TUI_COPY.progressSurface.next}：${nextText}`));
+		lines.push(theme.fg("dim", "  ⎿ ") + theme.fg("muted", `${TUI_COPY.progressSurface.next}: ${nextText}`));
 	} else if (elapsed >= SHOW_TIP_AFTER_MS) {
 		const tip = selectTip(elapsed, snapshot, working.tipState) ?? snapshot.spinner?.tip;
 		if (tip) {
-			lines.push(theme.fg("dim", "  ⎿ ") + theme.fg("muted", `${TUI_COPY.progressSurface.tip}：${tip}`));
+			lines.push(theme.fg("dim", "  ⎿ ") + theme.fg("muted", `${TUI_COPY.progressSurface.tip}: ${tip}`));
 		}
 	}
 	return lines;
@@ -563,4 +583,15 @@ export function __renderProgressSurfaceLinesForTest(snapshot: ProgressSurfaceSna
 		return [];
 	}
 	return renderProgressSurfaceLines(snapshot, theme, createProgressSurfaceWorkingState(0));
+}
+
+export function __renderProgressSurfaceLinesWithStateForTest(
+	snapshot: ProgressSurfaceSnapshot,
+	theme: Theme,
+	working: ProgressSurfaceWorkingState,
+): string[] {
+	if (!shouldRenderProgressSurface(snapshot)) {
+		return [];
+	}
+	return renderProgressSurfaceLines(snapshot, theme, working);
 }

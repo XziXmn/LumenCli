@@ -56,6 +56,14 @@
 说明：
 
 - 脚本会启动真实 `ProcessTerminal` 场景，不是虚拟终端
+- 当前布局模型已对齐 `interactive-mode` 的 `BottomPane`：
+  - `chat`
+  - `bottomPane`
+    - `taskbar`
+    - `pending`
+    - `composer`
+    - `extension`
+    - `footer`
 - 会打开硬件光标定位
 - 会写 ANSI 输出日志到 `.tmp/ime-progress-surface-debug-ansi.log`
 - footer 会显示：

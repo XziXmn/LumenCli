@@ -2,7 +2,7 @@
 
 > 规划定位：
 > 本计划属于 [Stage B — Interactive Surface](../../ROADMAP.md)。
-> 它解决的是 `interactive-mode` 下半区当前仍由 `promptAreaContainer + interactionAreaContainer` 分裂承载的问题，并将任务栏 execution row 跳帧闪动纳入同一条结构主线。
+> 它解决的是 `interactive-mode` 下半区曾经由分裂容器承载、而当前仍残留部分旧心智的问题，并将任务栏 execution row 跳帧闪动纳入同一条结构主线。
 > 执行时必须延续 core-owned progress surface 路线，不能把主任务栏所有权重新退回扩展层，也不能破坏当前 `.lumen/` 兼容与 Windows / PowerShell 工作流。
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -50,7 +50,7 @@
 - `ExtensionRow`
 - `PassiveFooter`
 
-不再让 `promptAreaContainer` 和 `interactionAreaContainer` 各自承担一半“下半区”职责。
+不再让旧的“状态区一块、输入区一块”心智继续主导实现和验证链。
 
 ### 2. 主动状态与被动状态彻底分离
 

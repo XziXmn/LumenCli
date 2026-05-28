@@ -34,7 +34,7 @@
 
 目标：
 
-- 把当前 `promptAreaContainer + interactionAreaContainer` 重构为统一下半区容器
+- 把当前已经落地的 `bottomPane` 继续收口为统一下半区系统
 - 明确 `TaskbarRow / PendingRow / ComposerFrame / ExtensionRow / PassiveFooter` 五层
 - 纳入 `@explore ... uses/tokens/duration` 跳帧闪动修复
 
@@ -65,7 +65,7 @@
 
 目标：
 
-- 把当前 `core + .lumen/extensions/codex-style-compaction.ts` 的混合态，演进为正式 core compaction 子系统
+- 把当时 `core + project compaction extension` 的混合态，演进为正式 core compaction 子系统
 - 让 `compact_prompt` 像 Codex 一样成为正式配置与上下文能力
 - 综合：
   - Codex 的 core ownership、prompt 配置入口、历史重建边界
@@ -83,7 +83,7 @@
 - `packages/coding-agent/src/core/agent-session.ts`
 - `packages/coding-agent/src/core/session-manager.ts`
 - `packages/coding-agent/src/core/system-prompt.ts`
-- `.lumen/extensions/codex-style-compaction.ts`（最终应降级为覆盖层或过渡层）
+- 旧 project compaction extension（最终应降级或移除）
 - `packages/coding-agent/docs/compaction.md`
 
 关键设计决定：

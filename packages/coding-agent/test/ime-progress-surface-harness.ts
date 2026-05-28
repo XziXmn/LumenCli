@@ -41,8 +41,8 @@ export const IME_PROGRESS_SURFACE_SCENARIOS: ImeScenario[] = [
 			},
 			{
 				id: "task:explore-1",
-				content: "读取 retry 逻辑",
-				subject: "读取 retry 逻辑",
+				content: "Read retry flow",
+				subject: "Read retry flow",
 				status: "running",
 				group: "explore",
 				meta: "read src/modes/interactive/interactive-mode.ts",
@@ -71,7 +71,7 @@ export const IME_PROGRESS_SURFACE_SCENARIOS: ImeScenario[] = [
 		pending: [],
 		banner: {
 			kind: "approval",
-			title: "等待审批确认",
+			title: "Awaiting approval",
 			detail: "将修改 4 个文件，确认后继续",
 		},
 		mode: "requesting",
@@ -93,7 +93,7 @@ export const IME_PROGRESS_SURFACE_SCENARIOS: ImeScenario[] = [
 		pending: ["Steer: 先做真实 IME 验证"],
 		banner: {
 			kind: "input",
-			title: "等待你的输入",
+			title: "Awaiting your input",
 			detail: "请选择：保守修复 / 一次性重构",
 		},
 		mode: "requesting",
@@ -106,8 +106,8 @@ export const IME_PROGRESS_SURFACE_SCENARIOS: ImeScenario[] = [
 		pending: ["Follow-up: 恢复后继续补测试"],
 		banner: {
 			kind: "warning",
-			title: "接口不稳定，正在自动重试",
-			detail: "第 1/3 次重试 · 2s 后继续",
+			title: "Request unstable, retrying automatically",
+			detail: "Attempt 1/3 · retrying in 2s",
 		},
 		mode: "requesting",
 	},
@@ -118,8 +118,8 @@ export const IME_PROGRESS_SURFACE_SCENARIOS: ImeScenario[] = [
 		pending: [],
 		banner: {
 			kind: "warning",
-			title: "网络连接不稳定，正在恢复会话流",
-			detail: "SSE reconnect · 第 2/10 次",
+			title: "Connection unstable, recovering stream",
+			detail: "SSE reconnect · attempt 2/10",
 		},
 		mode: "requesting",
 	},
@@ -140,8 +140,8 @@ export const IME_PROGRESS_SURFACE_SCENARIOS: ImeScenario[] = [
 			},
 			{
 				id: "task:explore-1",
-				content: "读取 CONTRIBUTING.md",
-				subject: "读取 CONTRIBUTING.md",
+				content: "Read CONTRIBUTING.md",
+				subject: "Read CONTRIBUTING.md",
 				status: "running",
 				group: "explore",
 				meta: "read CONTRIBUTING.md",

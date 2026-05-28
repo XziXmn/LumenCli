@@ -12,8 +12,8 @@ import {
 import type { SessionTreeNode } from "../../../core/session-manager.ts";
 import { theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
+import { TUI_COPY } from "./interactive-strings.ts";
 import { keyHint, keyText } from "./keybinding-hints.ts";
-import { TUI_COPY } from "./tui-copy.ts";
 
 /** Gutter info: position (displayIndent where connector was) and whether to show │ */
 interface GutterInfo {
@@ -512,7 +512,23 @@ class TreeList implements Component {
 		switch (entry.type) {
 			case "message": {
 				const msg = entry.message;
-				parts.push(msg.role);
+				switch (msg.role) {
+					case "user":
+						parts.push(TUI_COPY.treeSelector.searchRoleUser);
+						break;
+					case "assistant":
+						parts.push(TUI_COPY.treeSelector.searchRoleAssistant);
+						break;
+					case "bashExecution":
+						parts.push(TUI_COPY.treeSelector.searchRoleBash);
+						break;
+					case "toolResult":
+						parts.push(TUI_COPY.treeSelector.searchRoleToolResult);
+						break;
+					default:
+						parts.push(msg.role);
+						break;
+				}
 				if ("content" in msg && msg.content) {
 					parts.push(this.extractContent(msg.content));
 				}
@@ -532,26 +548,26 @@ class TreeList implements Component {
 				break;
 			}
 			case "compaction":
-				parts.push("compaction");
+				parts.push(TUI_COPY.treeSelector.searchRoleCompaction);
 				break;
 			case "branch_summary":
-				parts.push("branch summary", entry.summary);
+				parts.push(TUI_COPY.treeSelector.searchRoleBranchSummary, entry.summary);
 				break;
 			case "session_info":
-				parts.push("title");
+				parts.push(TUI_COPY.treeSelector.searchRoleTitle);
 				if (entry.name) parts.push(entry.name);
 				break;
 			case "model_change":
-				parts.push("model", entry.modelId);
+				parts.push(TUI_COPY.treeSelector.searchRoleModel, entry.modelId);
 				break;
 			case "thinking_level_change":
-				parts.push("thinking", entry.thinkingLevel);
+				parts.push(TUI_COPY.treeSelector.searchRoleThinking, entry.thinkingLevel);
 				break;
 			case "custom":
-				parts.push("custom", entry.customType);
+				parts.push(TUI_COPY.treeSelector.searchRoleCustom, entry.customType);
 				break;
 			case "label":
-				parts.push("label", entry.label ?? "");
+				parts.push(TUI_COPY.treeSelector.searchRoleLabel, entry.label ?? "");
 				break;
 		}
 
@@ -582,20 +598,20 @@ class TreeList implements Component {
 		let labels = "";
 		switch (this.filterMode) {
 			case "no-tools":
-				labels += " [no-tools]";
+				labels += TUI_COPY.treeSelector.filterNoTools;
 				break;
 			case "user-only":
-				labels += " [user]";
+				labels += TUI_COPY.treeSelector.filterUserOnly;
 				break;
 			case "labeled-only":
-				labels += " [labeled]";
+				labels += TUI_COPY.treeSelector.filterLabeledOnly;
 				break;
 			case "all":
-				labels += " [all]";
+				labels += TUI_COPY.treeSelector.filterAll;
 				break;
 		}
 		if (this.showLabelTimestamps) {
-			labels += " [+label time]";
+			labels += TUI_COPY.treeSelector.labelTimeEnabled;
 		}
 		return labels;
 	}
@@ -604,7 +620,7 @@ class TreeList implements Component {
 		const lines: string[] = [];
 
 		if (this.filteredNodes.length === 0) {
-			lines.push(truncateToWidth(theme.fg("muted", "  No entries found"), width));
+			lines.push(truncateToWidth(theme.fg("muted", TUI_COPY.treeSelector.noEntries), width));
 			lines.push(truncateToWidth(theme.fg("muted", `  (0/0)${this.getStatusLabels()}`), width));
 			return lines;
 		}
@@ -736,11 +752,11 @@ class TreeList implements Component {
 					if (toolCall) {
 						result = theme.fg("muted", this.formatToolCall(toolCall.name, toolCall.arguments));
 					} else {
-						result = theme.fg("muted", `[${toolMsg.toolName ?? "tool"}]`);
+						result = theme.fg("muted", TUI_COPY.treeSelector.toolResultFallback);
 					}
 				} else if (role === "bashExecution") {
 					const bashMsg = msg as { command?: string };
-					result = theme.fg("dim", `[bash]: ${normalize(bashMsg.command ?? "")}`);
+					result = theme.fg("dim", `${TUI_COPY.treeSelector.bashEntryPrefix} ${normalize(bashMsg.command ?? "")}`);
 				} else {
 					result = theme.fg("dim", `[${role}]`);
 				}
@@ -754,7 +770,9 @@ class TreeList implements Component {
 								.filter((c): c is { type: "text"; text: string } => c.type === "text")
 								.map((c) => c.text)
 								.join("");
-				result = theme.fg("customMessageLabel", `[${entry.customType}]: `) + normalize(content);
+				result =
+					theme.fg("customMessageLabel", TUI_COPY.treeSelector.customMessagePrefix(entry.customType)) +
+					normalize(content);
 				break;
 			}
 			case "compaction": {

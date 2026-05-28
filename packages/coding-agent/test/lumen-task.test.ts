@@ -1,6 +1,7 @@
 import type { Text } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import lumenTaskExtension, {
+	buildSubagentSystemPrompt,
 	formatTaskFooterStatus,
 	formatTaskResultSummary,
 	getSessionTaskUiItems,
@@ -487,5 +488,21 @@ describe("lumen-task helpers", () => {
 		const text = stripAnsi(rendered.render(120).join("\n"));
 		expect(text).toContain("● task explore · 1 task");
 		expect(text).not.toContain("⣻");
+	});
+
+	it("buildSubagentSystemPrompt tells subagents to keep runtime narration in English", () => {
+		const prompt = buildSubagentSystemPrompt(
+			{
+				name: "explore",
+				description: "Fast code reconnaissance",
+				systemPrompt: "Inspect the repo and report findings.",
+				source: "project",
+			},
+			"Focus on the retry path.",
+		);
+
+		expect(prompt).toContain("Keep working notes, tool-facing narration, and progress wording in English");
+		expect(prompt).toContain("## Context");
+		expect(prompt).toContain("Focus on the retry path.");
 	});
 });

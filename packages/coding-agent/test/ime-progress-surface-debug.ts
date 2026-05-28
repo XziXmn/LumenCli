@@ -130,14 +130,20 @@ class CountingTerminal implements Terminal {
 const terminal = new CountingTerminal();
 const ui = new TUI(terminal, true);
 const transcript = new Container();
-const promptAreaContainer = new Container();
-const statusContainer = new Container();
-const pendingContainer = new Container();
-const interactionAreaContainer = new Container();
+const bottomPaneContainer = new Container();
+const taskbarRowContainer = new Container();
+const taskbarContent = new Container();
+const pendingRowContainer = new Container();
+const pendingContent = new Container();
+const composerRowContainer = new Container();
+const composerGap = new Container();
 const extensionAreaContainer = new Container();
 const widgetAbove = new Container();
 const editorContainer = new Container();
 const widgetBelow = new Container();
+const extensionRowContainer = new Container();
+const passiveFooterRowContainer = new Container();
+const footerContentContainer = new Container();
 const footerContainer = new Container();
 const input = new Input();
 const footerText = new Text("", 0, 0);
@@ -241,23 +247,26 @@ function isInputSuppressed(): boolean {
 }
 
 function syncStatusArea(): void {
-	statusContainer.clear();
+	taskbarContent.clear();
 	const snapshot = getSnapshot();
 	if (!shouldRenderProgressSurface(snapshot)) {
+		syncBottomPaneGap();
 		return;
 	}
-	statusContainer.addChild(new Spacer(1));
-	statusContainer.addChild(progressComponent);
+	taskbarContent.addChild(new Spacer(1));
+	taskbarContent.addChild(progressComponent);
+	syncBottomPaneGap();
 }
 
 function syncPendingArea(): void {
-	pendingContainer.clear();
+	pendingContent.clear();
 	const scenario = currentScenario();
 	if (scenario.pending.length === 0) {
+		syncBottomPaneGap();
 		return;
 	}
-	pendingContainer.addChild(new Spacer(1));
-	pendingContainer.addChild(
+	pendingContent.addChild(new Spacer(1));
+	pendingContent.addChild(
 		new Text(
 			theme.fg("dim", `${scenario.pending.length} queued command${scenario.pending.length > 1 ? "s" : ""}`),
 			1,
@@ -265,8 +274,9 @@ function syncPendingArea(): void {
 		),
 	);
 	for (const line of scenario.pending) {
-		pendingContainer.addChild(new Text(theme.fg("dim", `  ⎿ ${line}`), 1, 0));
+		pendingContent.addChild(new Text(theme.fg("dim", `  ⎿ ${line}`), 1, 0));
 	}
+	syncBottomPaneGap();
 }
 
 function syncFooter(): void {
@@ -277,6 +287,13 @@ function syncFooter(): void {
 			`Passive footer only · ${scenario.name} · ${scenarioIndex + 1}/${scenarios.length} · suppress=${isInputSuppressed() ? "on" : "off"} · progress=${terminal.isProgressActive() ? "on" : "off"} · ops=${terminal.getWriteOperations()} · Ctrl+N next · Ctrl+P pause · Ctrl+R reset · Ctrl+C exit`,
 		),
 	);
+}
+
+function syncBottomPaneGap(): void {
+	composerGap.clear();
+	if (taskbarContent.children.length > 0 || pendingContent.children.length > 0) {
+		composerGap.addChild(new Spacer(1));
+	}
 }
 
 function syncTranscriptScenarioLines(): void {
@@ -472,11 +489,18 @@ footerContainer.addChild(footerText);
 editorContainer.addChild(input);
 extensionAreaContainer.addChild(widgetAbove);
 extensionAreaContainer.addChild(widgetBelow);
-promptAreaContainer.addChild(statusContainer);
-promptAreaContainer.addChild(pendingContainer);
-interactionAreaContainer.addChild(editorContainer);
-interactionAreaContainer.addChild(extensionAreaContainer);
-interactionAreaContainer.addChild(footerContainer);
+taskbarRowContainer.addChild(taskbarContent);
+pendingRowContainer.addChild(pendingContent);
+composerRowContainer.addChild(composerGap);
+composerRowContainer.addChild(editorContainer);
+extensionRowContainer.addChild(extensionAreaContainer);
+footerContentContainer.addChild(footerContainer);
+passiveFooterRowContainer.addChild(footerContentContainer);
+bottomPaneContainer.addChild(taskbarRowContainer);
+bottomPaneContainer.addChild(pendingRowContainer);
+bottomPaneContainer.addChild(composerRowContainer);
+bottomPaneContainer.addChild(extensionRowContainer);
+bottomPaneContainer.addChild(passiveFooterRowContainer);
 
 transcript.addChild(new Spacer(1));
 transcript.addChild(new Text(theme.bold(theme.fg("accent", "IME Progress Surface Debug")), 1, 0));
@@ -515,8 +539,7 @@ transcript.addChild(
 const transcriptBaseChildrenCount = transcript.children.length;
 
 ui.addChild(transcript);
-ui.addChild(promptAreaContainer);
-ui.addChild(interactionAreaContainer);
+ui.addChild(bottomPaneContainer);
 ui.setFocus(input);
 ui.shouldSuppressBackgroundRenderUpdates = () => isInputSuppressed();
 

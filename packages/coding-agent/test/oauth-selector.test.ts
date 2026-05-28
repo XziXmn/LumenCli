@@ -135,4 +135,20 @@ describe("OAuthSelectorComponent", () => {
 		expect(output).toContain("✓ models.json 中的命令");
 		expect(output).not.toContain("未配置");
 	});
+
+	it("shows localized empty logout state", () => {
+		const authStorage = AuthStorage.inMemory();
+		const selector = new OAuthSelectorComponent(
+			"logout",
+			authStorage,
+			[],
+			() => {},
+			() => {},
+		);
+
+		const output = stripAnsi(selector.render(120).join("\n"));
+
+		expect(output).toContain("选择要退出登录的模型提供方：");
+		expect(output).toContain("当前没有已登录的模型提供方，请先使用 /login。");
+	});
 });

@@ -20,8 +20,8 @@ import type { PathMetadata, ResolvedPaths, ResolvedResource } from "../../../cor
 import type { PackageSource, SettingsManager } from "../../../core/settings-manager.ts";
 import { theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
+import { TUI_COPY } from "./interactive-strings.ts";
 import { rawKeyHint } from "./keybinding-hints.ts";
-import { TUI_COPY } from "./tui-copy.ts";
 
 type ResourceType = "extensions" | "skills" | "prompts" | "themes";
 

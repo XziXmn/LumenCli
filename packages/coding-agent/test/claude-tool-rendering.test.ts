@@ -34,8 +34,8 @@ describe("Claude-style tool rendering", () => {
 	});
 
 	it("renders bash/read/write with Claude-style titles", () => {
-		expect(renderTool("bash", { command: "npm run check" })).toContain("Bash(npm run check)");
-		expect(renderTool("read", { path: "src/index.ts" })).toContain("Read(src/index.ts)");
+		expect(renderTool("bash", { command: "npm run check" })).toContain("$ npm run check");
+		expect(renderTool("read", { path: "src/index.ts" })).toContain("read src/index.ts");
 		expect(renderTool("write", { path: "notes.txt", content: "hello" })).toContain("Write(notes.txt)");
 	});
 
@@ -50,6 +50,6 @@ describe("Claude-style tool rendering", () => {
 	});
 
 	it("shows compact read result summaries instead of hiding collapsed output", () => {
-		expect(renderTool("read", { path: "src/index.ts" }, "line one\nline two\n")).toContain("Read 2 lines");
+		expect(renderTool("read", { path: "src/index.ts" }, "line one\nline two\n")).toContain("read src/index.ts");
 	});
 });

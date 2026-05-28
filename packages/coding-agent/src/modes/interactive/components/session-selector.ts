@@ -18,9 +18,9 @@ import type { SessionInfo, SessionListProgress } from "../../../core/session-man
 import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.ts";
 import { theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
+import { TUI_COPY } from "./interactive-strings.ts";
 import { keyHint, keyText } from "./keybinding-hints.ts";
 import { filterAndSortSessions, hasSessionName, type NameFilter, type SortMode } from "./session-selector-search.ts";
-import { TUI_COPY } from "./tui-copy.ts";
 
 type SessionScope = "current" | "all";
 
@@ -164,7 +164,10 @@ class SessionSelectorHeader implements Component {
 		let hintLine1: string;
 		let hintLine2: string;
 		if (this.confirmingDeletePath !== null) {
-			const confirmHint = `${TUI_COPY.sessionSelector.deleteConfirm} ${keyHint("tui.select.confirm", "确认")} · ${keyHint("tui.select.cancel", "取消")}`;
+			const confirmHint =
+				`${TUI_COPY.sessionSelector.deleteConfirm} ` +
+				`${keyHint("tui.select.confirm", TUI_COPY.sessionSelector.deleteConfirmAction)} · ` +
+				`${keyHint("tui.select.cancel", TUI_COPY.sessionSelector.deleteCancelAction)}`;
 			hintLine1 = theme.fg("error", truncateToWidth(confirmHint, width, "…"));
 			hintLine2 = "";
 		} else if (this.statusMessage) {
@@ -172,23 +175,23 @@ class SessionSelectorHeader implements Component {
 			hintLine1 = theme.fg(color, truncateToWidth(this.statusMessage.message, width, "…"));
 			hintLine2 = "";
 		} else {
-			const pathState = this.showPath ? "开" : "关";
+			const pathState = TUI_COPY.sessionSelector.pathState(this.showPath);
 			const sep = theme.fg("muted", " · ");
 			const hint1 =
-				keyHint("tui.input.tab", "切换范围") +
+				keyHint("tui.input.tab", TUI_COPY.sessionSelector.toggleScope) +
 				sep +
 				theme.fg(
 					"muted",
 					`${TUI_COPY.sessionSelector.searchRegexHint} · ${TUI_COPY.sessionSelector.searchExactHint}`,
 				);
 			const hint2Parts = [
-				keyHint("app.session.toggleSort", "切换排序"),
-				keyHint("app.session.toggleNamedFilter", "仅命名"),
-				keyHint("app.session.delete", "删除"),
-				keyHint("app.session.togglePath", `路径 ${pathState}`),
+				keyHint("app.session.toggleSort", TUI_COPY.sessionSelector.toggleSort),
+				keyHint("app.session.toggleNamedFilter", TUI_COPY.sessionSelector.toggleNamed),
+				keyHint("app.session.delete", TUI_COPY.sessionSelector.deleteHint),
+				keyHint("app.session.togglePath", pathState),
 			];
 			if (this.showRenameHint) {
-				hint2Parts.push(keyHint("app.session.rename", "重命名"));
+				hint2Parts.push(keyHint("app.session.rename", TUI_COPY.sessionSelector.renameHint));
 			}
 			const hint2 = hint2Parts.join(sep);
 			hintLine1 = truncateToWidth(hint1, width, "…");
@@ -848,8 +851,11 @@ export class SessionSelectorComponent extends Container implements Focusable {
 				this.header.setStatusMessage({ type: "info", message: msg }, 2000);
 				await this.refreshSessionsAfterMutation();
 			} else {
-				const errorMessage = result.error ?? "Unknown error";
-				this.header.setStatusMessage({ type: "error", message: `Failed to delete: ${errorMessage}` }, 3000);
+				const errorMessage = result.error ?? TUI_COPY.interactiveNotices.unknownError;
+				this.header.setStatusMessage(
+					{ type: "error", message: TUI_COPY.sessionSelector.failedDelete(errorMessage) },
+					3000,
+				);
 			}
 
 			this.requestRender();
@@ -871,6 +877,8 @@ export class SessionSelectorComponent extends Container implements Focusable {
 
 		const panel = new Container();
 		panel.addChild(new Text(theme.bold(TUI_COPY.sessionSelector.renameTitle), 1, 0));
+		panel.addChild(new Spacer(1));
+		panel.addChild(new Text(theme.fg("muted", TUI_COPY.sessionSelector.renameInputLabel), 1, 0));
 		panel.addChild(new Spacer(1));
 		panel.addChild(this.renameInput);
 		panel.addChild(new Spacer(1));

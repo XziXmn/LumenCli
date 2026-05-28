@@ -406,6 +406,11 @@ export function getChangelogPath(): string {
 	return resolve(join(getPackageDir(), "CHANGELOG.md"));
 }
 
+/** Get path to the Lumen-specific changelog displayed in interactive mode. */
+export function getLumenChangelogPath(): string {
+	return resolve(join(getPackageDir(), "LUMEN_CHANGELOG.md"));
+}
+
 /**
  * Get path to built-in interactive assets directory.
  * - For Bun binary: assets/ next to executable

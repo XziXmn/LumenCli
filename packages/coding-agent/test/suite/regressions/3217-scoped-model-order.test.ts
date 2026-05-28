@@ -101,4 +101,34 @@ describe("issue #3217 scoped model ordering", () => {
 
 		expect(orderedIds).toEqual([modelTwo.id, modelOne.id, modelThree.id]);
 	});
+
+	it("renders localized scope hint in the /model selector", async () => {
+		const harness = await createHarness({
+			models: [
+				{ id: "faux-1", name: "One", reasoning: true },
+				{ id: "faux-2", name: "Two", reasoning: true },
+			],
+		});
+		harnesses.push(harness);
+
+		const modelOne = harness.getModel("faux-1")!;
+		const modelTwo = harness.getModel("faux-2")!;
+		const selector = new ModelSelectorComponent(
+			createFakeTui(),
+			modelOne,
+			harness.settingsManager,
+			harness.session.modelRegistry,
+			[{ model: modelTwo }, { model: modelOne }],
+			() => {},
+			() => {},
+		);
+
+		await waitForAsyncRender();
+
+		const output = stripAnsi(selector.render(120).join("\n"));
+		expect(output).toContain("范围: ");
+		expect(output).toContain("全部");
+		expect(output).toContain("限定");
+		expect(output).toContain("切换范围");
+	});
 });

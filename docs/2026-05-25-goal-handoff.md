@@ -22,13 +22,18 @@
 - 主任务栏 / 主进度面由 core 持有
 - 主布局维持：
   - `chatContainer`
-  - `promptAreaContainer`
-    - `statusContainer`
-    - `pendingMessagesContainer`
-  - `interactionAreaContainer`
-    - `editorContainer`
-    - `extensionAreaContainer`
-    - `footer`
+  - `bottomPane`
+    - `taskbarRow`
+      - `taskbarContent`
+    - `pendingRow`
+      - `pendingContent`
+    - `composerRow`
+      - `gap`
+      - `editorContainer`
+    - `extensionRow`
+      - `extensionAreaContainer`
+    - `passiveFooterRow`
+      - `footerContent`
 - `queued` 消息继续留在待发送区，不回流 transcript
 - `footer` 继续保持被动状态，不再吃进主动进度语义
 - `approval`
@@ -80,30 +85,26 @@
   - 交互里可用 `/compat`
   - 还不行就 `remove`
 
-### 3. Codex 风格压缩插件化
+### 3. Codex 风格压缩主线已回收进 core
 
-当前已经不是“只做了调研”，而是已经有可运行原型：
+当前已经不是“插件优先、core 补位”的混合态，而是默认主行为已经进 core：
 
-- 新增 project extension：
-  - `.lumen/extensions/codex-style-compaction.ts`
-- 当前原型已覆盖：
-  - `session_before_compact`
-  - `session_before_tree`
+- core 当前默认已覆盖：
   - 结构化 history summary
   - split-turn summary
   - recent user requests 注入
-  - 通过最小 core 补位控制 compaction summary 放在 kept messages 之后
-  - 通过最小 core 补位返回 replacement history (`replacementMessages`)
-  - 通过最小 core 补位向插件暴露 compaction `reason`
-  - 通过最小 core 补位向插件暴露 `keptMessages`
-  - Codex-style 插件已实际使用 `replacementMessages` 生成“最近真实用户消息 + 摘要桥接层”
-  - 手动 split-turn 压缩时，`Split Turn Context` 也会进入 replacement history，而不只停留在 summary 字段
-  - 插件已开始按 `manual / threshold / overflow` 分流，并优先从 `keptMessages` 提取 recent user intent
+  - `replacementMessages`
+  - `summaryPlacement`
+  - `manual / threshold / overflow` 分流
+  - repeated compaction / overflow recovery 提醒
+  - branch summary 的结构化默认实现
+- 旧 project compaction extension（现已删除，默认主行为已回收进 core）
+  - 现在只保留为 no-op shim
+  - 目的是兼容旧本地引用，不再承载默认压缩逻辑
 - 已有加载级与行为级回归：
-  - extension discovery 能加载
-  - compaction/tree summary 的 handler 输出已被单测覆盖
-  - summary placement 已被 session context / agent session 级回归覆盖
-  - replacement history 已被 session context / agent session 级回归覆盖
+  - core compaction 的 replacement history / summary placement 已被 session context / agent session 级回归覆盖
+  - repeated compaction / overflow recovery 提醒已进入 core 事件回归
+  - extension discovery 继续覆盖 shim 可加载，但不再要求它注册 compaction/branch handlers
 
 ## 当前证据
 
@@ -217,21 +218,22 @@
 
 - `.\ime-progress-surface-debug.ps1 --scenario-list approval,retry,reconnect,parallel,bash,branch-summary,complete --auto-cycle-ms 2500`
 
-### 2. Codex 上限能力仍未完整进入 core
+### 2. Codex 上限能力仍可继续优化
 
-当前压缩主线已经有“插件优先”的可运行版本，并且已经新增了一个最小 core 补位：
+当前默认压缩主行为已经进入 core，并且至少已经具备：
 
 - `summaryPlacement?: "before-kept" | "after-kept"`
 - `replacementMessages?: AgentMessage[]`
 - `reason: "manual" | "threshold" | "overflow"`
 - `keptMessages: AgentMessage[]`
+- core 默认 repeated compaction / overflow notices
 
-但下面这两类决定上限的能力仍未进入 core：
+但下面这两类决定上限的能力仍然可以继续优化：
 
 - replacement history 的更完整精确控制
 - initial context reinjection policy
 
-这不阻塞当前插件版收口，但如果后面要逼近 Codex 的真正上限体验，仍然需要最小 core 补位。
+这不再是“默认主行为没进 core”的阻塞，而是下一阶段的质量上限工作。
 
 ## 下一步建议
 

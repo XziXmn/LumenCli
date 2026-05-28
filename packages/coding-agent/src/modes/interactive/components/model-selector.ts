@@ -13,8 +13,8 @@ import type { ModelRegistry } from "../../../core/model-registry.ts";
 import type { SettingsManager } from "../../../core/settings-manager.ts";
 import { theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
+import { TUI_COPY } from "./interactive-strings.ts";
 import { keyHint } from "./keybinding-hints.ts";
-import { TUI_COPY } from "./tui-copy.ts";
 
 interface ModelItem {
 	provider: string;
@@ -94,7 +94,7 @@ export class ModelSelectorComponent extends Container implements Focusable {
 			this.scopeHintText = new Text(this.getScopeHintText(), 0, 0);
 			this.addChild(this.scopeHintText);
 		} else {
-			const hintText = "当前只显示已配置模型提供方的模型。可用 /login 添加新的模型提供方。";
+			const hintText = TUI_COPY.scopedModelsSelector.filterHint;
 			this.addChild(new Text(theme.fg("warning", hintText), 0, 0));
 		}
 		this.addChild(new Spacer(1));
@@ -195,13 +195,22 @@ export class ModelSelectorComponent extends Container implements Focusable {
 	}
 
 	private getScopeText(): string {
-		const allText = this.scope === "all" ? theme.fg("accent", "全部") : theme.fg("muted", "全部");
-		const scopedText = this.scope === "scoped" ? theme.fg("accent", "限定") : theme.fg("muted", "限定");
-		return `${theme.fg("muted", "范围: ")}${allText}${theme.fg("muted", " | ")}${scopedText}`;
+		const allText =
+			this.scope === "all"
+				? theme.fg("accent", TUI_COPY.scopedModelsSelector.scopeAll)
+				: theme.fg("muted", TUI_COPY.scopedModelsSelector.scopeAll);
+		const scopedText =
+			this.scope === "scoped"
+				? theme.fg("accent", TUI_COPY.scopedModelsSelector.scopeScoped)
+				: theme.fg("muted", TUI_COPY.scopedModelsSelector.scopeScoped);
+		return `${theme.fg("muted", TUI_COPY.scopedModelsSelector.scopeLabel)}${allText}${theme.fg("muted", " | ")}${scopedText}`;
 	}
 
 	private getScopeHintText(): string {
-		return keyHint("tui.input.tab", "切换范围") + theme.fg("muted", "（全部/限定）");
+		return (
+			keyHint("tui.input.tab", TUI_COPY.scopedModelsSelector.scopeToggleHint) +
+			theme.fg("muted", `（${TUI_COPY.scopedModelsSelector.scopeAll}/${TUI_COPY.scopedModelsSelector.scopeScoped}）`)
+		);
 	}
 
 	private setScope(scope: ModelScope): void {
@@ -282,7 +291,14 @@ export class ModelSelectorComponent extends Container implements Focusable {
 			const selected = this.filteredModels[this.selectedIndex];
 			this.listContainer.addChild(new Spacer(1));
 			this.listContainer.addChild(
-				new Text(theme.fg("muted", TUI_COPY.scopedModelsSelector.modelName(selected.model.name)), 0, 0),
+				new Text(
+					theme.fg(
+						"muted",
+						TUI_COPY.scopedModelsSelector.modelName(selected?.model.name ?? selected?.model.id ?? ""),
+					),
+					0,
+					0,
+				),
 			);
 		}
 	}

@@ -12,8 +12,8 @@ import {
 } from "@earendil-works/pi-tui";
 import { theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
+import { TUI_COPY } from "./interactive-strings.ts";
 import { keyText } from "./keybinding-hints.ts";
-import { TUI_COPY } from "./tui-copy.ts";
 
 // EnabledIds: null = all enabled (no filter), string[] = explicit ordered list
 type EnabledIds = string[] | null;

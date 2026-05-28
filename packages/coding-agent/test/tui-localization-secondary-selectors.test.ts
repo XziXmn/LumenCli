@@ -38,6 +38,7 @@ describe("TUI secondary selector localization", () => {
 		const output = stripAnsi(selector.render(100).join("\n"));
 		expect(output).toContain("模型范围配置");
 		expect(output).toContain("仅当前会话生效");
+		expect(output).toContain("可保存到设置");
 		expect(output).toContain("全部启用");
 		expect(output).toContain("模型名称：GPT-5");
 		expect(output).not.toContain("Model Configuration");

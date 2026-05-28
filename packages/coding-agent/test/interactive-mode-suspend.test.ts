@@ -34,8 +34,11 @@ describe("InteractiveMode.handleCtrlZ", () => {
 			stop: vi.fn(),
 			requestRender: vi.fn(),
 		};
-		const showStatus = vi.fn();
-		const context: HandleCtrlZThis & { showStatus: (message: string) => void } = { ui, showStatus };
+		const showTaskbarNotice = vi.fn();
+		const context: HandleCtrlZThis & { showTaskbarNotice: (message: string, tone?: "dim" | "warning") => void } = {
+			ui,
+			showTaskbarNotice,
+		};
 		const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
 		Object.defineProperty(process, "platform", {
 			configurable: true,
@@ -54,7 +57,7 @@ describe("InteractiveMode.handleCtrlZ", () => {
 			}
 		}
 
-		expect(showStatus).toHaveBeenCalledWith("Windows 暂不支持挂起到后台");
+		expect(showTaskbarNotice).toHaveBeenCalledWith("Suspend is not supported on Windows yet", "warning");
 		expect(ui.stop).not.toHaveBeenCalled();
 		expect(setIntervalSpy).not.toHaveBeenCalled();
 		expect(processOnSpy).not.toHaveBeenCalledWith("SIGINT", expect.any(Function));
@@ -68,7 +71,10 @@ describe("InteractiveMode.handleCtrlZ", () => {
 			stop: vi.fn(),
 			requestRender: vi.fn(),
 		};
-		const context: HandleCtrlZThis & { showStatus: (message: string) => void } = { ui, showStatus: vi.fn() };
+		const context: HandleCtrlZThis & { showTaskbarNotice: (message: string, tone?: "dim" | "warning") => void } = {
+			ui,
+			showTaskbarNotice: vi.fn(),
+		};
 		const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
 		Object.defineProperty(process, "platform", {
 			configurable: true,
@@ -129,7 +135,10 @@ describe("InteractiveMode.handleCtrlZ", () => {
 			stop: vi.fn(),
 			requestRender: vi.fn(),
 		};
-		const context: HandleCtrlZThis & { showStatus: (message: string) => void } = { ui, showStatus: vi.fn() };
+		const context: HandleCtrlZThis & { showTaskbarNotice: (message: string, tone?: "dim" | "warning") => void } = {
+			ui,
+			showTaskbarNotice: vi.fn(),
+		};
 		const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
 		Object.defineProperty(process, "platform", {
 			configurable: true,
