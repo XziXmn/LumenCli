@@ -154,8 +154,8 @@ describe("ToolExecutionComponent parity", () => {
 
 		const rendered = stripAnsi(component.render(200).join("\n"));
 		expect(rendered.match(/Full output:/g)?.length ?? 0).toBe(1);
-		expect(rendered).toMatch(/line-4000[^\n]*\n[^\S\n]*\n \[Full output:/);
-		expect(rendered).not.toMatch(/line-4000[^\n]*\n[^\S\n]*\n[^\S\n]*\n \[Full output:/);
+		expect(rendered).toContain("  ⎿ ");
+		expect(rendered).toContain("[Full output:");
 		expect(rendered).toContain("Truncated: showing 2000 of 4000 lines");
 		expect(rendered).not.toContain("[Showing lines 2001-4000 of 4000. Full output:");
 	});
@@ -194,7 +194,7 @@ describe("ToolExecutionComponent parity", () => {
 		component.setExpanded(true);
 		const rendered = stripAnsi(component.render(120).join("\n"));
 		expect(rendered).toContain("override call");
-		expect(rendered).toContain("Read 1 line");
+		expect(rendered).toContain("hello");
 	});
 
 	test("inherits missing built-in call renderer slot from the built-in tool", () => {
@@ -365,8 +365,9 @@ describe("ToolExecutionComponent parity", () => {
 		);
 		component.setExpanded(true);
 		const rendered = stripAnsi(component.render(120).join("\n"));
-		expect(rendered).toContain("Read 2 lines");
-		expect(rendered).not.toContain("one\ntwo");
+		expect(rendered).toContain("one");
+		expect(rendered).toContain("two");
+		expect(rendered).not.toContain("two\n\n");
 	});
 
 	test("collapses ordinary read results until expanded", () => {
@@ -391,7 +392,33 @@ describe("ToolExecutionComponent parity", () => {
 
 		component.setExpanded(true);
 		const expanded = stripAnsi(component.render(120).join("\n"));
+		expect(expanded).toContain("  ⎿ ");
 		expect(expanded).toContain("hidden content");
+	});
+
+	test("expanded bash results render inside a response-style indented layer", () => {
+		const component = new ToolExecutionComponent(
+			"bash",
+			"tool-bash-indented",
+			{ command: "ls -la" },
+			{},
+			createBashToolDefinition(process.cwd()),
+			createFakeTui(),
+			process.cwd(),
+		);
+		component.updateResult(
+			{
+				content: [{ type: "text", text: "total 1\nfile.txt\n" }],
+				details: undefined,
+				isError: false,
+			},
+			false,
+		);
+		component.setExpanded(true);
+
+		const rendered = stripAnsi(component.render(120).join("\n"));
+		expect(rendered).toContain("  ⎿ ");
+		expect(rendered).toContain("total 1");
 	});
 
 	for (const scenario of [

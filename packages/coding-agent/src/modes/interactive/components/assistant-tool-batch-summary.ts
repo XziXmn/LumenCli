@@ -1,10 +1,11 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { Container, Spacer, Text } from "@earendil-works/pi-tui";
+import { type Component, Container, Spacer, Text } from "@earendil-works/pi-tui";
+import { createAllToolDefinitions, type ToolName } from "../../../core/tools/index.ts";
 import { getTextOutput } from "../../../core/tools/render-utils.ts";
 import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.ts";
 import { theme } from "../theme/theme.ts";
-import { renderToolResponseLine, renderToolStatusDot, summaryForTool, titleForTool } from "./assistant-tool-summary.ts";
-import { TUI_COPY } from "./tui-copy.ts";
+import { renderToolResponseLine, renderToolStatusDot, titleForTool } from "./assistant-tool-summary.ts";
+import { TUI_COPY } from "./interactive-strings.ts";
 
 type ToolResultMessage = Extract<AgentMessage, { role: "toolResult" }>;
 
@@ -15,20 +16,39 @@ interface BatchItem {
 	result?: ToolResultMessage;
 }
 
+class ToolResponseContainer extends Container {
+	private readonly content: Component;
+
+	constructor(content: Component) {
+		super();
+		this.content = content;
+	}
+
+	override invalidate(): void {
+		this.content.invalidate?.();
+	}
+
+	override render(width: number): string[] {
+		const gutter = theme.fg("dim", "  ⎿ ");
+		const gutterWidth = 4;
+		const contentWidth = Math.max(1, width - gutterWidth);
+		const rawContentLines = this.content.render(contentWidth);
+		const firstVisibleIndex = rawContentLines.findIndex((line) => line.trim().length > 0);
+		const contentLines = firstVisibleIndex === -1 ? [] : rawContentLines.slice(firstVisibleIndex);
+		if (contentLines.length === 0) {
+			return [];
+		}
+		return contentLines.map((line, index) => `${index === 0 ? gutter : " ".repeat(gutterWidth)}${line}`);
+	}
+}
+
 function formatBatchSummary(items: BatchItem[]): string {
 	const completedCount = items.filter((item) => item.result).length;
-	const counts = new Map<string, number>();
-	for (const item of items) {
-		const name = item.toolName;
-		counts.set(name, (counts.get(name) ?? 0) + 1);
-	}
-	const parts: string[] = [];
-	for (const [name, count] of counts) {
-		parts.push(`${count} ${name}`);
-	}
+	const total = items.length;
+	const label = `${total} tool use${total === 1 ? "" : "s"}`;
 	return completedCount === items.length
-		? TUI_COPY.toolSummary.completed(parts.join(", "))
-		: TUI_COPY.toolSummary.runningBatch(parts.join(", "));
+		? TUI_COPY.toolSummary.completed(label)
+		: TUI_COPY.toolSummary.runningBatch(label);
 }
 
 function latestHint(items: BatchItem[], cwd: string): string | undefined {
@@ -54,11 +74,16 @@ export class AssistantToolBatchSummaryComponent extends Container {
 	private expanded = false;
 	private readonly items: BatchItem[];
 	private readonly cwd: string;
+	private readonly addLeadingMargin: boolean;
+	private readonly builtInDefinitions: ReturnType<typeof createAllToolDefinitions>;
+	private wrappedResultRendererComponents = new Map<string, Component>();
 
-	constructor(items: BatchItem[], cwd: string) {
+	constructor(items: BatchItem[], cwd: string, options?: { addLeadingMargin?: boolean }) {
 		super();
 		this.items = items;
 		this.cwd = cwd;
+		this.addLeadingMargin = options?.addLeadingMargin ?? true;
+		this.builtInDefinitions = createAllToolDefinitions(cwd);
 		this.updateDisplay();
 	}
 
@@ -119,6 +144,16 @@ export class AssistantToolBatchSummaryComponent extends Container {
 		this.updateDisplay();
 	}
 
+	private createWrappedResultComponent(key: string, component: Component): Component {
+		const existing = this.wrappedResultRendererComponents.get(key);
+		if (existing === component) {
+			return component;
+		}
+		const wrapped = new ToolResponseContainer(component);
+		this.wrappedResultRendererComponents.set(key, wrapped);
+		return wrapped;
+	}
+
 	private updateDisplay(): void {
 		this.clear();
 		if (this.items.length === 0) return;
@@ -126,25 +161,65 @@ export class AssistantToolBatchSummaryComponent extends Container {
 		const hasError = this.items.some((item) => item.result?.isError);
 		const status = !allCompleted ? "pending" : hasError ? "error" : "success";
 
-		this.addChild(new Spacer(1));
+		if (this.addLeadingMargin) {
+			this.addChild(new Spacer(1));
+		}
 		this.addChild(new Text(`${renderToolStatusDot(status)} ${theme.bold(formatBatchSummary(this.items))}`, 1, 0));
 		const hint = latestHint(this.items, this.cwd);
-		if (hint) {
+		if (hint && !this.expanded) {
 			this.addChild(new Text(renderToolResponseLine(hint), 0, 0));
 		}
 
 		if (!this.expanded) return;
 
 		for (const item of this.items) {
-			this.addChild(new Text(renderToolResponseLine(titleForTool(item.toolName, item.args, this.cwd)), 0, 0));
+			// Expanded batch items are subordinate to the batch heading.
+			// Keep the title bold for readability, but indent it and avoid
+			// repeating the top-level response gutter.
+			const title = titleForTool(item.toolName, item.args, this.cwd);
+			this.addChild(new Text(theme.fg("muted", `    ${theme.bold(title)}`), 0, 0));
+
 			if (!item.result) {
 				this.addChild(new Text(renderToolResponseLine(TUI_COPY.toolSummary.running, "muted"), 0, 0));
 				continue;
 			}
-			this.addChild(new Text(renderToolResponseLine(summaryForTool(item.toolName, item.args, item.result)), 0, 0));
+
+			// Use built-in tool renderer for richer highlighting when available.
+			const definition = this.builtInDefinitions[item.toolName as ToolName];
+			if (definition?.renderResult) {
+				const rawComponent = definition.renderResult(
+					{ content: item.result.content as any, details: item.result.details },
+					{ expanded: true, isPartial: false },
+					theme,
+					{
+						args: item.args,
+						toolCallId: item.result.toolCallId,
+						invalidate: () => {},
+						lastComponent: undefined,
+						state: {},
+						cwd: this.cwd,
+						executionStarted: true,
+						argsComplete: true,
+						isPartial: false,
+						expanded: true,
+						showImages: true,
+						isError: item.result.isError ?? false,
+					},
+				);
+				const component = this.createWrappedResultComponent(item.toolCallId ?? item.toolName, rawComponent);
+				this.addChild(component);
+				continue;
+			}
+
+			// Fallback: plain output text.
 			const output = getTextOutput(item.result, false).trim();
 			if (output) {
-				this.addChild(new Text(theme.fg("toolOutput", output), 4, 0));
+				this.addChild(
+					this.createWrappedResultComponent(
+						item.toolCallId ?? item.toolName,
+						new Text(theme.fg("toolOutput", output), 0, 0),
+					),
+				);
 			}
 		}
 	}

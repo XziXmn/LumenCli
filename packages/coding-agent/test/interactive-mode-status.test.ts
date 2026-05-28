@@ -12,19 +12,15 @@ import type { AutocompleteProviderFactory } from "../src/core/extensions/types.t
 import type { ResourceDiagnostic } from "../src/core/resource-loader.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../src/core/slash-commands.ts";
 import type { SourceInfo } from "../src/core/source-info.ts";
+import { AssistantMessageComponent } from "../src/modes/interactive/components/assistant-message.ts";
 import {
 	createProgressSurfaceWorkingState,
 	ProgressSurfaceComponent,
 } from "../src/modes/interactive/components/progress-surface.ts";
+import { SettingsSelectorComponent } from "../src/modes/interactive/components/settings-selector.ts";
 import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 import { getMarkdownTheme, initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
-
-function renderLastLine(container: Container, width = 120): string {
-	const last = container.children[container.children.length - 1];
-	if (!last) return "";
-	return last.render(width).join("\n");
-}
 
 function renderAll(container: Container, width = 120): string {
 	return container.children.flatMap((child) => child.render(width)).join("\n");
@@ -59,18 +55,114 @@ function createLiveTodoSnapshot(spinner: unknown) {
 }
 
 function makeBottomPaneAware(fakeThis: any): any {
-	if (!fakeThis.bottomPaneGapContainer) {
-		fakeThis.bottomPaneGapContainer = new Container();
+	const taskbarContent = fakeThis.taskbarContentContainer ?? new Container();
+	const pendingContent = fakeThis.pendingContentContainer ?? new Container();
+	const composerGap = fakeThis.composerGapContainer ?? new Container();
+	const editorContainer = fakeThis.editorContainer ?? new Container();
+	const extensionContent = fakeThis.extensionAreaContainer ?? new Container();
+	const footerContent = fakeThis.footerContentContainer ?? new Container();
+	const bottomPaneContainer =
+		fakeThis.bottomPaneContainer ??
+		({
+			clear: vi.fn(),
+			addChild: vi.fn(),
+		} as any);
+	const taskbarRow =
+		fakeThis.taskbarRowContainer ??
+		({
+			clear: vi.fn(),
+			addChild: vi.fn(),
+		} as any);
+	const pendingRow =
+		fakeThis.pendingRowContainer ??
+		({
+			clear: vi.fn(),
+			addChild: vi.fn(),
+		} as any);
+	const composerRow =
+		fakeThis.composerRowContainer ??
+		({
+			clear: vi.fn(),
+			addChild: vi.fn(),
+		} as any);
+	const extensionRow =
+		fakeThis.extensionRowContainer ??
+		({
+			clear: vi.fn(),
+			addChild: vi.fn(),
+		} as any);
+	const passiveFooterRow =
+		fakeThis.passiveFooterRowContainer ??
+		({
+			clear: vi.fn(),
+			addChild: vi.fn(),
+		} as any);
+	if (!fakeThis.bottomPane) {
+		fakeThis.bottomPane = {
+			container: bottomPaneContainer,
+			taskbarRow,
+			pendingRow,
+			composerRow,
+			extensionRow,
+			passiveFooterRow,
+			gap: composerGap,
+			taskbarContent,
+			pendingContent,
+			composerContent: editorContainer,
+			extensionContent,
+			footerContent,
+		};
 	}
-	if (!fakeThis.statusContainer) {
-		fakeThis.statusContainer = new Container();
-	}
-	if (!fakeThis.pendingMessagesContainer) {
-		fakeThis.pendingMessagesContainer = new Container();
-	}
+	fakeThis.bottomPaneContainer ??= fakeThis.bottomPane.container;
+	fakeThis.taskbarRowContainer ??= fakeThis.bottomPane.taskbarRow;
+	fakeThis.pendingRowContainer ??= fakeThis.bottomPane.pendingRow;
+	fakeThis.composerRowContainer ??= fakeThis.bottomPane.composerRow;
+	fakeThis.extensionRowContainer ??= fakeThis.bottomPane.extensionRow;
+	fakeThis.passiveFooterRowContainer ??= fakeThis.bottomPane.passiveFooterRow;
+	fakeThis.composerGapContainer ??= fakeThis.bottomPane.gap;
+	fakeThis.taskbarContentContainer ??= fakeThis.bottomPane.taskbarContent;
+	fakeThis.pendingContentContainer ??= fakeThis.bottomPane.pendingContent;
+	fakeThis.editorContainer ??= fakeThis.bottomPane.composerContent;
+	fakeThis.extensionAreaContainer ??= fakeThis.bottomPane.extensionContent;
+	fakeThis.footerContentContainer ??= fakeThis.bottomPane.footerContent;
 	if (!fakeThis.syncBottomPaneGap) {
 		fakeThis.syncBottomPaneGap = function () {
 			return (InteractiveMode as any).prototype.syncBottomPaneGap.call(this);
+		};
+	}
+	if (!fakeThis.replaceBottomPaneContent) {
+		fakeThis.replaceBottomPaneContent = function (target: Container, render: (target: Container) => void) {
+			return (InteractiveMode as any).prototype.replaceBottomPaneContent.call(this, target, render);
+		};
+	}
+	if (!fakeThis.getBottomPaneSlot) {
+		fakeThis.getBottomPaneSlot = function (target: "taskbar" | "pending") {
+			return (InteractiveMode as any).prototype.getBottomPaneSlot.call(this, target);
+		};
+	}
+	if (!fakeThis.updateTaskbarContent) {
+		fakeThis.updateTaskbarContent = function (render: (target: Container) => void) {
+			return (InteractiveMode as any).prototype.updateTaskbarContent.call(this, render);
+		};
+	}
+	if (!fakeThis.updatePendingContent) {
+		fakeThis.updatePendingContent = function (render: (target: Container) => void) {
+			return (InteractiveMode as any).prototype.updatePendingContent.call(this, render);
+		};
+	}
+	if (!fakeThis.updatePassiveFooterContent) {
+		fakeThis.updatePassiveFooterContent = function (content: any) {
+			return (InteractiveMode as any).prototype.updatePassiveFooterContent.call(this, content);
+		};
+	}
+	if (!fakeThis.setComposerContent) {
+		fakeThis.setComposerContent = function (component: any, options?: any) {
+			return (InteractiveMode as any).prototype.setComposerContent.call(this, component, options);
+		};
+	}
+	if (!fakeThis.restoreComposerEditor) {
+		fakeThis.restoreComposerEditor = function (options?: any) {
+			return (InteractiveMode as any).prototype.restoreComposerEditor.call(this, options);
 		};
 	}
 	return fakeThis;
@@ -81,56 +173,11 @@ type ExtensionFixture = {
 	sourceInfo?: SourceInfo;
 };
 
-describe("InteractiveMode.showStatus", () => {
+describe("InteractiveMode compatibility helpers", () => {
 	beforeAll(() => {
-		// showStatus uses the global theme instance
 		initTheme("dark");
 	});
 
-	test("coalesces immediately-sequential status messages", () => {
-		const fakeThis: any = {
-			chatContainer: new Container(),
-			ui: { requestRender: vi.fn() },
-			lastStatusSpacer: undefined,
-			lastStatusText: undefined,
-			requestRenderRespectingInput: vi.fn(),
-		};
-
-		(InteractiveMode as any).prototype.showStatus.call(fakeThis, "STATUS_ONE");
-		expect(fakeThis.chatContainer.children).toHaveLength(2);
-		expect(renderLastLine(fakeThis.chatContainer)).toContain("STATUS_ONE");
-
-		(InteractiveMode as any).prototype.showStatus.call(fakeThis, "STATUS_TWO");
-		// second status updates the previous line instead of appending
-		expect(fakeThis.chatContainer.children).toHaveLength(2);
-		expect(renderLastLine(fakeThis.chatContainer)).toContain("STATUS_TWO");
-		expect(renderLastLine(fakeThis.chatContainer)).not.toContain("STATUS_ONE");
-	});
-
-	test("appends a new status line if something else was added in between", () => {
-		const fakeThis: any = {
-			chatContainer: new Container(),
-			ui: { requestRender: vi.fn() },
-			lastStatusSpacer: undefined,
-			lastStatusText: undefined,
-			requestRenderRespectingInput: vi.fn(),
-		};
-
-		(InteractiveMode as any).prototype.showStatus.call(fakeThis, "STATUS_ONE");
-		expect(fakeThis.chatContainer.children).toHaveLength(2);
-
-		// Something else gets added to the chat in between status updates
-		fakeThis.chatContainer.addChild({ render: () => ["OTHER"], invalidate: () => {} });
-		expect(fakeThis.chatContainer.children).toHaveLength(3);
-
-		(InteractiveMode as any).prototype.showStatus.call(fakeThis, "STATUS_TWO");
-		// adds spacer + text
-		expect(fakeThis.chatContainer.children).toHaveLength(5);
-		expect(renderLastLine(fakeThis.chatContainer)).toContain("STATUS_TWO");
-	});
-});
-
-describe("InteractiveMode compatibility helpers", () => {
 	test("/compat is exposed as a built-in slash command", () => {
 		expect(BUILTIN_SLASH_COMMANDS.some((command) => command.name === "compat")).toBe(true);
 	});
@@ -145,14 +192,14 @@ describe("InteractiveMode compatibility helpers", () => {
 				extensionErrors: [],
 				skillDiagnostics: [],
 			}),
-			formatCompatibilityDiagnostics: vi.fn(() => ["[Compatibility]", "  Everything is fine."]),
+			formatCompatibilityDiagnostics: vi.fn(() => ["[兼容性]", "  当前一切正常。"]),
 		};
 
 		await (InteractiveMode as any).prototype.handleCompatibilityCommand.call(fakeThis);
 
 		expect(fakeThis.collectCompatibilityDiagnostics).toHaveBeenCalledTimes(1);
 		expect(fakeThis.formatCompatibilityDiagnostics).toHaveBeenCalledTimes(1);
-		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toContain("Everything is fine.");
+		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toContain("当前一切正常。");
 		expect(fakeThis.requestRenderRespectingInput).toHaveBeenCalledTimes(1);
 	});
 
@@ -198,8 +245,8 @@ describe("InteractiveMode compatibility helpers", () => {
 		await (InteractiveMode as any).prototype.showCompatibilityReminderIfNeeded.call(fakeThis, undefined);
 
 		expect(fakeThis.showWarning).toHaveBeenCalledTimes(1);
-		expect(fakeThis.showWarning.mock.calls[0][0]).toContain("Run /compat");
-		expect(fakeThis.showWarning.mock.calls[0][0]).toContain("package/plugin compatibility issue");
+		expect(fakeThis.showWarning.mock.calls[0][0]).toContain("运行 /compat");
+		expect(fakeThis.showWarning.mock.calls[0][0]).toContain("插件/包兼容性问题");
 	});
 
 	test("showCompatibilityReminderIfNeeded merges startup reevaluation summary into the warning", async () => {
@@ -211,7 +258,7 @@ describe("InteractiveMode compatibility helpers", () => {
 			}),
 			getCompatibilityIssueCounts: (InteractiveMode as any).prototype.getCompatibilityIssueCounts,
 			showWarning: vi.fn(),
-			showStatus: vi.fn(),
+			showTaskbarNotice: vi.fn(),
 		};
 
 		await (InteractiveMode as any).prototype.showCompatibilityReminderIfNeeded.call(fakeThis, {
@@ -228,9 +275,9 @@ describe("InteractiveMode compatibility helpers", () => {
 		});
 
 		expect(fakeThis.showWarning).toHaveBeenCalledTimes(1);
-		expect(fakeThis.showWarning.mock.calls[0][0]).toContain("Re-evaluated 1 installed plugin/package source");
-		expect(fakeThis.showWarning.mock.calls[0][0]).toContain("Run /compat");
-		expect(fakeThis.showStatus).not.toHaveBeenCalled();
+		expect(fakeThis.showWarning.mock.calls[0][0]).toContain("已重新评估 1 个已安装插件/包来源");
+		expect(fakeThis.showWarning.mock.calls[0][0]).toContain("运行 /compat");
+		expect(fakeThis.showTaskbarNotice).not.toHaveBeenCalled();
 	});
 
 	test("showCompatibilityReminderIfNeeded shows a status notice for clean reevaluated packages", async () => {
@@ -242,7 +289,7 @@ describe("InteractiveMode compatibility helpers", () => {
 			}),
 			getCompatibilityIssueCounts: (InteractiveMode as any).prototype.getCompatibilityIssueCounts,
 			showWarning: vi.fn(),
-			showStatus: vi.fn(),
+			showTaskbarNotice: vi.fn(),
 		};
 
 		await (InteractiveMode as any).prototype.showCompatibilityReminderIfNeeded.call(fakeThis, {
@@ -258,8 +305,8 @@ describe("InteractiveMode compatibility helpers", () => {
 			],
 		});
 
-		expect(fakeThis.showStatus).toHaveBeenCalledTimes(1);
-		expect(fakeThis.showStatus.mock.calls[0][0]).toContain("Re-evaluated 1 installed plugin/package source");
+		expect(fakeThis.showTaskbarNotice).toHaveBeenCalledTimes(1);
+		expect(fakeThis.showTaskbarNotice.mock.calls[0][0]).toContain("已重新评估 1 个已安装插件/包来源");
 		expect(fakeThis.showWarning).not.toHaveBeenCalled();
 	});
 
@@ -299,6 +346,147 @@ describe("InteractiveMode compatibility helpers", () => {
 	});
 });
 
+describe("InteractiveMode command feedback routing", () => {
+	test("handleExportCommand routes success feedback to the taskbar notice", async () => {
+		const fakeThis: any = {
+			getPathCommandArgument: vi.fn(() => "session.jsonl"),
+			session: {
+				exportToJsonl: vi.fn(() => "/tmp/session.jsonl"),
+				exportToHtml: vi.fn(),
+			},
+			showTaskbarNotice: vi.fn(),
+			showError: vi.fn(),
+		};
+
+		await (InteractiveMode as any).prototype.handleExportCommand.call(fakeThis, "/export session.jsonl");
+
+		expect(fakeThis.session.exportToJsonl).toHaveBeenCalledWith("session.jsonl");
+		expect(fakeThis.showTaskbarNotice).toHaveBeenCalledWith("Exported session to: /tmp/session.jsonl", "dim", 3200);
+		expect(fakeThis.showError).not.toHaveBeenCalled();
+	});
+
+	test("handleImportCommand routes success feedback to the taskbar notice", async () => {
+		const fakeThis: any = {
+			getPathCommandArgument: vi.fn(() => "/tmp/input.jsonl"),
+			showExtensionConfirm: vi.fn().mockResolvedValue(true),
+			loadingAnimation: undefined,
+			renderWorkingArea: vi.fn(),
+			runtimeHost: {
+				importFromJsonl: vi.fn().mockResolvedValue({ cancelled: false }),
+			},
+			renderCurrentSessionState: vi.fn(),
+			showTaskbarNotice: vi.fn(),
+			showError: vi.fn(),
+		};
+
+		await (InteractiveMode as any).prototype.handleImportCommand.call(fakeThis, "/import /tmp/input.jsonl");
+
+		expect(fakeThis.runtimeHost.importFromJsonl).toHaveBeenCalledWith("/tmp/input.jsonl");
+		expect(fakeThis.renderCurrentSessionState).toHaveBeenCalledTimes(1);
+		expect(fakeThis.showTaskbarNotice).toHaveBeenCalledWith("Imported session from: /tmp/input.jsonl", "dim", 3200);
+		expect(fakeThis.showError).not.toHaveBeenCalled();
+	});
+
+	test("handleNameCommand routes current and updated name feedback to the taskbar notice", () => {
+		const fakeThis: any = {
+			sessionManager: {
+				getSessionName: vi.fn(() => "Current Session"),
+			},
+			session: {
+				setSessionName: vi.fn(),
+			},
+			showTaskbarNotice: vi.fn(),
+			showWarning: vi.fn(),
+		};
+
+		(InteractiveMode as any).prototype.handleNameCommand.call(fakeThis, "/name");
+		expect(fakeThis.showTaskbarNotice).toHaveBeenCalledWith("Session name: Current Session", "dim", 3200);
+
+		(InteractiveMode as any).prototype.handleNameCommand.call(fakeThis, "/name New Session");
+		expect(fakeThis.session.setSessionName).toHaveBeenCalledWith("New Session");
+		expect(fakeThis.showTaskbarNotice).toHaveBeenCalledWith("Set session name to: New Session", "dim", 3200);
+		expect(fakeThis.showWarning).not.toHaveBeenCalled();
+	});
+});
+
+describe("InteractiveMode changelog helpers", () => {
+	beforeAll(() => {
+		initTheme("dark");
+	});
+
+	test("handleChangelogCommand renders the Lumen changelog heading", () => {
+		const fakeThis: any = {
+			chatContainer: new Container(),
+			requestRenderRespectingInput: vi.fn(),
+			getMarkdownThemeWithSettings: vi.fn(() => getMarkdownTheme()),
+		};
+
+		(InteractiveMode as any).prototype.handleChangelogCommand.call(fakeThis);
+
+		const output = normalizeRenderedOutput(fakeThis.chatContainer);
+		expect(output).toContain("Lumen 更新日志");
+	});
+
+	test("showNewVersionNotification points to the Lumen changelog", () => {
+		const fakeThis: any = {
+			chatContainer: new Container(),
+			ui: { requestRender: vi.fn() },
+		};
+
+		(InteractiveMode as any).prototype.showNewVersionNotification.call(fakeThis, "0.75.6");
+
+		const output = normalizeRenderedOutput(fakeThis.chatContainer);
+		expect(output).toContain("发现新版本");
+		expect(output).toContain("Lumen 更新日志");
+		expect(output).not.toContain("pi-mono/blob/main/packages/coding-agent/CHANGELOG.md");
+	});
+
+	test("showSettingsSelector reads tool detail settings from settings manager", () => {
+		const showSelector = vi.fn();
+		const fakeThis: any = {
+			showSelector,
+			session: {
+				autoCompactionEnabled: true,
+				steeringMode: "one-at-a-time",
+				followUpMode: "one-at-a-time",
+				thinkingLevel: "medium",
+				getAvailableThinkingLevels: () => ["off", "medium"],
+				agent: {},
+			},
+			settingsManager: {
+				getCompactionThresholdPercent: () => 80,
+				getShowImages: () => true,
+				getImageWidthCells: () => 60,
+				getImageAutoResize: () => true,
+				getBlockImages: () => false,
+				getEnableSkillCommands: () => true,
+				getTransport: () => "auto",
+				getTheme: () => "dark",
+				getThinkingDisplayMode: () => "collapsed",
+				getToolDisplayMode: () => "expanded",
+				getCollapseChangelog: () => false,
+				getEnableInstallTelemetry: () => true,
+				getDoubleEscapeAction: () => "tree",
+				getTreeFilterMode: () => "default",
+				getShowHardwareCursor: () => true,
+				getEditorPaddingX: () => 0,
+				getAutocompleteMaxVisible: () => 5,
+				getQuietStartup: () => false,
+				getClearOnShrink: () => false,
+				getShowTerminalProgress: () => false,
+				getWarnings: () => ({}),
+			},
+		};
+
+		(InteractiveMode as any).prototype.showSettingsSelector.call(fakeThis);
+
+		expect(showSelector).toHaveBeenCalledTimes(1);
+		const create = showSelector.mock.calls[0][0];
+		const result = create(() => {});
+		expect(result.component.constructor.name).toBe(SettingsSelectorComponent.name);
+	});
+});
+
 describe("InteractiveMode.setToolsExpanded", () => {
 	test("applies expansion state to the active header and chat entries", () => {
 		const header = { setExpanded: vi.fn() };
@@ -319,6 +507,44 @@ describe("InteractiveMode.setToolsExpanded", () => {
 		expect(chatChild.setExpanded).toHaveBeenCalledWith(true);
 		expect(fakeThis.requestRenderRespectingInput).toHaveBeenCalledTimes(1);
 	});
+
+	test("does not force assistant thinking blocks into full mode when expanding tools", () => {
+		const header = { setExpanded: vi.fn() };
+		const assistantMessage = new AssistantMessageComponent({
+			role: "assistant",
+			content: [{ type: "thinking", thinking: "让我检查一下相关文件。" }],
+			api: "openai-responses",
+			provider: "openai",
+			model: "gpt-4o-mini",
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: Date.now(),
+		} as any);
+		const toolChild = { setExpanded: vi.fn() };
+		const fakeThis: any = {
+			toolOutputExpanded: false,
+			customHeader: undefined,
+			builtInHeader: header,
+			chatContainer: { children: [assistantMessage, toolChild] },
+			ui: { requestRender: vi.fn() },
+			requestRenderRespectingInput: vi.fn(),
+		};
+
+		expect(assistantMessage.getThinkingDisplayMode()).toBe("summary");
+
+		(InteractiveMode as any).prototype.setToolsExpanded.call(fakeThis, true);
+
+		expect(assistantMessage.getThinkingDisplayMode()).toBe("summary");
+		expect(toolChild.setExpanded).toHaveBeenCalledWith(true);
+		expect(fakeThis.requestRenderRespectingInput).toHaveBeenCalledTimes(1);
+	});
 });
 
 describe("InteractiveMode main layout", () => {
@@ -334,8 +560,8 @@ describe("InteractiveMode main layout", () => {
 			clear: vi.fn(),
 			addChild: vi.fn(),
 		};
-		const composerFrameContainer = {
-			id: "composer-frame",
+		const composerRowContainer = {
+			id: "composer-row",
 			clear: vi.fn(),
 			addChild: vi.fn(),
 		};
@@ -349,7 +575,15 @@ describe("InteractiveMode main layout", () => {
 			clear: vi.fn(),
 			addChild: vi.fn(),
 		};
-		const fakeThis: any = {
+		const footerContentContainer = {
+			id: "footer-content",
+			clear: vi.fn(),
+			addChild: vi.fn(),
+		};
+		const taskbarContentContainer = { id: "taskbar-content" };
+		const pendingContentContainer = { id: "pending-content" };
+		const composerGapContainer = { id: "bottom-gap" };
+		const fakeThis: any = makeBottomPaneAware({
 			ui,
 			chatContainer: { id: "chat" },
 			bottomPaneContainer: {
@@ -359,19 +593,20 @@ describe("InteractiveMode main layout", () => {
 			},
 			taskbarRowContainer,
 			pendingRowContainer,
-			composerFrameContainer,
+			composerRowContainer,
 			extensionRowContainer,
 			passiveFooterRowContainer,
-			bottomPaneGapContainer: { id: "bottom-gap" },
-			statusContainer: { id: "status" },
-			pendingMessagesContainer: { id: "pending" },
+			composerGapContainer,
+			taskbarContentContainer,
+			pendingContentContainer,
 			editorContainer: { id: "editor" },
 			extensionAreaContainer: { id: "extension-area" },
+			footerContentContainer,
 			customFooter: undefined,
 			footer: { id: "footer" },
 			renderWidgets: vi.fn(),
 			syncBottomPaneGap: vi.fn(),
-		};
+		});
 
 		(InteractiveMode as any).prototype.attachMainLayout.call(fakeThis);
 
@@ -380,20 +615,22 @@ describe("InteractiveMode main layout", () => {
 		const addedChildren = fakeThis.bottomPaneContainer.addChild.mock.calls.map((call: unknown[]) => call[0]);
 		expect(addedChildren[0]).toBe(taskbarRowContainer);
 		expect(addedChildren[1]).toBe(pendingRowContainer);
-		expect(addedChildren[2]).toBe(composerFrameContainer);
+		expect(addedChildren[2]).toBe(composerRowContainer);
 		expect(addedChildren[3]).toBe(extensionRowContainer);
 		expect(addedChildren[4]).toBe(passiveFooterRowContainer);
 		expect(taskbarRowContainer.clear).toHaveBeenCalledTimes(1);
-		expect(taskbarRowContainer.addChild).toHaveBeenCalledWith(fakeThis.statusContainer);
+		expect(taskbarRowContainer.addChild).toHaveBeenCalledWith(taskbarContentContainer);
 		expect(pendingRowContainer.clear).toHaveBeenCalledTimes(1);
-		expect(pendingRowContainer.addChild).toHaveBeenCalledWith(fakeThis.pendingMessagesContainer);
-		expect(composerFrameContainer.clear).toHaveBeenCalledTimes(1);
-		expect(composerFrameContainer.addChild).toHaveBeenNthCalledWith(1, fakeThis.bottomPaneGapContainer);
-		expect(composerFrameContainer.addChild).toHaveBeenNthCalledWith(2, fakeThis.editorContainer);
+		expect(pendingRowContainer.addChild).toHaveBeenCalledWith(pendingContentContainer);
+		expect(composerRowContainer.clear).toHaveBeenCalledTimes(1);
+		expect(composerRowContainer.addChild).toHaveBeenNthCalledWith(1, composerGapContainer);
+		expect(composerRowContainer.addChild).toHaveBeenNthCalledWith(2, fakeThis.editorContainer);
 		expect(extensionRowContainer.clear).toHaveBeenCalledTimes(1);
 		expect(extensionRowContainer.addChild).toHaveBeenCalledWith(fakeThis.extensionAreaContainer);
 		expect(passiveFooterRowContainer.clear).toHaveBeenCalledTimes(1);
-		expect(passiveFooterRowContainer.addChild).toHaveBeenCalledWith(fakeThis.footer);
+		expect(footerContentContainer.clear).toHaveBeenCalledTimes(1);
+		expect(footerContentContainer.addChild).toHaveBeenCalledWith(fakeThis.footer);
+		expect(passiveFooterRowContainer.addChild).toHaveBeenCalledWith(footerContentContainer);
 		expect(fakeThis.syncBottomPaneGap).toHaveBeenCalledTimes(1);
 		expect(ui.addChild.mock.calls.map((call: unknown[]) => call[0])).toEqual([
 			fakeThis.chatContainer,
@@ -401,24 +638,29 @@ describe("InteractiveMode main layout", () => {
 		]);
 	});
 
-	test("syncBottomPaneGap only inserts spacing when status or pending rows are present", () => {
+	test("syncBottomPaneGap always inserts a breathing gap between transcript and composer", () => {
 		const gapContainer = new Container();
+		const taskbarContent = new Container();
+		const pendingContent = new Container();
 		const fakeThis: any = {
-			bottomPaneGapContainer: gapContainer,
-			statusContainer: new Container(),
-			pendingMessagesContainer: new Container(),
+			bottomPane: {
+				gap: gapContainer,
+				taskbarContent,
+				pendingContent,
+			},
 		};
 
-		(InteractiveMode as any).prototype.syncBottomPaneGap.call(fakeThis);
-		expect(gapContainer.children).toHaveLength(0);
-
-		fakeThis.statusContainer.addChild(new Text("status", 0, 0));
 		(InteractiveMode as any).prototype.syncBottomPaneGap.call(fakeThis);
 		expect(gapContainer.children).toHaveLength(1);
 		expect(gapContainer.children[0]).toBeInstanceOf(Spacer);
 
-		fakeThis.statusContainer.clear();
-		fakeThis.pendingMessagesContainer.addChild(new Text("pending", 0, 0));
+		taskbarContent.addChild(new Text("status", 0, 0));
+		(InteractiveMode as any).prototype.syncBottomPaneGap.call(fakeThis);
+		expect(gapContainer.children).toHaveLength(1);
+		expect(gapContainer.children[0]).toBeInstanceOf(Spacer);
+
+		taskbarContent.clear();
+		pendingContent.addChild(new Text("pending", 0, 0));
 		(InteractiveMode as any).prototype.syncBottomPaneGap.call(fakeThis);
 		expect(gapContainer.children).toHaveLength(1);
 		expect(gapContainer.children[0]).toBeInstanceOf(Spacer);
@@ -462,26 +704,45 @@ describe("InteractiveMode main layout", () => {
 	test("setExtensionFooter swaps the footer inside the passive footer row", () => {
 		const builtInFooter = { id: "built-in-footer" };
 		const passiveFooterRowContainer = new Container();
-		passiveFooterRowContainer.addChild(builtInFooter as any);
+		const footerContentContainer = new Container();
+		footerContentContainer.addChild(builtInFooter as any);
+		passiveFooterRowContainer.addChild(footerContentContainer);
 
 		const customFooter = { id: "custom-footer", dispose: vi.fn() };
 		const factory = vi.fn(() => customFooter as any);
-		const fakeThis: any = {
+		const fakeThis: any = makeBottomPaneAware({
+			bottomPane: {
+				container: new Container(),
+				taskbarRow: new Container(),
+				pendingRow: new Container(),
+				composerRow: new Container(),
+				extensionRow: new Container(),
+				passiveFooterRow: passiveFooterRowContainer,
+				gap: new Container(),
+				taskbarContent: new Container(),
+				pendingContent: new Container(),
+				composerContent: new Container(),
+				extensionContent: new Container(),
+				footerContent: footerContentContainer,
+			},
 			passiveFooterRowContainer,
+			footerContentContainer,
 			customFooter: undefined,
 			footer: builtInFooter,
 			footerDataProvider: {},
 			ui: { requestRender: vi.fn() },
-		};
+		});
 
 		(InteractiveMode as any).prototype.setExtensionFooter.call(fakeThis, factory);
 		expect(factory).toHaveBeenCalledTimes(1);
-		expect(passiveFooterRowContainer.children[0]).toBe(customFooter);
+		expect(passiveFooterRowContainer.children[0]).toBe(footerContentContainer);
+		expect(footerContentContainer.children[0]).toBe(customFooter);
 		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(1);
 
 		(InteractiveMode as any).prototype.setExtensionFooter.call(fakeThis, undefined);
 		expect(customFooter.dispose).toHaveBeenCalledTimes(1);
-		expect(passiveFooterRowContainer.children[0]).toBe(builtInFooter);
+		expect(passiveFooterRowContainer.children[0]).toBe(footerContentContainer);
+		expect(footerContentContainer.children[0]).toBe(builtInFooter);
 		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(2);
 	});
 });
@@ -755,7 +1016,7 @@ describe("InteractiveMode spinner helpers", () => {
 		};
 
 		const state = (InteractiveMode as any).prototype.buildDefaultSpinnerState.call(fakeThis);
-		expect(state?.tip).toBe("Enter 立即插入（工具间隙就发出），Alt+Enter 排队等本轮结束再发");
+		expect(state?.tip).toBe("Enter 会在下一个工具间隙发送，Alt+Enter 会排队到本轮结束后再发");
 	});
 
 	test("buildDefaultSpinnerState prefers clear tip after 30 minutes when no next task exists", () => {
@@ -793,7 +1054,7 @@ describe("InteractiveMode spinner helpers", () => {
 		};
 
 		const state = (InteractiveMode as any).prototype.buildDefaultSpinnerState.call(fakeThis);
-		expect(state?.tip).toBe("切换话题时可以用 /clear 重开会话，释放上下文");
+		expect(state?.tip).toBe("切换话题前可先用 /clear 释放上下文");
 	});
 
 	test("buildDefaultSpinnerState hides timed tips when spinner tips are disabled", () => {
@@ -837,12 +1098,12 @@ describe("InteractiveMode spinner helpers", () => {
 	test("setWorkingDetails stores component details and renders them into the working area", () => {
 		initTheme("dark");
 
-		const statusContainer = new Container();
+		const taskbarContentContainer = new Container();
 		const requestRenderUnlessInputSuppressed = vi.fn();
 		const fakeThis: any = makeBottomPaneAware({
 			workingDetailsLines: undefined,
 			workingDetailsComponent: undefined,
-			statusContainer,
+			taskbarContentContainer,
 			workingVisible: false,
 			session: { isStreaming: false },
 			getProgressSurfaceSnapshot: () => ({
@@ -867,7 +1128,7 @@ describe("InteractiveMode spinner helpers", () => {
 		});
 
 		expect(fakeThis.workingDetailsComponent).toBeDefined();
-		expect(renderAll(statusContainer)).toContain("DETAILS");
+		expect(renderAll(taskbarContentContainer)).toContain("DETAILS");
 		expect(requestRenderUnlessInputSuppressed).toHaveBeenCalledTimes(1);
 	});
 
@@ -875,9 +1136,9 @@ describe("InteractiveMode spinner helpers", () => {
 		initTheme("dark");
 
 		const working = createProgressSurfaceWorkingState(0);
-		const statusContainer = new Container();
+		const taskbarContentContainer = new Container();
 		const fakeThis: any = makeBottomPaneAware({
-			statusContainer,
+			taskbarContentContainer,
 			workingVisible: true,
 			session: {
 				isStreaming: true,
@@ -905,16 +1166,16 @@ describe("InteractiveMode spinner helpers", () => {
 
 		(InteractiveMode as any).prototype.renderWorkingArea.call(fakeThis);
 
-		const output = normalizeRenderedOutput(statusContainer);
+		const output = normalizeRenderedOutput(taskbarContentContainer);
 		expect(output).toContain("整理接口定义...");
-		expect(output).toContain("计划");
+		expect(output).toContain("Plan");
 		expect(output).not.toContain("LOADER ROW");
 	});
 
 	test("renderWorkingArea clears the taskbar area when no active surface or details remain", () => {
-		const statusContainer = new Container();
-		const fakeThis: any = {
-			statusContainer,
+		const taskbarContentContainer = new Container();
+		const fakeThis: any = makeBottomPaneAware({
+			taskbarContentContainer,
 			workingVisible: false,
 			session: {
 				isStreaming: false,
@@ -928,18 +1189,23 @@ describe("InteractiveMode spinner helpers", () => {
 				spinner: undefined,
 				expanded: false,
 			}),
-		};
+		});
 
 		(InteractiveMode as any).prototype.renderWorkingArea.call(fakeThis);
 
-		expect(statusContainer.children).toHaveLength(0);
+		expect(taskbarContentContainer.children).toHaveLength(0);
 	});
 
 	test("updatePendingMessagesDisplay renders queued prompts as a separate prompt-side queue slot", () => {
 		initTheme("dark");
 
+		const pendingContent = new Container();
 		const fakeThis: any = makeBottomPaneAware({
-			pendingMessagesContainer: new Container(),
+			bottomPane: {
+				pendingContent,
+				taskbarContent: new Container(),
+				gap: new Container(),
+			},
 			pendingBashComponents: [],
 			getAllQueuedMessages: () => ({
 				steering: ["先看 retry 逻辑"],
@@ -952,18 +1218,23 @@ describe("InteractiveMode spinner helpers", () => {
 
 		(InteractiveMode as any).prototype.updatePendingMessagesDisplay.call(fakeThis);
 
-		const output = normalizeRenderedOutput(fakeThis.pendingMessagesContainer);
-		expect(output).toContain("共有 2 条排队命令");
-		expect(output).toContain("⎿ 后续消息: 完成后补文档");
-		expect(output).toContain("⎿ Alt+Up 可编辑全部排队消息");
+		const output = normalizeRenderedOutput(pendingContent);
+		expect(output).toContain("2 queued commands");
+		expect(output).toContain("⎿ Follow-up: 完成后补文档");
+		expect(output).toContain("⎿ Alt+Up to edit all queued messages");
 		expect(output).not.toContain("Queued 2 · 1 steer · 1 follow-up");
 		expect(output).not.toContain("↳");
 	});
 
 	test("updatePendingMessagesDisplay keeps queued commands out of the main transcript container", () => {
+		const pendingContent = new Container();
 		const fakeThis: any = makeBottomPaneAware({
 			chatContainer: new Container(),
-			pendingMessagesContainer: new Container(),
+			bottomPane: {
+				pendingContent,
+				taskbarContent: new Container(),
+				gap: new Container(),
+			},
 			pendingBashComponents: [],
 			getAllQueuedMessages: () => ({
 				steering: ["先看 retry 逻辑"],
@@ -979,7 +1250,7 @@ describe("InteractiveMode spinner helpers", () => {
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toContain("TRANSCRIPT");
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).not.toContain("排队命令");
-		expect(normalizeRenderedOutput(fakeThis.pendingMessagesContainer)).toContain("排队命令");
+		expect(normalizeRenderedOutput(pendingContent)).toContain("queued commands");
 	});
 
 	test("setSpinnerBanner auto-clears timed success banners without clearing newer banners", () => {
@@ -992,11 +1263,12 @@ describe("InteractiveMode spinner helpers", () => {
 					return (InteractiveMode as any).prototype.clearSpinnerBannerTimeout.call(this);
 				},
 				syncProgressSurfaceRefreshLoop: vi.fn(),
+				requestRenderUnlessInputSuppressed: vi.fn(),
 				ui: { requestRender: vi.fn() },
 			};
 
-			const successBanner = { kind: "success", title: "接口已恢复" };
-			const warningBanner = { kind: "warning", title: "网络连接不稳定，正在恢复会话流" };
+			const successBanner = { kind: "success", title: "Connection restored" };
+			const warningBanner = { kind: "warning", title: "Connection unstable, recovering stream" };
 
 			(InteractiveMode as any).prototype.setSpinnerBanner.call(fakeThis, successBanner, { expiresMs: 1500 });
 			expect(fakeThis.spinnerBanner).toEqual(successBanner);
@@ -1024,10 +1296,11 @@ describe("InteractiveMode spinner helpers", () => {
 					return (InteractiveMode as any).prototype.clearSpinnerBannerTimeout.call(this);
 				},
 				syncProgressSurfaceRefreshLoop: vi.fn(),
+				requestRenderUnlessInputSuppressed: vi.fn(),
 				ui: { requestRender: vi.fn() },
 			};
 
-			const errorBanner = { kind: "error", title: "接口请求失败", detail: "已重试 3 次" };
+			const errorBanner = { kind: "error", title: "Request failed", detail: "Retried 3 times" };
 
 			(InteractiveMode as any).prototype.setSpinnerBanner.call(fakeThis, errorBanner);
 			expect(fakeThis.spinnerBanner).toEqual(errorBanner);
@@ -1054,7 +1327,7 @@ describe("InteractiveMode spinner helpers", () => {
 
 		(InteractiveMode as any).prototype.setSpinnerBanner.call(fakeThis, {
 			kind: "warning",
-			title: "网络连接不稳定，正在恢复会话流",
+			title: "Connection unstable, recovering stream",
 		});
 
 		expect(requestRenderUnlessInputSuppressed).toHaveBeenCalledTimes(1);
@@ -1062,7 +1335,7 @@ describe("InteractiveMode spinner helpers", () => {
 	});
 
 	test("setExtensionWidget keeps belowEditor widgets out of the pending message slot", () => {
-		const pendingMessagesContainer = new Container();
+		const pendingContentContainer = new Container();
 		const widgetContainerAbove = new Container();
 		const widgetContainerBelow = new Container();
 		const renderWidgets = vi.fn(() => {
@@ -1084,7 +1357,7 @@ describe("InteractiveMode spinner helpers", () => {
 		const fakeThis: any = {
 			extensionWidgetsAbove: new Map(),
 			extensionWidgetsBelow: new Map(),
-			pendingMessagesContainer,
+			pendingContentContainer,
 			widgetContainerAbove,
 			widgetContainerBelow,
 			renderWidgets,
@@ -1098,19 +1371,19 @@ describe("InteractiveMode spinner helpers", () => {
 		expect(renderWidgets).toHaveBeenCalledTimes(1);
 		expect(normalizeRenderedOutput(widgetContainerBelow)).toContain("Below editor widget");
 		expect(normalizeRenderedOutput(widgetContainerAbove)).not.toContain("Below editor widget");
-		expect(normalizeRenderedOutput(pendingMessagesContainer)).not.toContain("Below editor widget");
+		expect(normalizeRenderedOutput(pendingContentContainer)).not.toContain("Below editor widget");
 	});
 
 	test("timed success banners disappear and the todo headline becomes visible again", () => {
 		vi.useFakeTimers();
 		try {
 			const working = createProgressSurfaceWorkingState(0);
-			const statusContainer = new Container();
+			const taskbarContentContainer = new Container();
 			const fakeThis: any = makeBottomPaneAware({
 				spinnerBanner: undefined,
 				spinnerBannerTimeout: undefined,
 				progressSurfaceWorkingState: working,
-				statusContainer,
+				taskbarContentContainer,
 				workingVisible: false,
 				session: {
 					isStreaming: false,
@@ -1130,6 +1403,7 @@ describe("InteractiveMode spinner helpers", () => {
 					return (InteractiveMode as any).prototype.clearSpinnerBannerTimeout.call(this);
 				},
 				syncProgressSurfaceRefreshLoop: vi.fn(),
+				requestRenderUnlessInputSuppressed: vi.fn(),
 				ui: { requestRender: vi.fn() },
 				progressSurfaceComponent: undefined,
 				renderWorkingArea() {
@@ -1142,20 +1416,20 @@ describe("InteractiveMode spinner helpers", () => {
 				working,
 			);
 
-			const successBanner = { kind: "success", title: "接口已恢复" };
+			const successBanner = { kind: "success", title: "Connection restored" };
 			(InteractiveMode as any).prototype.setSpinnerBanner.call(fakeThis, successBanner, { expiresMs: 1500 });
 
 			fakeThis.renderWorkingArea();
-			let output = normalizeRenderedOutput(statusContainer);
-			expect(output).toContain("接口已恢复");
+			let output = normalizeRenderedOutput(taskbarContentContainer);
+			expect(output).toContain("Connection restored");
 			expect(output).not.toContain("整理接口定义...");
 
 			vi.advanceTimersByTime(1500);
 			fakeThis.renderWorkingArea();
-			output = normalizeRenderedOutput(statusContainer);
+			output = normalizeRenderedOutput(taskbarContentContainer);
 			expect(output).toContain("整理接口定义...");
-			expect(output).toContain("计划");
-			expect(output).not.toContain("接口已恢复");
+			expect(output).toContain("Plan");
+			expect(output).not.toContain("Connection restored");
 		} finally {
 			vi.useRealTimers();
 		}
@@ -1165,12 +1439,12 @@ describe("InteractiveMode spinner helpers", () => {
 		vi.useFakeTimers();
 		try {
 			const working = createProgressSurfaceWorkingState(0);
-			const statusContainer = new Container();
+			const taskbarContentContainer = new Container();
 			const fakeThis: any = makeBottomPaneAware({
 				spinnerBanner: undefined,
 				spinnerBannerTimeout: undefined,
 				progressSurfaceWorkingState: working,
-				statusContainer,
+				taskbarContentContainer,
 				workingVisible: false,
 				session: {
 					isStreaming: false,
@@ -1190,6 +1464,7 @@ describe("InteractiveMode spinner helpers", () => {
 					return (InteractiveMode as any).prototype.clearSpinnerBannerTimeout.call(this);
 				},
 				syncProgressSurfaceRefreshLoop: vi.fn(),
+				requestRenderUnlessInputSuppressed: vi.fn(),
 				ui: { requestRender: vi.fn() },
 				progressSurfaceComponent: undefined,
 				renderWorkingArea() {
@@ -1202,18 +1477,18 @@ describe("InteractiveMode spinner helpers", () => {
 				working,
 			);
 
-			const errorBanner = { kind: "error", title: "接口请求失败", detail: "已重试 3 次" };
+			const errorBanner = { kind: "error", title: "Request failed", detail: "已重试 3 次" };
 			(InteractiveMode as any).prototype.setSpinnerBanner.call(fakeThis, errorBanner);
 
 			fakeThis.renderWorkingArea();
-			const initial = normalizeRenderedOutput(statusContainer);
-			expect(initial).toContain("接口请求失败");
+			const initial = normalizeRenderedOutput(taskbarContentContainer);
+			expect(initial).toContain("Request failed");
 			expect(initial).not.toContain("整理接口定义...");
 
 			vi.advanceTimersByTime(10_000);
 			fakeThis.renderWorkingArea();
-			const after = normalizeRenderedOutput(statusContainer);
-			expect(after).toContain("接口请求失败");
+			const after = normalizeRenderedOutput(taskbarContentContainer);
+			expect(after).toContain("Request failed");
 			expect(after).not.toContain("整理接口定义...");
 		} finally {
 			vi.useRealTimers();
@@ -1244,20 +1519,40 @@ describe("InteractiveMode spinner helpers", () => {
 		expect(fakeThis.ui.requestRender).toHaveBeenNthCalledWith(2, true);
 	});
 
-	test("showStatus respects input-aware rendering when updating an existing status line", () => {
-		const statusText = { setText: vi.fn() };
-		const spacer = {};
-		const fakeThis: any = {
-			chatContainer: { children: [spacer, statusText], addChild: vi.fn() },
-			lastStatusSpacer: spacer,
-			lastStatusText: statusText,
-			requestRenderRespectingInput: vi.fn(),
-		};
+	test("showTaskbarNotice uses the taskbar overlay and clears itself after timeout", () => {
+		vi.useFakeTimers();
+		try {
+			const setTaskbarOverlay = vi.fn(function (this: any, component: unknown) {
+				this.taskbarOverlayComponent = component;
+			});
+			const requestRenderRespectingInput = vi.fn();
+			const requestRenderUnlessInputSuppressed = vi.fn();
+			const fakeThis: any = {
+				taskbarOverlayComponent: undefined,
+				taskbarNoticeTimeout: undefined,
+				setTaskbarOverlay,
+				requestRenderRespectingInput,
+				requestRenderUnlessInputSuppressed,
+				clearTaskbarNoticeTimeout() {
+					return (InteractiveMode as any).prototype.clearTaskbarNoticeTimeout.call(this);
+				},
+			};
 
-		(InteractiveMode as any).prototype.showStatus.call(fakeThis, "Updated status");
+			(InteractiveMode as any).prototype.showTaskbarNotice.call(fakeThis, "短暂提示", "warning", 1200);
 
-		expect(statusText.setText).toHaveBeenCalledTimes(1);
-		expect(fakeThis.requestRenderRespectingInput).toHaveBeenCalledTimes(1);
+			expect(setTaskbarOverlay).toHaveBeenCalledTimes(1);
+			expect(fakeThis.taskbarOverlayComponent).toBeDefined();
+			expect(requestRenderRespectingInput).toHaveBeenCalledTimes(1);
+
+			vi.advanceTimersByTime(1200);
+
+			expect(setTaskbarOverlay).toHaveBeenCalledTimes(2);
+			expect(fakeThis.taskbarOverlayComponent).toBeUndefined();
+			expect(requestRenderUnlessInputSuppressed).toHaveBeenCalledTimes(1);
+			expect(fakeThis.taskbarNoticeTimeout).toBeUndefined();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	test("setWorkingVisible routes redraw through the input-aware helper", () => {
@@ -1322,6 +1617,20 @@ describe("InteractiveMode spinner helpers", () => {
 
 		expect(fakeThis.chatContainer.addChild).toHaveBeenCalledTimes(2);
 		expect(fakeThis.requestRenderRespectingInput).toHaveBeenCalledTimes(1);
+	});
+
+	test("showExtensionNotify routes info notices into the transcript status line", () => {
+		const fakeThis: any = {
+			showError: vi.fn(),
+			showWarning: vi.fn(),
+			showStatus: vi.fn(),
+		};
+
+		(InteractiveMode as any).prototype.showExtensionNotify.call(fakeThis, "TPS 12.3 tok/s", "info");
+
+		expect(fakeThis.showStatus).toHaveBeenCalledWith("TPS 12.3 tok/s");
+		expect(fakeThis.showWarning).not.toHaveBeenCalled();
+		expect(fakeThis.showError).not.toHaveBeenCalled();
 	});
 
 	test("handleSessionCommand routes redraw through the input-aware helper", () => {
@@ -1511,26 +1820,26 @@ describe("InteractiveMode spinner helpers", () => {
 
 	test("branch summary loader creation routes first paint through the suppression-aware helper", () => {
 		const requestRenderUnlessInputSuppressed = vi.fn();
-		const statusContainer = new Container();
+		const taskbarContentContainer = new Container();
 		const summaryLoader = {
 			render: () => [""],
 			invalidate: () => {},
 		} as any;
 
-		statusContainer.addChild(summaryLoader);
+		taskbarContentContainer.addChild(summaryLoader);
 		requestRenderUnlessInputSuppressed();
 
-		expect(statusContainer.children).toHaveLength(1);
+		expect(taskbarContentContainer.children).toHaveLength(1);
 		expect(requestRenderUnlessInputSuppressed).toHaveBeenCalledTimes(1);
 	});
 
 	test("auto-retry banner overrides the todo headline while retry is pending", async () => {
 		const working = createProgressSurfaceWorkingState(0);
-		const statusContainer = new Container();
+		const taskbarContentContainer = new Container();
 		const requestRenderUnlessInputSuppressed = vi.fn();
 		const fakeThis: any = makeBottomPaneAware({
 			isInitialized: true,
-			statusContainer,
+			taskbarContentContainer,
 			workingVisible: false,
 			spinnerBanner: undefined,
 			spinnerBannerTimeout: undefined,
@@ -1583,9 +1892,9 @@ describe("InteractiveMode spinner helpers", () => {
 		});
 
 		(InteractiveMode as any).prototype.renderWorkingArea.call(fakeThis);
-		const output = normalizeRenderedOutput(statusContainer);
-		expect(output).toContain("接口不稳定，正在自动重试");
-		expect(output).toContain("第 1/3 次重试");
+		const output = normalizeRenderedOutput(taskbarContentContainer);
+		expect(output).toContain("Request unstable, retrying automatically");
+		expect(output).toContain("Attempt 1/3");
 		expect(output).not.toContain("整理接口定义...");
 		expect(requestRenderUnlessInputSuppressed).toHaveBeenCalled();
 	});
@@ -1614,11 +1923,11 @@ describe("InteractiveMode spinner helpers", () => {
 
 	test("auto-retry keeps queued follow-up messages in the pending area, not the taskbar", async () => {
 		const working = createProgressSurfaceWorkingState(0);
-		const statusContainer = new Container();
-		const pendingMessagesContainer = new Container();
+		const taskbarContentContainer = new Container();
+		const pendingContentContainer = new Container();
 		const fakeThis: any = makeBottomPaneAware({
-			statusContainer,
-			pendingMessagesContainer,
+			taskbarContentContainer,
+			pendingContentContainer,
 			pendingBashComponents: [],
 			spinnerBanner: undefined,
 			spinnerBannerTimeout: undefined,
@@ -1627,6 +1936,7 @@ describe("InteractiveMode spinner helpers", () => {
 				return (InteractiveMode as any).prototype.clearSpinnerBannerTimeout.call(this);
 			},
 			syncProgressSurfaceRefreshLoop: vi.fn(),
+			requestRenderUnlessInputSuppressed: vi.fn(),
 			getAllQueuedMessages: () => ({
 				steering: [],
 				followUp: ["完成后补文档"],
@@ -1658,16 +1968,16 @@ describe("InteractiveMode spinner helpers", () => {
 
 		(InteractiveMode as any).prototype.setSpinnerBanner.call(fakeThis, {
 			kind: "warning",
-			title: "接口不稳定，正在自动重试",
-			detail: "第 1/3 次重试 · 5s 后继续",
+			title: "Request unstable, retrying automatically",
+			detail: "Attempt 1/3 · retrying in 5s",
 		});
 		(InteractiveMode as any).prototype.renderWorkingArea.call(fakeThis);
 		(InteractiveMode as any).prototype.updatePendingMessagesDisplay.call(fakeThis);
 
-		expect(normalizeRenderedOutput(statusContainer)).toContain("接口不稳定，正在自动重试");
-		expect(normalizeRenderedOutput(statusContainer)).not.toContain("排队命令");
-		expect(normalizeRenderedOutput(pendingMessagesContainer)).toContain("排队命令");
-		expect(normalizeRenderedOutput(pendingMessagesContainer)).toContain("后续消息: 完成后补文档");
+		expect(normalizeRenderedOutput(taskbarContentContainer)).toContain("Request unstable, retrying automatically");
+		expect(normalizeRenderedOutput(taskbarContentContainer)).not.toContain("排队命令");
+		expect(normalizeRenderedOutput(pendingContentContainer)).toContain("queued command");
+		expect(normalizeRenderedOutput(pendingContentContainer)).toContain("Follow-up: 完成后补文档");
 	});
 
 	test("flushCompactionQueue with willRetry keeps queued follow-up flow out of the transcript", async () => {
@@ -1785,10 +2095,10 @@ describe("InteractiveMode spinner helpers", () => {
 	});
 
 	test("agent_end clears the core progress surface state so the taskbar can disappear", async () => {
-		const statusContainer = new Container();
+		const taskbarContentContainer = new Container();
 		const loadingAnimation = { stop: vi.fn() };
 		const renderWorkingArea = vi.fn(() => {
-			statusContainer.clear();
+			taskbarContentContainer.clear();
 		});
 		const resetSpinnerRuntimeState = vi.fn(function (this: any) {
 			this.spinnerBanner = undefined;
@@ -1799,10 +2109,14 @@ describe("InteractiveMode spinner helpers", () => {
 			settingsManager: { getShowTerminalProgress: () => false },
 			ui: { terminal: { setProgress: vi.fn() }, requestRender: vi.fn() },
 			requestRenderRespectingInput: vi.fn(),
+			agentRunActive: true,
+			spinnerStartedAt: Date.now() - 5000,
+			spinnerReportedOutputTokens: 42,
 			spinnerThinkingStartedAt: null,
 			spinnerThinkingMinimumVisibleUntil: 123,
+			spinnerThinkingDurationMs: 1200,
 			loadingAnimation,
-			statusContainer,
+			taskbarContentContainer,
 			renderWorkingArea,
 			streamingComponent: { render: () => [""], invalidate: () => {} },
 			streamingMessage: {},
@@ -1819,7 +2133,7 @@ describe("InteractiveMode spinner helpers", () => {
 			setTerminalProgressActive: vi.fn(),
 			checkShutdownRequested: vi.fn().mockResolvedValue(undefined),
 			footer: { invalidate: vi.fn() },
-			spinnerBanner: { kind: "success", title: "接口已恢复" },
+			spinnerBanner: { kind: "success", title: "Connection restored" },
 			spinnerSystemOverrideMessage: "Waiting for approval",
 			session: { subscribe: vi.fn() },
 		};
@@ -1836,7 +2150,38 @@ describe("InteractiveMode spinner helpers", () => {
 		expect(resetSpinnerRuntimeState).toHaveBeenCalledTimes(1);
 		expect(fakeThis.spinnerBanner).toBeUndefined();
 		expect(fakeThis.spinnerSystemOverrideMessage).toBeUndefined();
+		expect(fakeThis.agentRunActive).toBe(false);
 		expect(fakeThis.requestRenderRespectingInput).toHaveBeenCalledTimes(1);
+	});
+
+	test("renderWorkingArea does not recreate the loader after agent_end when session.isStreaming is still true", () => {
+		const taskbarContentContainer = new Container();
+		const fakeThis: any = makeBottomPaneAware({
+			taskbarContentContainer,
+			workingVisible: true,
+			agentRunActive: false,
+			session: {
+				isStreaming: true,
+				isCompacting: false,
+				isRetrying: false,
+				getTaskUiItems: () => [],
+			},
+			getProgressSurfaceSnapshot() {
+				return {
+					tasks: [],
+					queued: undefined,
+					spinner: undefined,
+					expanded: false,
+				};
+			},
+			progressSurfaceComponent: { render: () => [""], invalidate: () => {} },
+			requestRenderUnlessInputSuppressed: vi.fn(),
+		});
+
+		(InteractiveMode as any).prototype.renderWorkingArea.call(fakeThis);
+
+		expect(fakeThis.loadingAnimation).toBeUndefined();
+		expect(taskbarContentContainer.children).toHaveLength(0);
 	});
 
 	test("hideExtensionSelector clears approval banner and waiting status", () => {
@@ -1845,7 +2190,7 @@ describe("InteractiveMode spinner helpers", () => {
 		const selector = { dispose: vi.fn(), render: () => [""], invalidate: () => {} } as any;
 		const setExtensionStatus = vi.fn();
 		const setSpinnerBanner = vi.fn();
-		const fakeThis: any = {
+		const fakeThis: any = makeBottomPaneAware({
 			editorContainer,
 			editor,
 			extensionSelector: selector,
@@ -1853,7 +2198,7 @@ describe("InteractiveMode spinner helpers", () => {
 			setSpinnerBanner,
 			ui: { setFocus: vi.fn(), requestRender: vi.fn() },
 			requestRenderRespectingInput: vi.fn(),
-		};
+		});
 
 		(InteractiveMode as any).prototype.hideExtensionSelector.call(fakeThis);
 
@@ -1865,10 +2210,10 @@ describe("InteractiveMode spinner helpers", () => {
 	});
 
 	test("showExtensionSelector drives the taskbar into approval state", async () => {
-		const statusContainer = new Container();
+		const taskbarContentContainer = new Container();
 		const working = createProgressSurfaceWorkingState(0);
 		const fakeThis: any = makeBottomPaneAware({
-			statusContainer,
+			taskbarContentContainer,
 			workingVisible: false,
 			footerDataProvider: { setExtensionStatus: vi.fn() },
 			ui: { requestRender: vi.fn() },
@@ -1877,6 +2222,7 @@ describe("InteractiveMode spinner helpers", () => {
 				return (InteractiveMode as any).prototype.clearSpinnerBannerTimeout.call(this);
 			},
 			syncProgressSurfaceRefreshLoop: vi.fn(),
+			requestRenderUnlessInputSuppressed: vi.fn(),
 			session: {
 				isStreaming: false,
 				isCompacting: false,
@@ -1898,16 +2244,16 @@ describe("InteractiveMode spinner helpers", () => {
 			),
 		});
 
-		(InteractiveMode as any).prototype.setExtensionStatus.call(fakeThis, "ui", "waiting · 等待审批确认");
+		(InteractiveMode as any).prototype.setExtensionStatus.call(fakeThis, "ui", "waiting · Awaiting approval");
 		(InteractiveMode as any).prototype.setSpinnerBanner.call(fakeThis, {
 			kind: "approval",
-			title: "等待审批确认",
+			title: "Awaiting approval",
 			detail: "Import session",
 		});
 		(InteractiveMode as any).prototype.renderWorkingArea.call(fakeThis);
 
-		const output = normalizeRenderedOutput(statusContainer);
-		expect(output).toContain("等待审批确认");
+		const output = normalizeRenderedOutput(taskbarContentContainer);
+		expect(output).toContain("Awaiting approval");
 		expect(output).toContain("Import session");
 		expect(output).not.toContain("整理接口定义...");
 	});
@@ -1918,7 +2264,7 @@ describe("InteractiveMode spinner helpers", () => {
 		const input = { dispose: vi.fn(), render: () => [""], invalidate: () => {} } as any;
 		const setExtensionStatus = vi.fn();
 		const setSpinnerBanner = vi.fn();
-		const fakeThis: any = {
+		const fakeThis: any = makeBottomPaneAware({
 			editorContainer,
 			editor,
 			extensionInput: input,
@@ -1926,7 +2272,7 @@ describe("InteractiveMode spinner helpers", () => {
 			setSpinnerBanner,
 			ui: { setFocus: vi.fn(), requestRender: vi.fn() },
 			requestRenderRespectingInput: vi.fn(),
-		};
+		});
 
 		(InteractiveMode as any).prototype.hideExtensionInput.call(fakeThis);
 
@@ -1938,10 +2284,10 @@ describe("InteractiveMode spinner helpers", () => {
 	});
 
 	test("showExtensionInput drives the taskbar into input state", async () => {
-		const statusContainer = new Container();
+		const taskbarContentContainer = new Container();
 		const working = createProgressSurfaceWorkingState(0);
 		const fakeThis: any = makeBottomPaneAware({
-			statusContainer,
+			taskbarContentContainer,
 			workingVisible: false,
 			footerDataProvider: { setExtensionStatus: vi.fn() },
 			ui: { requestRender: vi.fn() },
@@ -1950,6 +2296,7 @@ describe("InteractiveMode spinner helpers", () => {
 				return (InteractiveMode as any).prototype.clearSpinnerBannerTimeout.call(this);
 			},
 			syncProgressSurfaceRefreshLoop: vi.fn(),
+			requestRenderUnlessInputSuppressed: vi.fn(),
 			session: {
 				isStreaming: false,
 				isCompacting: false,
@@ -1974,13 +2321,13 @@ describe("InteractiveMode spinner helpers", () => {
 		(InteractiveMode as any).prototype.setExtensionStatus.call(fakeThis, "ui", "waiting · 输入审批理由");
 		(InteractiveMode as any).prototype.setSpinnerBanner.call(fakeThis, {
 			kind: "input",
-			title: "等待你的输入",
+			title: "Awaiting your input",
 			detail: "输入审批理由",
 		});
 		(InteractiveMode as any).prototype.renderWorkingArea.call(fakeThis);
 
-		const output = normalizeRenderedOutput(statusContainer);
-		expect(output).toContain("等待你的输入");
+		const output = normalizeRenderedOutput(taskbarContentContainer);
+		expect(output).toContain("Awaiting your input");
 		expect(output).toContain("输入审批理由");
 		expect(output).not.toContain("整理接口定义...");
 	});

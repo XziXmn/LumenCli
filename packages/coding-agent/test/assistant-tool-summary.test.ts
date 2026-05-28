@@ -27,8 +27,8 @@ describe("AssistantToolSummaryComponent", () => {
 		);
 
 		const rendered = render(component);
-		expect(rendered).toContain("读取(README.md)");
-		expect(rendered).toContain("⎿ 已读取 2 行");
+		expect(rendered).toContain("Read(README.md)");
+		expect(rendered).toContain("⎿ Read 2 lines");
 	});
 
 	it("shows full output when expanded", () => {
@@ -48,8 +48,73 @@ describe("AssistantToolSummaryComponent", () => {
 
 		const rendered = render(component);
 		expect(rendered).toContain("Bash(pwd)");
-		expect(rendered).toContain("⎿ 命令已执行");
+		expect(rendered).toContain("⎿ Command completed");
+		expect(rendered).toContain("  ⎿ ");
 		expect(rendered).toContain("/tmp/work");
+	});
+
+	it("expanded edit summary keeps diff content inside the response layer", () => {
+		const component = new AssistantToolSummaryComponent(
+			"edit",
+			{ path: "config.json", oldText: '{"a":1}', newText: '{"a":2}' },
+			{
+				role: "toolResult",
+				toolCallId: "tool-edit-1",
+				toolName: "edit",
+				content: [{ type: "text", text: "Successfully replaced 1 block(s) in config.json." }],
+				details: { diff: '  1 {"a":1}\n- 2 "version": "1.0.0"\n+ 2 "version": "1.1.0"', patch: "" },
+				timestamp: Date.now(),
+			} as any,
+			process.cwd(),
+		);
+		component.setExpanded(true);
+
+		const rendered = render(component);
+		expect(rendered).toContain("Update(config.json)");
+		expect(rendered).toContain("⎿ Updated file");
+		expect(rendered).toContain("  ⎿ ");
+		expect(rendered).toContain('+ 2 "version": "1.1.0"');
+	});
+
+	it("collapsed bash summary shows title and result but no raw output preview", () => {
+		const component = new AssistantToolSummaryComponent(
+			"bash",
+			{ command: "pwd" },
+			{
+				role: "toolResult",
+				toolCallId: "tool-bash-1",
+				toolName: "bash",
+				content: [{ type: "text", text: "/tmp/work\nsome other output\nmore lines\n" }],
+				timestamp: Date.now(),
+			} as any,
+			process.cwd(),
+		);
+
+		const rendered = render(component);
+		expect(rendered).toContain("Bash(pwd)");
+		expect(rendered).toContain("⎿ Command completed");
+		// Should NOT show raw output preview in collapsed mode
+		expect(rendered).not.toContain("/tmp/work");
+		expect(rendered).not.toContain("some other output");
+	});
+
+	it("collapsed read summary shows title and summary only", () => {
+		const component = new AssistantToolSummaryComponent(
+			"read",
+			{ path: "README.md" },
+			{
+				role: "toolResult",
+				toolCallId: "tool-read-1",
+				toolName: "read",
+				content: [{ type: "text", text: "line one\nline two\nline three\n" }],
+				timestamp: Date.now(),
+			} as any,
+			process.cwd(),
+		);
+
+		const rendered = render(component);
+		expect(rendered).toContain("Read(README.md)");
+		expect(rendered).toContain("⎿ Read 3 lines");
 	});
 
 	it("can start in pending mode and later transition to a completed summary", () => {
@@ -61,8 +126,8 @@ describe("AssistantToolSummaryComponent", () => {
 		);
 
 		const pending = render(component);
-		expect(pending).toContain('搜索(模式: "todo", 路径: "src")');
-		expect(pending).toContain("⎿ 运行中…");
+		expect(pending).toContain('Search(pattern: "todo", path: "src")');
+		expect(pending).toContain("⎿ Running…");
 		expect(pending).not.toContain("to expand");
 
 		component.updateResult({
@@ -74,7 +139,7 @@ describe("AssistantToolSummaryComponent", () => {
 		} as any);
 
 		const completed = render(component);
-		expect(completed).toContain("⎿ 共找到 2 处匹配，涉及 2 个文件");
+		expect(completed).toContain("⎿ 2 matches in 2 files");
 		expect(completed).not.toContain("to expand");
 	});
 });

@@ -1,13 +1,39 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { Container, Spacer, Text } from "@earendil-works/pi-tui";
+import { type Component, Container, Spacer, Text } from "@earendil-works/pi-tui";
+import { createAllToolDefinitions, type ToolName } from "../../../core/tools/index.ts";
 import { getTextOutput } from "../../../core/tools/render-utils.ts";
 import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.ts";
-import { isCollapsibleToolName } from "../output-flow/collapse.ts";
 import { theme } from "../theme/theme.ts";
-import { TUI_COPY } from "./tui-copy.ts";
+import { TUI_COPY } from "./interactive-strings.ts";
 
 type ToolResultMessage = Extract<AgentMessage, { role: "toolResult" }>;
 type ToolRowStatus = "pending" | "success" | "error";
+
+class ToolResponseContainer extends Container {
+	private readonly content: Component;
+
+	constructor(content: Component) {
+		super();
+		this.content = content;
+	}
+
+	override invalidate(): void {
+		this.content.invalidate?.();
+	}
+
+	override render(width: number): string[] {
+		const gutter = theme.fg("dim", "  ⎿ ");
+		const gutterWidth = 4;
+		const contentWidth = Math.max(1, width - gutterWidth);
+		const rawContentLines = this.content.render(contentWidth);
+		const firstVisibleIndex = rawContentLines.findIndex((line) => line.trim().length > 0);
+		const contentLines = firstVisibleIndex === -1 ? [] : rawContentLines.slice(firstVisibleIndex);
+		if (contentLines.length === 0) {
+			return [];
+		}
+		return contentLines.map((line, index) => `${index === 0 ? gutter : " ".repeat(gutterWidth)}${line}`);
+	}
+}
 
 export function renderToolStatusDot(status: ToolRowStatus): string {
 	switch (status) {
@@ -54,9 +80,9 @@ export function titleForTool(toolName: string, args: Record<string, unknown>, cw
 
 	switch (toolName) {
 		case "read":
-			return `读取(${path ?? "文件"})`;
+			return `Read(${path ?? "file"})`;
 		case "write":
-			return `写入(${path ?? "文件"})`;
+			return `Write(${path ?? "file"})`;
 		case "edit": {
 			const oldText = typeof args.oldText === "string" ? args.oldText : undefined;
 			const oldString = typeof args.old_string === "string" ? args.old_string : undefined;
@@ -75,16 +101,16 @@ export function titleForTool(toolName: string, args: Record<string, unknown>, cw
 				(typeof oldText === "string" && oldText.length === 0) ||
 				(typeof oldString === "string" && oldString.length === 0) ||
 				createFromEdits;
-			return `${isCreate ? "创建" : "更新"}(${path ?? "文件"})`;
+			return `${isCreate ? "Create" : "Update"}(${path ?? "file"})`;
 		}
 		case "grep":
 		case "find": {
 			const pattern = typeof args.pattern === "string" ? args.pattern : "";
 			const pathText = path ?? ".";
-			return `搜索(模式: "${pattern}", 路径: "${pathText}")`;
+			return `Search(pattern: "${pattern}", path: "${pathText}")`;
 		}
 		case "ls":
-			return `列出(${path ?? "."})`;
+			return `List(${path ?? "."})`;
 		case "bash": {
 			const command = typeof args.command === "string" ? args.command : "...";
 			return `Bash(${command})`;
@@ -100,36 +126,36 @@ export function summaryForTool(toolName: string, args: Record<string, unknown>, 
 
 	switch (toolName) {
 		case "todo":
-			return output === "Todo list cleared." ? output : "已更新待办列表";
+			return output === "Todo list cleared." ? output : "Updated todo list";
 		case "read":
-			if (hasImage) return "已读取图片";
-			return `已读取 ${lineCount(output)} 行`;
+			if (hasImage) return "Read image";
+			return `Read ${lineCount(output)} line${lineCount(output) === 1 ? "" : "s"}`;
 		case "write": {
 			const content = typeof args.content === "string" ? args.content : "";
 			const count = lineCount(content);
-			return `已写入 ${count} 行`;
+			return `Wrote ${count} line${count === 1 ? "" : "s"}`;
 		}
 		case "edit":
-			return "已更新文件";
+			return "Updated file";
 		case "grep": {
 			const matches = output ? output.split("\n").filter(Boolean) : [];
 			const fileCount = new Set(matches.map((line) => line.split(":")[0]).filter(Boolean)).size;
-			return `共找到 ${matches.length} 处匹配，涉及 ${fileCount} 个文件`;
+			return `${matches.length} match${matches.length === 1 ? "" : "es"} in ${fileCount} file${fileCount === 1 ? "" : "s"}`;
 		}
 		case "find": {
 			const count = output ? output.split("\n").filter(Boolean).length : 0;
-			return `共找到 ${count} 个文件`;
+			return `Found ${count} file${count === 1 ? "" : "s"}`;
 		}
 		case "ls": {
 			const count = output ? output.split("\n").filter(Boolean).length : 0;
-			return `共列出 ${count} 项`;
+			return `Listed ${count} item${count === 1 ? "" : "s"}`;
 		}
 		case "bash": {
 			const count = output ? output.split("\n").filter(Boolean).length : 0;
-			return `命令已执行 · 输出 ${count} 行`;
+			return `Command completed · ${count} line${count === 1 ? "" : "s"} output`;
 		}
 		default:
-			return output.split("\n")[0] ?? "已完成";
+			return output.split("\n")[0] ?? "Done";
 	}
 }
 
@@ -139,13 +165,24 @@ export class AssistantToolSummaryComponent extends Container {
 	private readonly toolName: string;
 	private args: Record<string, unknown>;
 	private readonly cwd: string;
+	private readonly addLeadingMargin: boolean;
+	private readonly builtInDefinitions: ReturnType<typeof createAllToolDefinitions>;
+	private wrappedResultRendererComponent?: Component;
 
-	constructor(toolName: string, args: Record<string, unknown>, result: ToolResultMessage | undefined, cwd: string) {
+	constructor(
+		toolName: string,
+		args: Record<string, unknown>,
+		result: ToolResultMessage | undefined,
+		cwd: string,
+		options?: { addLeadingMargin?: boolean },
+	) {
 		super();
 		this.toolName = toolName;
 		this.args = args;
 		this.result = result;
 		this.cwd = cwd;
+		this.addLeadingMargin = options?.addLeadingMargin ?? true;
+		this.builtInDefinitions = createAllToolDefinitions(cwd);
 		this.updateDisplay();
 	}
 
@@ -169,12 +206,23 @@ export class AssistantToolSummaryComponent extends Container {
 		this.updateDisplay();
 	}
 
+	private createWrappedResultComponent(component: Component): Component {
+		if (component === this.wrappedResultRendererComponent) {
+			return component;
+		}
+		const wrapped = new ToolResponseContainer(component);
+		this.wrappedResultRendererComponent = wrapped;
+		return wrapped;
+	}
+
 	private updateDisplay(): void {
 		this.clear();
 		const title = titleForTool(this.toolName, this.args, this.cwd);
 		const status: ToolRowStatus = !this.result ? "pending" : this.result.isError ? "error" : "success";
 
-		this.addChild(new Spacer(1));
+		if (this.addLeadingMargin) {
+			this.addChild(new Spacer(1));
+		}
 		this.addChild(new Text(`${renderToolStatusDot(status)} ${theme.bold(title)}`, 1, 0));
 
 		if (!this.result) {
@@ -185,22 +233,36 @@ export class AssistantToolSummaryComponent extends Container {
 		const summary = summaryForTool(this.toolName, this.args, this.result);
 		this.addChild(new Text(renderToolResponseLine(summary), 0, 0));
 
-		const output = getTextOutput(this.result, false).trim();
-		if (!output) return;
-
 		if (this.expanded) {
-			this.addChild(new Text(theme.fg("toolOutput", output), 2, 0));
-		} else if (!isCollapsibleToolName(this.toolName)) {
-			const lines = output.split("\n");
-			const previewLines = lines.slice(0, 5);
-			const preview = previewLines.join("\n");
-			if (preview) {
-				this.addChild(new Text(theme.fg("dim", preview), 2, 0));
-			}
-			if (lines.length > 5) {
-				this.addChild(
-					new Text(renderToolResponseLine(TUI_COPY.bashExecution.moreLines(lines.length - 5), "muted"), 0, 0),
+			const definition = this.builtInDefinitions[this.toolName as ToolName];
+			if (definition?.renderResult) {
+				const rawComponent = definition.renderResult(
+					{ content: this.result.content as any, details: this.result.details },
+					{ expanded: true, isPartial: false },
+					theme,
+					{
+						args: this.args,
+						toolCallId: this.result.toolCallId,
+						invalidate: () => {},
+						lastComponent: undefined,
+						state: {},
+						cwd: this.cwd,
+						executionStarted: true,
+						argsComplete: true,
+						isPartial: false,
+						expanded: true,
+						showImages: true,
+						isError: this.result.isError ?? false,
+					},
 				);
+				const component = this.createWrappedResultComponent(rawComponent);
+				this.addChild(component);
+				return;
+			}
+
+			const output = getTextOutput(this.result, false).trim();
+			if (output) {
+				this.addChild(this.createWrappedResultComponent(new Text(theme.fg("toolOutput", output), 0, 0)));
 			}
 		}
 	}

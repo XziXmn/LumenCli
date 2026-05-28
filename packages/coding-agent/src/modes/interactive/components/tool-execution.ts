@@ -10,12 +10,40 @@ export interface ToolExecutionOptions {
 	imageWidthCells?: number;
 }
 
+class ToolResponseContainer extends Container {
+	private readonly content: Component;
+
+	constructor(content: Component) {
+		super();
+		this.content = content;
+	}
+
+	override invalidate(): void {
+		this.content.invalidate?.();
+	}
+
+	override render(width: number): string[] {
+		const gutter = theme.fg("dim", "  ⎿ ");
+		const gutterWidth = 4;
+		const contentWidth = Math.max(1, width - gutterWidth);
+		const rawContentLines = this.content.render(contentWidth);
+		const firstVisibleIndex = rawContentLines.findIndex((line) => line.trim().length > 0);
+		const contentLines = firstVisibleIndex === -1 ? [] : rawContentLines.slice(firstVisibleIndex);
+		if (contentLines.length === 0) {
+			return [];
+		}
+
+		return contentLines.map((line, index) => `${index === 0 ? gutter : " ".repeat(gutterWidth)}${line}`);
+	}
+}
+
 export class ToolExecutionComponent extends Container {
 	private contentBox: Box;
 	private contentText: Text;
 	private selfRenderContainer: Container;
 	private callRendererComponent?: Component;
 	private resultRendererComponent?: Component;
+	private wrappedResultRendererComponent?: Component;
 	private rendererState: any = {};
 	private imageComponents: Image[] = [];
 	private imageSpacers: Spacer[] = [];
@@ -72,8 +100,8 @@ export class ToolExecutionComponent extends Container {
 		// Always create all shell variants. contentBox is used for default renderer-based composition.
 		// selfRenderContainer is used when the tool renders its own framing.
 		// contentText is reserved for generic fallback rendering when no tool definition exists.
-		this.contentBox = new Box(1, 1, (text: string) => theme.bg("toolPendingBg", text));
-		this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
+		this.contentBox = new Box(1, 1, (text: string) => text);
+		this.contentText = new Text("", 1, 1, (text: string) => text);
 		this.selfRenderContainer = new Container();
 
 		if (this.hasRendererDefinition()) {
@@ -149,6 +177,15 @@ export class ToolExecutionComponent extends Container {
 			return undefined;
 		}
 		return new Text(theme.fg("toolOutput", output), 0, 0);
+	}
+
+	private createWrappedResultComponent(component: Component): Component {
+		if (component === this.wrappedResultRendererComponent) {
+			return component;
+		}
+		const wrapped = new ToolResponseContainer(component);
+		this.wrappedResultRendererComponent = wrapped;
+		return wrapped;
 	}
 
 	updateArgs(args: any): void {
@@ -242,11 +279,8 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private updateDisplay(): void {
-		const bgFn = this.isPartial
-			? (text: string) => theme.bg("toolPendingBg", text)
-			: this.result?.isError
-				? (text: string) => theme.bg("toolErrorBg", text)
-				: (text: string) => theme.bg("toolSuccessBg", text);
+		// Neutral background — status color is owned by the status dot, not the panel.
+		const bgFn = (text: string) => text;
 
 		let hasContent = false;
 		this.hideComponent = false;
@@ -286,22 +320,24 @@ export class ToolExecutionComponent extends Container {
 					}
 				} else {
 					try {
-						const component = resultRenderer(
+						const rawComponent = resultRenderer(
 							{ content: this.result.content as any, details: this.result.details },
 							{ expanded: this.expanded, isPartial: this.isPartial },
 							theme,
 							this.getRenderContext(this.resultRendererComponent),
 						);
-						this.resultRendererComponent = component;
-						if (this.componentHasVisibleContent(component)) {
+						this.resultRendererComponent = rawComponent;
+						if (this.componentHasVisibleContent(rawComponent)) {
+							const component = this.createWrappedResultComponent(rawComponent);
 							renderContainer.addChild(component);
 							hasContent = true;
 						}
 					} catch {
 						this.resultRendererComponent = undefined;
+						this.wrappedResultRendererComponent = undefined;
 						const component = this.createResultFallback();
 						if (component) {
-							renderContainer.addChild(component);
+							renderContainer.addChild(this.createWrappedResultComponent(component));
 							hasContent = true;
 						}
 					}
